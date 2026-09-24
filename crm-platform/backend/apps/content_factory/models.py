@@ -264,6 +264,7 @@ class SourceAsset(models.Model):
     material = models.CharField(max_length=80, blank=True, db_index=True)
     tags = models.JSONField(default=list, blank=True)
     hidden = models.BooleanField(default=False, help_text="Не показувати в добірках (сміття, дубль)")
+    markup_at = models.DateTimeField(null=True, blank=True, help_text="Коли ШІ розмітив сцени (лише відео)")
     posted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -349,6 +350,44 @@ class AnalystReport(models.Model):
     ideas = models.JSONField(default=list, blank=True, help_text="[{title, hook, why, format, material}]")
     inputs = models.JSONField(default=dict, blank=True, help_text="Цифри, на яких зроблено звіт")
     model = models.CharField(max_length=40, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+# ── Етап 4–5 (24.09.2026): розмітка сцен відео і генератор рилсів ────────────────────────────────
+
+class VideoScene(models.Model):
+    """Сцена у відео-джерелі: що відбувається з такої-то до такої-то секунди. Розмічає ШІ один раз."""
+    asset = models.ForeignKey(SourceAsset, on_delete=models.CASCADE, related_name="scenes")
+    start = models.FloatField()
+    end = models.FloatField()
+    shot = models.CharField(max_length=40, blank=True, help_text="крупно / загальний план / процес / результат / людина")
+    what = models.CharField(max_length=300)
+    quality = models.PositiveSmallIntegerField(default=3, help_text="1–5: різкість, світло, чи видно фактуру")
+    tags = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["asset_id", "start"]
+
+
+class ReelDraft(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Чернетка"
+        APPROVED = "approved", "Схвалено"
+        REJECTED = "rejected", "Відхилено"
+
+    title = models.CharField(max_length=200)
+    topic = models.CharField(max_length=300, blank=True)
+    material = models.CharField(max_length=80, blank=True)
+    caption = models.TextField(blank=True, help_text="Підпис до рилса")
+    beats = models.JSONField(default=list, blank=True, help_text="[{text, scene_id, seconds}] — сценарій по кадрах")
+    facts = models.JSONField(default=list, blank=True)
+    file = models.ForeignKey("inbox.SharedLink", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    duration = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
+    error = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]

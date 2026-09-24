@@ -11,6 +11,7 @@ PATCH/DELETE /api/content-factory/channels/<id>/
 Джерела (24.09): POST /sources/ingest/ (бот, секрет), GET /sources/, PATCH /sources/chats/<id>/, PATCH /sources/<id>/,
   GET /sources/thumb/<підпис>/ (без логіна, підпис діє 1 год)
 Етап 3: GET/POST /feed/ (стрічка Virale, оновити), PATCH /feed/<id>/, GET/PATCH/POST /analyst/ (звіти, налаштування)
+Етап 4–5: GET/POST /reels/ (список, зробити у фоні), PATCH /reels/<id>/, POST /reels/<id>/test/ (надіслати Олегу)
 """
 import hmac
 import json
@@ -28,12 +29,13 @@ from rest_framework.views import APIView
 
 from . import questions as qsvc
 from . import analyst as ansvc
+from . import reels as reelsvc
 from . import drive as drivesvc
 from . import sources as srcsvc
 from . import telegram as tgsvc
 from .models import (AnalystReport, AnalystSettings, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
-                     QuestionMention, QuestionSettings, QuestionTopic, SourceAsset, SourceChat, TgPost, TgSettings,
-                     parse_channel_link)
+                     QuestionMention, QuestionSettings, QuestionTopic, ReelDraft, SourceAsset, SourceChat, TgPost,
+                     TgSettings, VideoScene, parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -669,3 +671,82 @@ class AnalystView(_Base):
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
         return self.get(request)
+
+
+# ── Етапи 4–5: рилси з нарізок ────────────────────────────────────────────────────────────────────
+
+def _reel(request, r):
+    scenes = {s.id: s for s in VideoScene.objects.filter(id__in=[b.get("scene_id") for b in r.beats]).select_related("asset")}
+    return {
+        "id": r.id, "title": r.title, "topic": r.topic, "material": r.material, "caption": r.caption,
+        "status": r.status, "status_display": r.get_status_display(), "duration": r.duration, "error": r.error,
+        "facts": r.facts, "created_at": _iso(r.created_at),
+        "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
+        "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else "",
+                       source=scenes[b["scene_id"]].asset.link if b.get("scene_id") in scenes else "") for b in r.beats],
+    }
+
+
+class ReelsView(_Base):
+    """GET — рилси й стан розмітки. POST {topic, material} — зробити рилс (у фоні, лише власник)."""
+    def get(self, request):
+        marked = (SourceAsset.objects.filter(kind="video").exclude(markup_at=None).values_list("material")
+                  .annotate(n=Count("id")).order_by("-n"))
+        mats = (SourceAsset.objects.filter(kind="video", hidden=False).exclude(material="").values_list("material")
+                .annotate(n=Count("id")).order_by("-n"))
+        return Response({
+            "reels": [_reel(request, r) for r in ReelDraft.objects.select_related("file").all()[:20]],
+            "materials": [{"name": m, "videos": n} for m, n in mats],
+            "marked": {m: n for m, n in marked}, "scenes": VideoScene.objects.count(),
+            "spent_month_usd": reelsvc.spent_month(),
+            "ideas": [{"title": i["title"], "material": i.get("material", "")} for r in AnalystReport.objects.all()[:1]
+                      for i in r.ideas if "рилс" in (i.get("format") or "")],
+        })
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Робити рилси (платно) може лише власник."}, status=403)
+        topic = str((request.data or {}).get("topic") or "").strip()[:300]
+        material = str((request.data or {}).get("material") or "").strip()
+        if not topic or not material:
+            return Response({"error": "Вкажіть тему й матеріал."}, status=400)
+
+        def work():
+            try:
+                reelsvc.make_reel(topic, material)
+            except Exception as e:
+                ReelDraft.objects.create(title=topic[:200], topic=topic, material=material,
+                                         status=ReelDraft.Status.REJECTED, error=str(e)[:300])
+        _bg(work)
+        return Response({"ok": True, "note": "Роблю рилс: розмітка нових відео, сценарій, монтаж — 3–8 хвилин."})
+
+
+class ReelView(_Base):
+    def patch(self, request, pk):
+        r = get_object_or_404(ReelDraft, pk=pk)
+        data = request.data or {}
+        if "status" in data:
+            if data["status"] not in ReelDraft.Status.values:
+                return Response({"error": "Невідомий статус."}, status=400)
+            r.status = data["status"]
+        if "caption" in data:
+            r.caption = str(data["caption"] or "")[:2200]
+        r.save()
+        return Response(_reel(request, r))
+
+    def post(self, request, pk, action=None):
+        """POST /reels/<id>/test/ — надіслати рилс Олегу в Telegram для перегляду з телефона (не в канал)."""
+        if action != "test":
+            return Response(status=405)
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        r = get_object_or_404(ReelDraft.objects.select_related("file"), pk=pk)
+        owner = tgsvc.tg_config()[2]
+        if not r.file_id or not owner:
+            return Response({"error": "Немає файлу або особистого чату."}, status=400)
+        try:
+            tgsvc._tg("sendVideo", {"chat_id": owner, "caption": (r.caption or r.title)[:1024], "supports_streaming": "true"},
+                      {"video": (r.file.filename, bytes(r.file.data), "video/mp4")})
+        except tgsvc.PublishError as e:
+            return Response({"error": str(e)}, status=400)
+        return Response({"ok": True, "note": "Надіслано вам у Telegram (@wallcov_smm_bot)."})

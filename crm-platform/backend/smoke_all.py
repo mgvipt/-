@@ -104,6 +104,7 @@ CHECKS = [
     ("Контент-завод: стрічка рекомендацій", "owner", "/api/content-factory/feed/", {200}, ["items", "total"]),
     ("Контент-завод: аналітик", "owner", "/api/content-factory/analyst/", {200}, ["settings", "reports"]),
     ("Контент-завод: аналітик — менеджеру закрито", "manager", "/api/content-factory/analyst/", {403}, []),
+    ("Контент-завод: рилси з нарізок", "owner", "/api/content-factory/reels/", {200}, ["reels", "materials", "scenes"]),
     ("Відгуки: «не просити» у картці клієнта", "manager", "CONTACT_REVIEW_OPTOUT", {200}, ["opt_out", "can_remove"]),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),

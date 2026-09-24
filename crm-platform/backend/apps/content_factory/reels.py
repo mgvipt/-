@@ -1,0 +1,242 @@
+"""Контент-завод, етапи 4–5 (24.09.2026): розмітка сцен відео і генератор рилсів з ВАШИХ нарізок.
+
+1. Розмітка (markup): відео з «Джерел» тимчасово качається, ffmpeg робить легку копію 360p/2 кадри за секунду
+   без звуку, Gemini повертає список сцен (з якої по яку секунду, що в кадрі, якість). Розмічається ОДИН раз,
+   лише потрібний матеріал — у момент, коли робимо ролик. Облік: AiUsage source=content_factory.markup.
+2. Сценарій (plan): Claude пише 12–16 с ролик — гачок ≤2,5 с, 3–5 кадрів, заклик; факти ЛИШЕ з бази знань;
+   під кожну фразу обирає сцену з каталогу розмітки. Стіна в кадрі завжди справжня — ШІ-кадрів немає.
+3. Монтаж (render): ffmpeg ріже сцени з оригіналів, 1080×1920, великі субтитри DejaVu, тиха звукова доріжка
+   (музику додасте в Instagram/TikTok із їхньої ліцензованої бібліотеки). Результат — ReelDraft + файл у CRM.
+Тимчасові файли — /tmp/cf_reels, видаляються після монтажу.
+"""
+import base64
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import textwrap
+import urllib.error
+import urllib.request
+import uuid
+
+from django.utils import timezone
+
+from . import questions
+from .models import ReelDraft, SourceAsset, VideoScene
+from .telegram import kb_facts
+
+MARKUP_MODEL = "gemini-3.6-flash"  # 24.09: gemini-2.5-flash закрита для нових ключів
+MARKUP_PRICE = (0.50, 3.00)  # $/1M вхід/вихід — ОЦІНКА з запасом (точна ціна 3.6-flash не перевірена)
+MARKUP_SOURCE = "content_factory.markup"
+PLAN_SOURCE = "content_factory.reels"
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+WORK = "/tmp/cf_reels"
+MAX_SRC_BYTES = 250 * 1024 * 1024
+
+
+class ReelError(Exception):
+    pass
+
+
+def _run(args):
+    r = subprocess.run(args, capture_output=True, text=True, timeout=600)
+    if r.returncode != 0:
+        raise ReelError("ffmpeg: " + (r.stderr or "")[-300:])
+    return r
+
+
+def fetch_original(asset, folder):
+    """Оригінал у тимчасову папку (Drive — потоком, Telegram — через getFile; бот качає до 20 МБ)."""
+    path = os.path.join(folder, f"src{asset.id}")
+    if os.path.exists(path):
+        return path
+    if asset.origin == SourceAsset.Origin.DRIVE:
+        from .drive import API, token
+        url = f"{API}/{asset.file_id}?alt=media&supportsAllDrives=true"
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token()})
+    else:
+        from .telegram import _tg, tg_config
+        fp = _tg("getFile", {"file_id": asset.file_id})["file_path"]
+        req = urllib.request.Request(f"https://api.telegram.org/file/bot{tg_config()[0]}/{fp}")
+    size = 0
+    with urllib.request.urlopen(req, timeout=300) as r, open(path, "wb") as f:
+        while chunk := r.read(1 << 20):
+            size += len(chunk)
+            if size > MAX_SRC_BYTES:
+                raise ReelError(f"«{asset.file_name}» більший за 250 МБ — пропускаю.")
+            f.write(chunk)
+    return path
+
+
+def _light_copy(src, folder):
+    out = os.path.join(folder, f"light{uuid.uuid4().hex}.mp4")
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-t", "90", "-an", "-vf", "scale=-2:360,fps=2",
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "32", out])
+    with open(out, "rb") as f:
+        return f.read()
+
+
+MARKUP_PROMPT = """Це відео з обʼєкта/салону Wallcov (декоративні штукатурки). Розбий його на сцени по 1–6 секунд.
+Для кожної сцени: start і end у секундах; shot — один з: "крупно", "загальний план", "процес", "результат", "людина", "інше";
+what — що в кадрі українською до 15 слів (матеріал, поверхня, дія, світло, кімната); quality 1–5 (різкість, світло,
+чи добре видно фактуру; 1 — розмито/темно/тремтить); tags — до 5 слів (блік, шпатель, спальня, до/після…).
+Не вигадуй того, чого не видно. Відповідай ЛИШЕ JSON: {"scenes":[{"start":0,"end":3.5,"shot":"...","what":"...","quality":4,"tags":["..."]}]}"""
+
+
+def _gemini(parts, max_tokens=4000):
+    key = os.environ.get("GEMINI_API_KEY", "")
+    if not key:
+        raise ReelError("Немає GEMINI_API_KEY на сервері.")
+    body = {"contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": max_tokens,
+                                 "thinkingConfig": {"thinkingLevel": "low"}}}
+    req = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{MARKUP_MODEL}:generateContent",
+        data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            resp = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise ReelError(f"Gemini HTTP {e.code}: {e.read().decode()[:200]}") from None
+    usage = resp.get("usageMetadata") or {}
+    tin = int(usage.get("promptTokenCount") or 0)
+    tout = int(usage.get("candidatesTokenCount") or 0) + int(usage.get("thoughtsTokenCount") or 0)  # «думання» теж платне
+    from apps.crm.models import AiUsage
+    AiUsage.objects.create(source=MARKUP_SOURCE, model=MARKUP_MODEL, in_tok=tin, out_tok=tout,
+                           cost_usd=(tin * MARKUP_PRICE[0] + tout * MARKUP_PRICE[1]) / 1_000_000)
+    text = "".join(p.get("text", "") for p in ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts", []))
+    return json.loads(text or "{}")
+
+
+def markup(asset, folder):
+    """Розмітити одне відео (один раз). Повертає кількість сцен."""
+    if asset.markup_at:
+        return asset.scenes.count()
+    light = _light_copy(fetch_original(asset, folder), folder)
+    data = _gemini([{"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(light).decode()}},
+                    {"text": MARKUP_PROMPT}])
+    VideoScene.objects.filter(asset=asset).delete()
+    scenes = data if isinstance(data, list) else (data.get("scenes") or [])  # Gemini іноді віддає одразу список
+    n = 0
+    for s in scenes[:40]:
+        if not isinstance(s, dict):
+            continue
+        try:
+            start, end = float(s["start"]), float(s["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if end - start < 0.8:
+            continue
+        VideoScene.objects.create(asset=asset, start=start, end=end, shot=str(s.get("shot", ""))[:40],
+                                  what=str(s.get("what", ""))[:300], quality=max(1, min(5, int(s.get("quality") or 3))),
+                                  tags=[str(t)[:30] for t in (s.get("tags") or [])][:5])
+        n += 1
+    asset.markup_at = timezone.now()
+    asset.save(update_fields=["markup_at"])
+    return n
+
+
+def candidates(material, limit=15, max_mb=60):
+    """Відео матеріалу для розмітки: спершу вже розмічені, далі короткі (3–40 с) і не завеликі."""
+    qs = SourceAsset.objects.filter(kind="video", material=material, hidden=False)
+    done = list(qs.exclude(markup_at=None)[:limit])
+    rest = list(qs.filter(markup_at=None, duration__gte=3, duration__lte=40, size__lte=max_mb * 1024 * 1024)
+                .order_by("-duration")[:max(0, limit - len(done))])
+    return done + rest
+
+
+PLAN_SYSTEM = """Ти монтажер коротких вертикальних роликів Wallcov (декоративні штукатурки, Україна). Аудиторія — жінки, які роблять ремонт самі.
+Зроби рилс 12–16 секунд на задану тему з ГОТОВИХ сцен (каталог нижче: id, секунди, що в кадрі, якість).
+Структура: 1) гачок ≤2,5 с — найкрасивіший кадр фактури + текст-питання; 2) 3–4 кадри з відповіддю; 3) останній кадр — заклик.
+Текст на екрані — українською, до 7 слів на кадр, просто, без жаргону. Факти (цифри витрати, ціни, властивості) — ЛИШЕ з блоку
+«База знань»; якщо точної цифри немає — не пиши її, а запропонуй написати в Direct. Бери сцени з quality ≥3, не повторюй одну сцену.
+seconds кожного кадру не довше за довжину сцени. caption — підпис до рилса 2–4 речення + заклик написати кодове слово в Direct.
+Відповідай ЛИШЕ JSON: {"title":"...","caption":"...","beats":[{"text":"...","scene_id":123,"seconds":2.5}],"checks":["що перевірити людині"]}"""
+
+
+def plan(topic, material, scenes, call=None):
+    facts_text, fact_titles = kb_facts(f"{topic} {material}")
+    catalog = "\n".join(f"{s.id} | {s.end - s.start:.1f}с | {s.shot} | {s.what} | q{s.quality}" for s in scenes)
+    prompt = f"Тема: {topic}\nМатеріал: {material}\n\nКаталог сцен:\n{catalog}\n\nБаза знань:\n{facts_text or '(немає)'}"
+    if call is None:
+        from apps.crm.ai import claude_json
+        call = lambda p: claude_json(p, model="claude-sonnet-4-6", max_tokens=1500, system=PLAN_SYSTEM, source=PLAN_SOURCE)
+    r = call(prompt) or {}
+    valid = {s.id: s for s in scenes}
+    beats = []
+    for b in r.get("beats") or []:
+        try:
+            sid = int(b.get("scene_id"))
+        except (TypeError, ValueError):
+            continue
+        if sid in valid:
+            sc = valid[sid]
+            secs = max(1.0, min(float(b.get("seconds") or 2.5), sc.end - sc.start))
+            beats.append({"text": str(b.get("text") or "")[:80], "scene_id": sid, "seconds": round(secs, 2)})
+    if len(beats) < 3:
+        raise ReelError("Замало придатних сцен для ролика — розмітьте більше відео цього матеріалу.")
+    return {"title": str(r.get("title") or topic)[:200], "caption": str(r.get("caption") or ""),
+            "beats": beats[:6], "checks": r.get("checks") or [], "facts": fact_titles}
+
+
+def _wrap(text, width=18):
+    return "\n".join(textwrap.wrap(text, width=width)) or " "
+
+
+def render(p, folder):
+    """Змонтувати ролик за планом. Повертає (bytes mp4, тривалість)."""
+    segs = []
+    for n, b in enumerate(p["beats"]):
+        sc = VideoScene.objects.select_related("asset").get(pk=b["scene_id"])
+        src = fetch_original(sc.asset, folder)
+        tf = os.path.join(folder, f"t{n}.txt")
+        with open(tf, "w") as f:
+            f.write(_wrap(b["text"]))
+        out = os.path.join(folder, f"seg{n}.mp4")
+        vf = ("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,"
+              f"drawtext=fontfile={FONT}:textfile={tf}:fontcolor=white:fontsize=68:line_spacing=14:"
+              "box=1:boxcolor=black@0.45:boxborderw=26:x=(w-text_w)/2:y=h*0.70")
+        _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{sc.start:.2f}", "-i", src, "-t", f"{b['seconds']:.2f}",
+              "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
+        segs.append(out)
+    lst = os.path.join(folder, "list.txt")
+    with open(lst, "w") as f:
+        f.write("".join(f"file '{s}'\n" for s in segs))
+    joined = os.path.join(folder, "joined.mp4")
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", joined])
+    final = os.path.join(folder, "reel.mp4")
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", joined, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+          "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", final])
+    dur = float(_run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", final]).stdout.strip())
+    with open(final, "rb") as f:
+        return f.read(), dur
+
+
+def make_reel(topic, material, markup_limit=15, call=None):
+    """Повний цикл: розмітка (лише нове) → сценарій → монтаж → ReelDraft з файлом у CRM."""
+    from secrets import token_urlsafe
+    from apps.inbox.models import SharedLink
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        for a in candidates(material, limit=markup_limit):
+            try:
+                markup(a, folder)
+            except Exception:  # одне «криве» відео не зупиняє ролик; не позначаємо як розмічене
+                continue
+        scenes = list(VideoScene.objects.filter(asset__material=material, quality__gte=3, asset__hidden=False)
+                      .select_related("asset").order_by("-quality")[:80])
+        p = plan(topic, material, scenes, call=call)
+        data, dur = render(p, folder)
+        link = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{material}.mp4",
+                                         content_type="video/mp4", data=data)
+        return ReelDraft.objects.create(title=p["title"], topic=topic, material=material, caption=p["caption"],
+                                        beats=p["beats"], facts=p["facts"] + [f"Перевірити: {c}" for c in p["checks"]][:10],
+                                        file=link, duration=round(dur, 1))
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def spent_month():
+    return round(questions.month_spent(MARKUP_SOURCE) + questions.month_spent(PLAN_SOURCE), 4)

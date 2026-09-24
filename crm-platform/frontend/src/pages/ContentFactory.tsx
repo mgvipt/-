@@ -7,6 +7,7 @@
  * «Джерела контенту» (24.09): файли з TG-груп, каналу й Google Drive лише за посиланням, мітки з підпису/шляху папок.
  * Telegram-автопілот: підвкладка «Опубліковані й аналітика» — перегляди/реакції з публічного віджета каналу, знімки в часі.
  * Етап 3 (24.09): «Стрічка рекомендацій» (Virale, мітка ×N від звичного) і «Аналітик» (тижневий звіт + 5 ідей).
+ * Етапи 4–5 (24.09): «Рилси» — розмітка сцен (Gemini) лише потрібного матеріалу, сценарій, монтаж ffmpeg 9:16.
  * Прокрутка: .view у Layout має overflow:hidden, тому сторінка гортає САМА — .cf на всю висоту, .cf-main overflow:auto (вниз і вбік).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
@@ -61,6 +62,11 @@ type FeedT = {
 };
 type ReportT = { id: number; created_at: string; period_days: number; summary: string; model: string;
   ideas: { title: string; hook: string; why: string; format: string; material: string }[]; inputs: Record<string, any> };
+type ReelT = {
+  id: number; title: string; topic: string; material: string; caption: string; status: string; status_display: string;
+  duration: number | null; error: string; facts: string[]; created_at: string; video_url: string;
+  beats: { text: string; scene_id: number; seconds: number; what: string; source: string }[];
+};
 type DriveFolderT = { id: number; folder_id: string; title: string; enabled: boolean; files_count: number; last_error: string; last_sync_at: string | null; link: string };
 type TgData = {
   settings: { daily_drafts: boolean; model: string; models: [string, string][]; monthly_budget_usd: number;
@@ -93,7 +99,7 @@ const SECTIONS: Section[] = [
     "Завантажуєте нарізки як є — без сценарію й дублів",
     "ШІ розмічає кожну сцену: матеріал, колір, етап (нанесення, блік, готова стіна), світло",
     "Пошук сцен: «Галатея, крупно, блік»"] },
-  { id: "reels", label: "Рилси", stage: 5, group: "Виробництво", what: [
+  { id: "reels", label: "Рилси", stage: 5, group: "Виробництво", live: true, what: [
     "Сценарій з питання клієнтів → добір кадрів з ваших нарізок → монтаж 9:16 → субтитри → голос",
     "ШІ-кадри лише для фону; стіна в кадрі — завжди справжня",
     "Спершу чернетка — ви дивитесь і натискаєте «в публікацію»"] },
@@ -277,11 +283,19 @@ const CSS = `
 .cf-idea .n{font-weight:800;font-size:18px;color:var(--cf-gold)}
 .cf-idea b{font-size:14px}
 .cf-idea p{margin:3px 0 0;font-size:13px;color:var(--cf-ink2)}
+.cf-reel{display:grid;grid-template-columns:270px minmax(0,1fr);gap:18px;align-items:start;background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:12px;padding:14px}
+.cf-reel video{width:270px;aspect-ratio:9/16;border-radius:10px;background:#000;display:block}
+.cf-beat{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;padding:7px 0;border-top:1px solid var(--cf-line);font-size:13px}
+.cf-beat:first-of-type{border-top:0}
+.cf-beat i{font-style:normal;color:var(--cf-gold);font-weight:700;font-variant-numeric:tabular-nums}
+.cf-beat small{display:block;color:var(--cf-ink3);font-size:11.5px;margin-top:2px}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
   .cf-topic{grid-template-columns:44px minmax(0,1fr)}
   .cf-tg{grid-template-columns:340px minmax(0,1fr)}
+  .cf-reel{grid-template-columns:220px minmax(0,1fr)}
+  .cf-reel video{width:220px}
   .cf-topic .cf-acts{grid-column:1/-1}
   .cf{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
   .cf-rail{border-right:0;border-bottom:1px solid var(--cf-line);flex-direction:row;flex-wrap:nowrap;gap:4px;padding:12px;overflow-x:auto}
@@ -1183,6 +1197,66 @@ function Analyst() {
   );
 }
 
+function Reels() {
+  const [data, setData] = useState<{ reels: ReelT[]; materials: { name: string; videos: number }[]; marked: Record<string, number>; scenes: number; spent_month_usd: number; ideas: { title: string; material: string }[] } | null>(null);
+  const [topic, setTopic] = useState("");
+  const [material, setMaterial] = useState("Галатея");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = useCallback(async () => { try { setData(await api.get("/api/content-factory/reels/")); } catch { setMsg({ ok: false, text: "Не вдалося завантажити." }); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const make = async () => {
+    setMsg(null);
+    try { const r: any = await api.post("/api/content-factory/reels/", { topic, material }); setMsg({ ok: true, text: r.note + " Оновіть сторінку за кілька хвилин." }); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
+  };
+  const act = async (r: ReelT, b: Record<string, unknown>) => { await api.patch(`/api/content-factory/reels/${r.id}/`, b); load(); };
+  const sendMe = async (r: ReelT) => {
+    try { const x: any = await api.post(`/api/content-factory/reels/${r.id}/test/`); setMsg({ ok: true, text: x.note }); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося надіслати." }); }
+  };
+  if (!data) return <div className="cf-empty">Завантажую…</div>;
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Рилси з ваших нарізок</h1>
+        <p className="cf-sub">ШІ один раз переглядає відео потрібного матеріалу й запамʼятовує, що на якій секунді. Потім пише сценарій на 12–16 секунд
+          (факти лише з бази знань), підбирає кадри й монтує 9:16 з великими субтитрами. Стіна в кадрі — завжди справжня. Музику додасте в Instagram.</p>
+      </div>
+      <div className="cf-card">
+        <h3>Новий рилс</h3>
+        <div className="cf-set">
+          <input id="cf-reel-topic" className="cf-in" style={{ flex: 1, minWidth: 260 }} placeholder="Тема: наприклад «Чи видно шви на Галатеї»" value={topic} onChange={(e) => setTopic(e.target.value)} />
+          <select id="cf-reel-mat" className="cf-in" value={material} onChange={(e) => setMaterial(e.target.value)} aria-label="Матеріал">
+            {data.materials.map((m) => <option key={m.name} value={m.name}>{m.name} · {m.videos} відео · розмічено {data.marked[m.name] || 0}</option>)}
+          </select>
+          <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={!topic.trim()} onClick={make}>Зробити рилс</button>
+        </div>
+        {data.ideas.length > 0 && <div className="cf-chips">{data.ideas.map((i) => <button key={i.title} type="button" className="cf-chip" onClick={() => { setTopic(i.title); if (i.material) setMaterial(i.material); }}>💡 {i.title}</button>)}</div>}
+        <div className="cf-kv"><span>Розмічено сцен: {data.scenes} · витрачено цього місяця {usd(data.spent_month_usd)} · один рилс ≈ $0.05–0.15 (перший раз по матеріалу — дорожче через розмітку)</span></div>
+        {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+      </div>
+      {data.reels.length === 0 ? <div className="cf-empty">Рилсів ще немає.</div> : data.reels.map((r) => (
+        <div key={r.id} className="cf-reel">
+          {r.video_url ? <video src={r.video_url} controls playsInline preload="metadata" /> : <div className="cf-empty">{r.error || "без відео"}</div>}
+          <div className="cf-side">
+            <div className="cf-role-h"><h4>{r.title}</h4><span className={"cf-pill " + (r.status === "approved" ? "now" : "next")}>{r.status_display}</span></div>
+            <div className="cf-kv"><span>{r.material} · {r.duration ? `${r.duration} с` : ""} · {new Date(r.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></div>
+            {r.error && <div className="cf-msg err">{r.error}</div>}
+            <div>{r.beats.map((b, n) => (
+              <div key={n} className="cf-beat"><i>{b.seconds}с</i><div>{b.text}<small>кадр: {b.what}{b.source ? <> · <a href={b.source} target="_blank" rel="noreferrer" style={{ color: "var(--cf-blue)" }}>оригінал ↗</a></> : null}</small></div></div>))}</div>
+            {r.caption && <div className="cf-card" style={{ padding: 10 }}><h3>Підпис</h3><div className="cf-rep" style={{ fontSize: 13 }}>{r.caption}</div></div>}
+            {r.facts.filter((f) => f.startsWith("Перевірити")).length > 0 && <ul className="cf-list warn">{r.facts.filter((f) => f.startsWith("Перевірити")).map((f, i) => <li key={i}>{f}</li>)}</ul>}
+            <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+              {r.video_url && <button type="button" className="cf-btn ghost" onClick={() => sendMe(r)}>Надіслати мені в Telegram</button>}
+              {r.status !== "approved" && r.video_url && <button type="button" className="cf-btn gold" style={{ height: 32 }} onClick={() => act(r, { status: "approved" })}>Схвалити</button>}
+              {r.status !== "rejected" && <button type="button" className="cf-btn ghost" onClick={() => act(r, { status: "rejected" })}>Відхилити</button>}
+            </div>
+          </div>
+        </div>))}
+    </>
+  );
+}
+
 function Soon({ s }: { s: Section }) {
   return (
     <>
@@ -1233,6 +1307,7 @@ export default function ContentFactory() {
           : section.id === "sources" ? <Sources />
           : section.id === "feed" ? <Feed />
           : section.id === "analyst" ? <Analyst />
+          : section.id === "reels" ? <Reels />
           : <Soon s={section} />}
         </div>
       </main>

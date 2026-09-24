@@ -46,3 +46,8 @@ urlpatterns += [
     path("api/content-factory/feed/<int:pk>/", views.FeedItemView.as_view()),
     path("api/content-factory/analyst/", views.AnalystView.as_view()),
 ]
+urlpatterns += [
+    path("api/content-factory/reels/", views.ReelsView.as_view()),
+    path("api/content-factory/reels/<int:pk>/", views.ReelView.as_view()),
+    path("api/content-factory/reels/<int:pk>/test/", views.ReelView.as_view(), {"action": "test"}),
+]
