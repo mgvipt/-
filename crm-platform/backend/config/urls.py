@@ -73,6 +73,7 @@ router.register("calls", tel_views.CallViewSet)
 urlpatterns = [
     path("", include("apps.content_library.urls")),
     path("", include("apps.content_factory.urls")),  # контент-завод (24.09.2026)
+    path("", include("apps.assistant.urls")),  # особистий асистент Олега (24.09.2026)
     path("api/deal-economics/", include("apps.dealecon.urls")),  # економіка угоди (14.09.2026)
     path("api/product-source/", ProductReadCatalog.as_view()),
     path("api/products/technical-sheet/", ProductTechnicalSheet.as_view()),

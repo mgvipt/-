@@ -30,6 +30,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/content-audience", "База контент-лидов", "База контент-лідів", "chart", "marketing.view"],
   ["/content-factory", "Контент-завод", "Контент-завод", "🎬", "content_factory.access"],  // 24.09.2026: поки лише власник
+  ["/assistant", "Ассистент", "Асистент", "🧠", "assistant.owner"],  // 24.09.2026: особистий ШІ-асистент, код права є лише в суперюзера
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],
   ["/ai-costs", "AI ЦЕНТР", "AI ЦЕНТР", "brain", "settings.agent"],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
