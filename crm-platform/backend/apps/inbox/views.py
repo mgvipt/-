@@ -141,6 +141,12 @@ class MediaLibraryView(APIView):
                     selected.append(item)
                 elif _is_color_swatch(item) and item.color_code and item.color_code not in seen_codes:
                     selected.append(item); seen_codes.add(item.color_code)
+            # 24.09.2026 (Олег): реальні фото обʼєктів не мають коду кольору — показуємо їх
+            # окремим блоком одразу в матеріалі, інакше менеджер їх ніде не бачить.
+            picked = {x.id for x in selected}
+            for item in scoped.filter(tags__icontains="реальне фото").order_by("title", "id")[:200]:
+                if item.id not in picked:
+                    selected.append(item); picked.add(item.id)
             return Response({"items": [_library_item_data(request, x) for x in selected],
                              "materials": [], "replies": reply_data})
         folder_links, product_folders = _reply_folders_payload()
