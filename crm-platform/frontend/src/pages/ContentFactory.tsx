@@ -4,6 +4,7 @@
  * Етап 2 (24.09): «Telegram-автопілот» — чернетки постів з найчастіших питань: факти з бази знань, реальні фото,
  *   попередній перегляд як у Telegram. 24.09: публікація через @wallcov_smm_bot — зараз / за планом / «Надіслати мені»;
  *   календар 7 днів, фото й відео з бібліотеки, пост вручну.
+ * «Джерела контенту» (24.09): файли з TG-груп і каналу за file_id (без завантаження), мітки з підпису; їх можна додати в пост.
  * Прокрутка: .view у Layout має overflow:hidden, тому сторінка гортає САМА — .cf на всю висоту, .cf-main overflow:auto (вниз і вбік).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
@@ -29,9 +30,18 @@ type QSettings = {
 };
 type QData = { days: number; topics: Topic[]; statuses: [string, string][]; settings: QSettings };
 type TgPhoto = { id: number; title: string; url: string; preview_url: string };
+type SrcItem = {
+  id: number; kind: string; kind_display: string; caption: string; material: string; tags: string[]; link: string;
+  chat: string; hidden: boolean; thumb_url: string; duration: number | null; posted_at: string | null;
+};
+type SrcData = {
+  total: number; items: SrcItem[]; ingest_ready: boolean;
+  chats: { id: number; title: string; username: string; kind: string; enabled: boolean; count: number }[];
+  materials: { name: string; count: number }[];
+};
 type TgPostT = {
   id: number; title: string; text: string; material: string; status: string; status_display: string; photos: TgPhoto[];
-  videos: TgPhoto[]; photo_ids: number[]; video_ids: number[];
+  videos: TgPhoto[]; photo_ids: number[]; video_ids: number[]; sources: SrcItem[]; source_ids: number[];
   facts: string[]; checks: string[]; model: string; topic: { id: number; title: string } | null; created_at: string;
   scheduled_at: string | null; published_at: string | null; publish_error: string;
 };
@@ -62,7 +72,7 @@ const SECTIONS: Section[] = [
     "Вірусні ролики ніші з фільтрами: соцмережа, період, тривалість, формат, хук",
     "Кнопка «зробити з наших» — той самий прийом, але ваша фактура з ваших нарізок",
     "Вибране одразу в план"] },
-  { id: "sources", label: "Вихідники відео", stage: 4, group: "Виробництво", what: [
+  { id: "sources", label: "Джерела контенту", stage: 4, group: "Виробництво", live: true, what: [
     "Завантажуєте нарізки як є — без сценарію й дублів",
     "ШІ розмічає кожну сцену: матеріал, колір, етап (нанесення, блік, готова стіна), світло",
     "Пошук сцен: «Галатея, крупно, блік»"] },
@@ -217,6 +227,17 @@ const CSS = `
 .cf-slot{font-size:11.5px;line-height:1.3;background:var(--cf-panel2);border-radius:6px;padding:5px 6px}
 .cf-slot i{font-style:normal;color:var(--cf-gold);font-variant-numeric:tabular-nums;margin-right:4px}
 .cf-slot.pub{opacity:.6}
+.cf-src-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.cf-src{background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:auto 1fr}
+.cf-src .ph{position:relative;aspect-ratio:1/1;background:#0b1118;display:grid;place-items:center;color:var(--cf-ink3);font-size:12px}
+.cf-src .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-src .ph span{position:absolute;left:6px;top:6px;font-size:10.5px;background:rgba(0,0,0,.65);color:#fff;padding:3px 6px;border-radius:4px}
+.cf-src .bd{padding:8px 9px;display:grid;gap:5px;align-content:start;font-size:12px}
+.cf-src .cap{color:var(--cf-ink);line-height:1.35;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cf-src a{color:var(--cf-blue);text-decoration:none}
+.cf-chatrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--cf-line);font-size:13px}
+.cf-chatrow:first-of-type{border-top:0}
+.cf-steps{margin:0;padding-left:18px;display:grid;gap:5px;font-size:13px;color:var(--cf-ink2)}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
@@ -540,8 +561,11 @@ function TgPreview({ post, channel }: { post: TgPostT; channel: string }) {
     <div className="tg-chat" aria-label="Попередній перегляд поста в Telegram">
       <div className="tg-head"><span className="tg-ava">W</span><div><b>Wallcov · рішення для інтерʼєру</b><span>{channel} · канал</span></div></div>
       <div className="tg-bubble">
-        {(post.videos.length + post.photos.length) > 0 && (
+        {(post.sources.length + post.videos.length + post.photos.length) > 0 && (
           <div className="tg-album">
+            {post.sources.map((s) => s.kind === "video"
+              ? <div key={"s" + s.id} className="tg-vid"><img src={s.thumb_url} alt={s.caption} loading="lazy" /><span>▶</span></div>
+              : <img key={"s" + s.id} src={s.thumb_url} alt={s.caption} loading="lazy" />)}
             {post.videos.map((v) => <div key={"v" + v.id} className="tg-vid"><img src={v.preview_url || v.url} alt={v.title} loading="lazy" /><span>▶</span></div>)}
             {post.photos.map((ph) => <img key={ph.id} src={ph.preview_url || ph.url} alt={ph.title} loading="lazy" />)}
           </div>
@@ -561,15 +585,22 @@ const localInput = (iso: string | null) => {
 const dayTime = (iso: string) => new Date(iso).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
 
 function MediaPicker({ post, onSave }: { post: TgPostT; onSave: (b: Record<string, unknown>) => void }) {
-  const [kind, setKind] = useState<"image" | "video">("image");
+  const [kind, setKind] = useState<"image" | "video" | "tg">("image");
   const [material, setMaterial] = useState(post.material || "");
+  const [src, setSrc] = useState<SrcItem[] | null>(null);
+  useEffect(() => {
+    if (kind !== "tg") return;
+    api.get<SrcData>(`/api/content-factory/sources/?material=${encodeURIComponent(material)}`)
+      .then((d) => setSrc(d.items.filter((i) => i.kind === "photo" || i.kind === "video"))).catch(() => setSrc([]));
+  }, [kind, material]);
   const [data, setData] = useState<{ items: TgPhoto[]; materials: string[] } | null>(null);
   useEffect(() => {
+    if (kind === "tg") return;
     api.get<{ items: TgPhoto[]; materials: string[] }>(`/api/content-factory/telegram/media/?kind=${kind}&material=${encodeURIComponent(material)}`)
       .then(setData).catch(() => setData({ items: [], materials: [] }));
   }, [kind, material]);
-  const field = kind === "video" ? "video_ids" : "photo_ids";
-  const chosen: number[] = kind === "video" ? post.video_ids : post.photo_ids;
+  const field = kind === "tg" ? "source_ids" : kind === "video" ? "video_ids" : "photo_ids";
+  const chosen: number[] = kind === "tg" ? post.source_ids : kind === "video" ? post.video_ids : post.photo_ids;
   const toggle = (id: number) => onSave({ [field]: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] });
   return (
     <div className="cf-picker">
@@ -577,6 +608,7 @@ function MediaPicker({ post, onSave }: { post: TgPostT; onSave: (b: Record<strin
         <div className="cf-chips">
           <button type="button" className={"cf-chip" + (kind === "image" ? " on" : "")} onClick={() => setKind("image")}>Реальні фото</button>
           <button type="button" className={"cf-chip" + (kind === "video" ? " on" : "")} onClick={() => setKind("video")}>Відео</button>
+          <button type="button" className={"cf-chip" + (kind === "tg" ? " on" : "")} onClick={() => setKind("tg")}>З груп Telegram</button>
         </div>
         <select className="cf-in" value={material} onChange={(e) => setMaterial(e.target.value)} aria-label="Матеріал">
           <option value="">Усі матеріали</option>
@@ -584,7 +616,12 @@ function MediaPicker({ post, onSave }: { post: TgPostT; onSave: (b: Record<strin
         </select>
       </div>
       <div className="cf-pick-grid">
-        {!data ? <span className="cf-kv">Завантажую…</span> : data.items.length === 0 ? <span className="cf-kv">Нічого немає</span>
+        {kind === "tg" ? (!src ? <span className="cf-kv">Завантажую…</span> : src.length === 0 ? <span className="cf-kv">Із груп ще нічого не прийшло</span>
+          : src.map((s) => (
+            <button key={s.id} type="button" className={chosen.includes(s.id) ? "on" : ""} title={s.caption} onClick={() => toggle(s.id)}>
+              <img src={s.thumb_url} alt={s.caption} loading="lazy" />
+            </button>)))
+        : !data ? <span className="cf-kv">Завантажую…</span> : data.items.length === 0 ? <span className="cf-kv">Нічого немає</span>
           : data.items.map((m) => (
             <button key={m.id} type="button" className={chosen.includes(m.id) ? "on" : ""} title={m.title} onClick={() => toggle(m.id)}>
               <img src={m.preview_url || m.url} alt={m.title} loading="lazy" />
@@ -670,6 +707,9 @@ function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; c
         <div className="cf-kv"><span>Медіа</span><b style={{ fontWeight: 500 }}>{post.videos.length ? `${post.videos.length} відео · ` : ""}{post.photos.length} фото{post.material ? " · " + post.material : ""}</b></div>
         {!published && (<>
           <div className="cf-media">
+            {post.sources.map((s) => (
+              <div key={"s" + s.id} className="cf-thumb"><img src={s.thumb_url} alt={s.caption} /><em>{s.kind === "video" ? "▶ TG" : "TG"}</em>
+                <button type="button" aria-label="Прибрати" onClick={() => patch({ source_ids: post.source_ids.filter((x) => x !== s.id) })}>✕</button></div>))}
             {[...post.videos.map((m) => ({ ...m, v: true })), ...post.photos.map((m) => ({ ...m, v: false }))].map((m) => (
               <div key={(m.v ? "v" : "p") + m.id} className="cf-thumb"><img src={m.preview_url || m.url} alt={m.title} />{m.v && <em>▶ відео</em>}
                 <button type="button" aria-label="Прибрати" onClick={() => patch(m.v ? { video_ids: post.video_ids.filter((x) => x !== m.id) } : { photo_ids: post.photo_ids.filter((x) => x !== m.id) })}>✕</button></div>))}
@@ -785,6 +825,83 @@ function Telegram() {
   );
 }
 
+function Sources() {
+  const [data, setData] = useState<SrcData | null>(null);
+  const [f, setF] = useState({ chat: "", material: "", kind: "", q: "" });
+  const [err, setErr] = useState("");
+  const load = useCallback(async () => {
+    const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][]).toString();
+    try { setData(await api.get<SrcData>(`/api/content-factory/sources/?${qs}`)); setErr(""); }
+    catch { setErr("Не вдалося завантажити джерела."); }
+  }, [f]);
+  useEffect(() => { load(); }, [load]);
+  const toggleChat = async (id: number, enabled: boolean) => {
+    try { await api.patch(`/api/content-factory/sources/chats/${id}/`, { enabled }); load(); }
+    catch (e: any) { setErr(e?.data?.error || "Не вдалося змінити."); }
+  };
+  const hide = async (id: number) => { await api.patch(`/api/content-factory/sources/${id}/`, { hidden: true }); load(); };
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Джерела контенту</h1>
+        <p className="cf-sub">Фото й відео з ваших Telegram-груп і каналу. Файли лишаються в Telegram — CRM зберігає лише посилання й підпис,
+          тож сервер не навантажується. Що ви пишете під фото, стає мітками: матеріал, кімната, етап, #хештеги.</p>
+      </div>
+      {err && <div className="cf-msg err" role="alert">{err}</div>}
+      <div className="cf-q-top">
+        <div className="cf-card">
+          <h3>Чати</h3>
+          {!data ? <div className="cf-kv">Завантажую…</div> : data.chats.length === 0
+            ? <div className="cf-kv"><span>Бот ще не бачив жодної групи.</span></div>
+            : data.chats.map((c) => (
+              <div key={c.id} className="cf-chatrow">
+                <span>{c.title}{c.username ? ` · @${c.username}` : ""} <span style={{ color: "var(--cf-ink3)" }}>· {c.count} файлів</span></span>
+                <button type="button" className={"cf-btn " + (c.enabled ? "ghost" : "gold")} style={{ height: 30 }}
+                  onClick={() => toggleChat(c.id, !c.enabled)}>{c.enabled ? "Вимкнути" : "Приймати файли"}</button>
+              </div>))}
+        </div>
+        <div className="cf-card">
+          <h3>Як підключити групу</h3>
+          <ol className="cf-steps">
+            <li>Відкрийте групу в Telegram → Керування → Адміністратори → Додати → @wallcov_smm_bot.</li>
+            <li>Надішліть у групу будь-яке фото — група зʼявиться зліва.</li>
+            <li>Натисніть «Приймати файли». Далі кожне нове фото чи відео потрапляє сюди саме.</li>
+          </ol>
+          <div className="cf-kv"><span>Бот бачить лише нові повідомлення — старі файли групи підтягнемо окремо.</span></div>
+          {data && !data.ingest_ready && <div className="cf-msg err">Приймання ще не підключене на сервері.</div>}
+        </div>
+      </div>
+      <div className="cf-set">
+        <select className="cf-in" value={f.chat} onChange={(e) => setF({ ...f, chat: e.target.value })} aria-label="Чат">
+          <option value="">Усі чати</option>{(data?.chats || []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
+        <select className="cf-in" value={f.material} onChange={(e) => setF({ ...f, material: e.target.value })} aria-label="Матеріал">
+          <option value="">Усі матеріали</option>{(data?.materials || []).map((m) => <option key={m.name} value={m.name}>{m.name} · {m.count}</option>)}
+        </select>
+        <select className="cf-in" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })} aria-label="Тип">
+          <option value="">Фото й відео</option><option value="photo">Фото</option><option value="video">Відео</option><option value="document">Файли</option>
+        </select>
+        <input id="cf-src-q" className="cf-in" style={{ width: 220 }} placeholder="Пошук у підписах" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
+        <span className="cf-kv">{data ? `${data.total} файлів` : ""}</span>
+      </div>
+      {!data ? null : data.items.length === 0 ? <div className="cf-empty">Поки порожньо — підключіть групу за інструкцією вище.</div> : (
+        <div className="cf-src-grid">
+          {data.items.map((s) => (
+            <div key={s.id} className="cf-src">
+              <div className="ph">{s.thumb_url ? <img src={s.thumb_url} alt={s.caption} loading="lazy" /> : s.kind_display}
+                <span>{s.kind === "video" ? `▶ ${s.duration ?? ""}с` : s.kind_display}</span></div>
+              <div className="bd">
+                <div className="cap">{s.caption || <em style={{ color: "var(--cf-ink3)" }}>без підпису</em>}</div>
+                <div className="cf-tags">{s.material && <span className="cf-tag kb">{s.material}</span>}{s.tags.map((t) => <span key={t} className="cf-tag">{t}</span>)}</div>
+                <div className="cf-kv"><a href={s.link} target="_blank" rel="noreferrer">{s.chat} ↗</a>
+                  <button type="button" className="cf-btn ghost" style={{ height: 24, fontSize: 11 }} onClick={() => hide(s.id)}>Сховати</button></div>
+              </div>
+            </div>))}
+        </div>)}
+    </>
+  );
+}
+
 function Soon({ s }: { s: Section }) {
   return (
     <>
@@ -832,6 +949,7 @@ export default function ContentFactory() {
           : section.id === "channels" ? <Channels data={list} reload={load} />
           : section.id === "questions" ? <Questions />
           : section.id === "telegram" ? <Telegram />
+          : section.id === "sources" ? <Sources />
           : <Soon s={section} />}
         </div>
       </main>

@@ -201,6 +201,7 @@ class TgPost(models.Model):
     scheduled_at = models.DateTimeField(null=True, blank=True, db_index=True,
                                         help_text="Коли опублікувати (лише схвалені). Порожньо — вручну")
     publish_error = models.CharField(max_length=300, blank=True)
+    source_ids = models.JSONField(default=list, blank=True, help_text="SourceAsset з TG — шлються за file_id, без завантаження")
     facts = models.JSONField(default=list, blank=True, help_text="Назви записів бази знань, з яких узято факти")
     checks = models.JSONField(default=list, blank=True, help_text="Що перевірити людині перед публікацією")
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT, db_index=True)
@@ -212,3 +213,55 @@ class TgPost(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+# ── Джерела контенту (24.09.2026): TG-групи/канал і Google Drive — лише посилання, без завантаження ──
+
+class SourceChat(models.Model):
+    """Чат Telegram, звідки бот пересилає файли. Новий чат зʼявляється вимкненим — вмикає власник."""
+    chat_id = models.BigIntegerField(unique=True)
+    title = models.CharField(max_length=200, blank=True)
+    username = models.CharField(max_length=100, blank=True)
+    kind = models.CharField(max_length=20, blank=True, help_text="group / supergroup / channel")
+    enabled = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title or str(self.chat_id)
+
+
+class SourceAsset(models.Model):
+    """Файл у джерелі. Зберігаємо file_id, підпис і посилання; сам файл лишається в Telegram/Drive."""
+    class Origin(models.TextChoices):
+        TELEGRAM = "telegram", "Telegram"
+        DRIVE = "drive", "Google Drive"
+
+    class Kind(models.TextChoices):
+        PHOTO = "photo", "Фото"
+        VIDEO = "video", "Відео"
+        DOCUMENT = "document", "Файл"
+        AUDIO = "audio", "Аудіо"
+
+    origin = models.CharField(max_length=12, choices=Origin.choices, default=Origin.TELEGRAM)
+    kind = models.CharField(max_length=12, choices=Kind.choices)
+    chat = models.ForeignKey(SourceChat, null=True, blank=True, on_delete=models.SET_NULL, related_name="assets")
+    message_id = models.BigIntegerField(null=True, blank=True)
+    media_group_id = models.CharField(max_length=40, blank=True, db_index=True)
+    file_id = models.CharField(max_length=255, help_text="Telegram file_id або Drive fileId")
+    file_unique_id = models.CharField(max_length=128, unique=True)
+    thumb_file_id = models.CharField(max_length=255, blank=True)
+    mime = models.CharField(max_length=100, blank=True)
+    size = models.BigIntegerField(null=True, blank=True)
+    width = models.IntegerField(null=True, blank=True)
+    height = models.IntegerField(null=True, blank=True)
+    duration = models.IntegerField(null=True, blank=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    caption = models.TextField(blank=True, help_text="Підпис під файлом — з нього беремо теги")
+    link = models.URLField(max_length=500, blank=True)
+    material = models.CharField(max_length=80, blank=True, db_index=True)
+    tags = models.JSONField(default=list, blank=True)
+    hidden = models.BooleanField(default=False, help_text="Не показувати в добірках (сміття, дубль)")
+    posted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-posted_at", "-id"]

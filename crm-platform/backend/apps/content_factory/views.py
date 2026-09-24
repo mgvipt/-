@@ -8,21 +8,28 @@ PATCH/DELETE /api/content-factory/channels/<id>/
 Етап 1: GET /questions/, PATCH /questions/settings/, POST /questions/run/, PATCH /questions/<id>/
 Етап 2: GET /telegram/, PATCH /telegram/settings/, POST /telegram/draft/, PATCH /telegram/posts/<id>/, POST /telegram/posts/<id>/photos/
 Публікація (24.09): POST /telegram/posts/ (вручну), POST /telegram/posts/<id>/test|publish/, GET /telegram/media/
+Джерела (24.09): POST /sources/ingest/ (бот, секрет), GET /sources/, PATCH /sources/chats/<id>/, PATCH /sources/<id>/,
+  GET /sources/thumb/<підпис>/ (без логіна, підпис діє 1 год)
 """
+import hmac
+import json
+import os
 from datetime import timedelta
 
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from rest_framework.permissions import IsAuthenticated
+from django.http import Http404, HttpResponse
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import questions as qsvc
+from . import sources as srcsvc
 from . import telegram as tgsvc
-from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, TgPost,
-                     TgSettings, parse_channel_link)
+from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, SourceAsset,
+                     SourceChat, TgPost, TgSettings, parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -225,6 +232,8 @@ def _post(request, p):
         "id": p.id, "title": p.title, "text": p.text, "material": p.material, "status": p.status,
         "status_display": p.get_status_display(), "photos": _photos(request, p.photo_ids or []),
         "videos": _photos(request, p.video_ids or []), "photo_ids": p.photo_ids or [], "video_ids": p.video_ids or [],
+        "sources": _source_rows(SourceAsset.objects.filter(id__in=p.source_ids or [])),
+        "source_ids": p.source_ids or [],
         "facts": p.facts or [], "checks": p.checks or [], "model": p.model,
         "topic": {"id": p.topic_id, "title": p.topic.title} if p.topic_id else None,
         "created_at": _iso(p.created_at), "scheduled_at": _iso(p.scheduled_at), "published_at": _iso(p.published_at),
@@ -353,11 +362,11 @@ class TelegramPostView(_Base):
                 p.scheduled_at = when
             else:
                 p.scheduled_at = None
-        for field in ("photo_ids", "video_ids"):
+        for field in ("photo_ids", "video_ids", "source_ids"):
             if field in data:
                 ids = [int(i) for i in (data[field] or []) if str(i).isdigit()]
                 setattr(p, field, ids[:tgsvc.MAX_MEDIA])
-        if len((p.photo_ids or [])) + len((p.video_ids or [])) > tgsvc.MAX_MEDIA:
+        if len(p.photo_ids or []) + len(p.video_ids or []) + len(p.source_ids or []) > tgsvc.MAX_MEDIA:
             return Response({"error": f"У пості максимум {tgsvc.MAX_MEDIA} фото й відео разом."}, status=400)
         if "text" in data:
             text = str(data["text"] or "").strip()
@@ -384,3 +393,90 @@ class TelegramPhotosView(_Base):
         p.photo_ids = new
         p.save(update_fields=["photo_ids", "updated_at"])
         return Response(_post(request, p))
+
+
+# ── Джерела контенту (24.09.2026): TG-групи й канал за посиланням, без завантаження файлів ─────────
+
+def _source_rows(qs):
+    return [{
+        "id": a.id, "kind": a.kind, "kind_display": a.get_kind_display(), "caption": a.caption, "material": a.material,
+        "tags": a.tags or [], "link": a.link, "chat": a.chat.title if a.chat_id else "", "hidden": a.hidden,
+        "thumb_url": f"/api/content-factory/sources/thumb/{srcsvc.thumb_token(a.id)}/"
+        if (a.thumb_file_id or a.kind == "photo") else "",
+        "duration": a.duration, "posted_at": _iso(a.posted_at),
+    } for a in qs.select_related("chat")]
+
+
+class SourceIngestView(APIView):
+    """Приймає апдейти від бота @wallcov_smm_bot (Hetzner). Без логіна — лише із секретом CF_INGEST_SECRET."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        secret = os.environ.get("CF_INGEST_SECRET", "")
+        if not secret or not hmac.compare_digest(request.headers.get("X-CF-Ingest", ""), secret):
+            return Response({"error": "forbidden"}, status=403)
+        try:
+            update = request.data if isinstance(request.data, dict) else json.loads(request.body or b"{}")
+        except ValueError:
+            return Response({"error": "bad json"}, status=400)
+        return Response({"status": srcsvc.ingest(update)})
+
+
+class SourceThumbView(APIView):
+    """Мініатюра за підписаним посиланням (для <img>, де немає заголовка авторизації). Підпис діє 1 годину."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, token):
+        got = srcsvc.thumb_bytes(token)
+        if not got:
+            raise Http404
+        resp = HttpResponse(got[0], content_type=got[1])
+        resp["Cache-Control"] = "private, max-age=3600"
+        return resp
+
+
+class SourcesView(_Base):
+    """GET ?chat=&material=&kind=&q=&hidden= — файли з джерел; плюс список чатів і матеріалів."""
+    def get(self, request):
+        qs = SourceAsset.objects.all()
+        if request.GET.get("hidden") != "1":
+            qs = qs.filter(hidden=False)
+        for key, field in (("chat", "chat_id"), ("material", "material"), ("kind", "kind")):
+            if request.GET.get(key):
+                qs = qs.filter(**{field: request.GET[key]})
+        if request.GET.get("q"):
+            qs = qs.filter(caption__icontains=request.GET["q"])
+        total = qs.count()
+        chats = [{"id": c.id, "title": c.title or str(c.chat_id), "username": c.username, "kind": c.kind,
+                  "enabled": c.enabled, "count": c.n} for c in SourceChat.objects.annotate(n=Count("assets"))]
+        mats = list(SourceAsset.objects.exclude(material="").values_list("material").annotate(n=Count("id")).order_by("-n"))
+        return Response({"total": total, "items": _source_rows(qs[:120]), "chats": chats,
+                         "materials": [{"name": m, "count": n} for m, n in mats],
+                         "ingest_ready": bool(os.environ.get("CF_INGEST_SECRET"))})
+
+
+class SourceChatView(_Base):
+    def patch(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Вмикати джерела може лише власник."}, status=403)
+        c = get_object_or_404(SourceChat, pk=pk)
+        c.enabled = bool((request.data or {}).get("enabled"))
+        c.save(update_fields=["enabled"])
+        return Response({"id": c.id, "enabled": c.enabled})
+
+
+class SourceAssetView(_Base):
+    """PATCH {material?, tags?, hidden?} — поправити теги вручну або сховати файл."""
+    def patch(self, request, pk):
+        a = get_object_or_404(SourceAsset, pk=pk)
+        data = request.data or {}
+        if "material" in data:
+            a.material = str(data["material"] or "")[:80]
+        if "tags" in data:
+            a.tags = [str(x)[:40] for x in (data["tags"] or [])][:20]
+        if "hidden" in data:
+            a.hidden = bool(data["hidden"])
+        a.save()
+        return Response(_source_rows(SourceAsset.objects.filter(pk=a.pk))[0])

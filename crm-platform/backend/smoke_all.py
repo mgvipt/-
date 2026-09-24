@@ -97,6 +97,8 @@ CHECKS = [
     ("Контент-завод: Telegram-автопілот (чернетки)", "owner", "/api/content-factory/telegram/", {200}, ["settings", "posts", "next_topic"]),
     ("Контент-завод: Telegram — менеджеру закрито", "manager", "/api/content-factory/telegram/", {403}, []),
     ("Контент-завод: фото й відео для поста", "owner", "/api/content-factory/telegram/media/?kind=video", {200}, ["items", "materials"]),
+    ("Контент-завод: джерела з TG-груп", "owner", "/api/content-factory/sources/", {200}, ["items", "chats", "ingest_ready"]),
+    ("Контент-завод: джерела — менеджеру закрито", "manager", "/api/content-factory/sources/", {403}, []),
     ("Відгуки: «не просити» у картці клієнта", "manager", "CONTACT_REVIEW_OPTOUT", {200}, ["opt_out", "can_remove"]),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),

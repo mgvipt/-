@@ -26,3 +26,10 @@ urlpatterns += [
     path("api/content-factory/telegram/posts/<int:pk>/test/", views.TelegramSendView.as_view(), {"action": "test"}),
     path("api/content-factory/telegram/posts/<int:pk>/publish/", views.TelegramSendView.as_view(), {"action": "publish"}),
 ]
+urlpatterns += [
+    path("api/content-factory/sources/", views.SourcesView.as_view()),
+    path("api/content-factory/sources/ingest/", views.SourceIngestView.as_view()),
+    path("api/content-factory/sources/thumb/<str:token>/", views.SourceThumbView.as_view()),
+    path("api/content-factory/sources/chats/<int:pk>/", views.SourceChatView.as_view()),
+    path("api/content-factory/sources/<int:pk>/", views.SourceAssetView.as_view()),
+]

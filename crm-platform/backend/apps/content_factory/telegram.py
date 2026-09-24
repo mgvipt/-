@@ -198,18 +198,24 @@ def _tg(method, fields, files=None):
 
 
 def _media(post):
-    """(kind, filename, bytes, content_type) для фото й відео поста, у порядку: відео, потім фото."""
+    """(kind, filename, bytes|None, content_type, file_id) у порядку: файли з TG-груп, відео, фото бібліотеки.
+    Файли з груп ідуть за Telegram file_id — без завантаження на сервер і назад."""
     from apps.inbox.models import MediaLibraryItem
+    from .models import SourceAsset
+    out = []
+    by_src = {a.id: a for a in SourceAsset.objects.filter(id__in=post.source_ids or [], kind__in=["photo", "video"])}
+    for i in post.source_ids or []:
+        if i in by_src:
+            out.append((by_src[i].kind, "", None, "", by_src[i].file_id))
     ids = list(post.video_ids or []) + list(post.photo_ids or [])
     items = {m.id: m for m in MediaLibraryItem.objects.filter(id__in=ids).select_related("file")}
-    out = []
-    for i in ids[:MAX_MEDIA]:
+    for i in ids:
         m = items.get(i)
         if not m or not m.file_id or not m.file.data:
             continue
         kind = "video" if m.kind == "video" else "photo"
-        out.append((kind, m.file.filename or f"{kind}-{i}", bytes(m.file.data), m.file.content_type))
-    return out
+        out.append((kind, m.file.filename or f"{kind}-{i}", bytes(m.file.data), m.file.content_type, ""))
+    return out[:MAX_MEDIA]
 
 
 def send(post, chat_id):
@@ -222,21 +228,26 @@ def send(post, chat_id):
         r = _tg("sendMessage", {"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"})
         return [r["message_id"]]
     if len(media) == 1:
-        kind, fn, data, ct = media[0]
+        kind, fn, data, ct, file_id = media[0]
         method, field = ("sendVideo", "video") if kind == "video" else ("sendPhoto", "photo")
         fields = {"chat_id": chat_id}
         if caption:
             fields["caption"] = caption
-        r = _tg(method, fields, {field: (fn, data, ct)})
+        if file_id:
+            fields[field] = file_id
+            r = _tg(method, fields)
+        else:
+            r = _tg(method, fields, {field: (fn, data, ct)})
         ids.append(r["message_id"])
     else:
         group, files = [], {}
-        for n, (kind, fn, data, ct) in enumerate(media):
-            entry = {"type": kind, "media": f"attach://m{n}"}
+        for n, (kind, fn, data, ct, file_id) in enumerate(media):
+            entry = {"type": kind, "media": file_id or f"attach://m{n}"}
             if n == 0 and caption:
                 entry["caption"] = caption
             group.append(entry)
-            files[f"m{n}"] = (fn, data, ct)
+            if not file_id:
+                files[f"m{n}"] = (fn, data, ct)
         r = _tg("sendMediaGroup", {"chat_id": chat_id, "media": json.dumps(group, ensure_ascii=False)}, files)
         ids += [m["message_id"] for m in r]
     if not caption:

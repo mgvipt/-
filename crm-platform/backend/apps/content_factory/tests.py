@@ -12,8 +12,8 @@ from apps.inbox.models import Channel, Conversation, Message
 from apps.inbox.models import MediaLibraryItem, SharedLink
 from . import questions as qsvc
 from . import telegram as tgsvc
-from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, TgPost,
-                     TgSettings, parse_channel_link)
+from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, SourceAsset,
+                     SourceChat, TgPost, TgSettings, parse_channel_link)
 
 
 class ParseLinkTests(SimpleTestCase):
@@ -341,3 +341,69 @@ class PublishTests(TestCase):
         c.force_authenticate(self.trusted)
         r = c.post("/api/content-factory/telegram/posts/", {"text": "Анонс майстер-класу\nу суботу"}, format="json")
         self.assertEqual((r.status_code, r.json()["title"]), (201, "Анонс майстер-класу"))
+
+
+# ── Джерела: TG-групи за file_id ───────────────────────────────────────────────────────────────
+class SourceTests(TestCase):
+    SECRET = "test-ingest-secret"
+
+    def setUp(self):
+        self.owner = User.objects.create_user(username="src-owner", password="x", is_superuser=True, is_staff=True)
+        self.env = patch.dict("os.environ", {"CF_INGEST_SECRET": self.SECRET, "TG_CONTENT_BOT_TOKEN": "t",
+                                             "TG_CONTENT_CHANNEL_ID": "@wallcovpro", "TG_CONTENT_OWNER_CHAT_ID": "42"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.c = APIClient()
+
+    def _msg(self, mid, uid, caption="", group="", chat_id=-1001234567890, title="Обʼєкти"):
+        m = {"message_id": mid, "date": 1758700000, "chat": {"id": chat_id, "type": "supergroup", "title": title},
+             "photo": [{"file_id": f"small{uid}", "file_unique_id": f"s{uid}", "width": 90, "height": 90},
+                       {"file_id": f"big{uid}", "file_unique_id": uid, "width": 1280, "height": 960, "file_size": 200000}]}
+        if caption:
+            m["caption"] = caption
+        if group:
+            m["media_group_id"] = group
+        return {"message": m}
+
+    def _post(self, update, secret=SECRET):
+        return self.c.post("/api/content-factory/sources/ingest/", update, format="json", HTTP_X_CF_INGEST=secret)
+
+    def test_secret_and_disabled_chat(self):
+        self.assertEqual(self._post(self._msg(1, "u1"), secret="wrong").status_code, 403)
+        self.assertEqual(self._post(self._msg(1, "u1")).json()["status"], "chat-disabled")
+        self.assertFalse(SourceAsset.objects.exists())
+        chat = SourceChat.objects.get()
+        self.assertFalse(chat.enabled)
+        chat.enabled = True
+        chat.save()
+        self.assertEqual(self._post(self._msg(1, "u1", caption="Галатея, спальня #готово")).json()["status"], "created")
+        a = SourceAsset.objects.get()
+        self.assertEqual((a.file_id, a.thumb_file_id, a.material), ("big" + "u1", "smallu1", "Галатея"))
+        self.assertIn("спальня", a.tags)
+        self.assertEqual(a.link, "https://t.me/c/1234567890/1")
+
+    def test_our_channel_auto_enabled_and_album_caption(self):
+        ch = {"id": -100555, "type": "channel", "title": "Wallcov", "username": "wallcovpro"}
+        for n, (uid, cap) in enumerate((("a1", ""), ("a2", "Мокрий шовк у коридорі"), ("a3", ""))):
+            upd = self._msg(10 + n, uid, caption=cap, group="G1")
+            upd = {"channel_post": dict(upd["message"], chat=ch)}
+            self._post(upd)
+        self.assertTrue(SourceChat.objects.get(chat_id=-100555).enabled)
+        self.assertEqual(set(SourceAsset.objects.values_list("material", flat=True)), {"Мокрий шовк"})
+        self.assertEqual(SourceAsset.objects.first().link.split("/")[3], "wallcovpro")
+
+    def test_list_thumb_signature_and_publish_by_file_id(self):
+        SourceChat.objects.create(chat_id=-1001, title="Група", enabled=True)
+        self._post(self._msg(5, "p5", caption="Патера", chat_id=-1001))
+        a = SourceAsset.objects.get()
+        self.c.force_authenticate(self.owner)
+        r = self.c.get("/api/content-factory/sources/?material=Патера").json()
+        self.assertEqual(r["total"], 1)
+        self.assertTrue(r["items"][0]["thumb_url"].startswith("/api/content-factory/sources/thumb/"))
+        self.assertEqual(APIClient().get("/api/content-factory/sources/thumb/forged/").status_code, 404)
+        post = TgPost.objects.create(title="t", text="Текст", status=TgPost.Status.APPROVED, source_ids=[a.id])
+        calls = []
+        with patch.object(tgsvc, "_tg", side_effect=lambda m, f, files=None: calls.append((m, f, files)) or {"message_id": 1}):
+            tgsvc.publish(post.id)
+        method, fields, files = calls[0]
+        self.assertEqual((method, fields["photo"], files), ("sendPhoto", "bigp5", None))  # без завантаження файлу
