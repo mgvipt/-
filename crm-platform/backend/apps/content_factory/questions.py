@@ -48,10 +48,10 @@ def _norm(text):
     return re.sub(r"\W+", " ", (text or "").lower()).strip()
 
 
-def month_spent():
+def month_spent(source=SOURCE):
     from apps.crm.models import AiUsage
     start = timezone.localtime().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return float(AiUsage.objects.filter(source=SOURCE, created_at__gte=start).aggregate(s=Sum("cost_usd"))["s"] or 0)
+    return float(AiUsage.objects.filter(source=source, created_at__gte=start).aggregate(s=Sum("cost_usd"))["s"] or 0)
 
 
 def candidates(settings_obj):

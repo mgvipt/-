@@ -1,6 +1,8 @@
 /* Розділ «Контент-завод» (24.09.2026, етап 0). Доступ — лише власник або право content_factory.access.
  * Працює: «Студія» (план і лічильники) і «Сторінки» (наші сторінки, конкуренти, натхнення в IG / TikTok / YouTube / Telegram).
  * Етап 1 (24.09): «Питання клієнтів» — нічний розбір питань у теми, з лімітом витрат (вмикає лише власник).
+ * Етап 2 (24.09): «Telegram-автопілот» — чернетки постів з найчастіших питань: факти з бази знань, реальні фото,
+ *   попередній перегляд як у Telegram. Публікація з CRM поки вимкнена. Кожна сторінка прокручується горизонтально.
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
 import { useCallback, useEffect, useState } from "react";
@@ -24,6 +26,17 @@ type QSettings = {
   pending: { questions: number; estimate_usd: number } | null;
 };
 type QData = { days: number; topics: Topic[]; statuses: [string, string][]; settings: QSettings };
+type TgPhoto = { id: number; title: string; url: string; preview_url: string };
+type TgPostT = {
+  id: number; title: string; text: string; material: string; status: string; status_display: string; photos: TgPhoto[];
+  facts: string[]; checks: string[]; model: string; topic: { id: number; title: string } | null; created_at: string;
+};
+type TgData = {
+  settings: { daily_drafts: boolean; model: string; models: [string, string][]; monthly_budget_usd: number;
+    spent_month_usd: number; estimate_usd: number; channel: string; publish_enabled: boolean };
+  next_topic: { id: number; title: string; count_7d: number } | null;
+  posts: TgPostT[];
+};
 
 type Section = { id: string; label: string; stage: number; group?: string; live?: boolean; what?: string[] };
 const SECTIONS: Section[] = [
@@ -33,7 +46,7 @@ const SECTIONS: Section[] = [
     "Щоночі ШІ групує вхідні з усіх каналів (Instagram, TikTok, Viber, Telegram, WhatsApp) у теми",
     "Біля теми — скільки разів спитали, чи є відповідь у базі знань, які є фото й відео",
     "Одна кнопка: зробити з теми рилс, карусель або пост у Telegram"] },
-  { id: "telegram", label: "Telegram-автопілот", stage: 2, group: "Сировина", what: [
+  { id: "telegram", label: "Telegram-автопілот", stage: 2, group: "Сировина", live: true, what: [
     "Щодня пост: питання дня → коротка відповідь з бази знань → 2–3 реальні фото → посилання на підбір",
     "Перші 2 тижні — через вашу кнопку «схвалити», далі повністю автоматично",
     "Посилання з міткою — CRM рахує ліди з каналу"] },
@@ -83,7 +96,10 @@ const CSS = `
 .cf-nav.on{background:var(--cf-panel2);color:var(--cf-ink)}
 .cf-nav em{font-style:normal;font-size:10px;font-weight:700;color:var(--cf-ink3);font-variant-numeric:tabular-nums}
 .cf-nav.on em,.cf-nav em.live{color:var(--cf-gold)}
-.cf-main{padding:24px clamp(16px,2.4vw,32px) 40px;display:grid;gap:22px;align-content:start;min-width:0}
+.cf-main{padding:24px clamp(16px,2.4vw,32px) 40px;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+.cf-page{display:grid;gap:22px;align-content:start;min-width:880px}
+.cf-main::-webkit-scrollbar{height:10px}
+.cf-main::-webkit-scrollbar-thumb{background:var(--cf-line);border-radius:5px}
 .cf-h1{font-size:clamp(24px,2.6vw,32px);font-weight:800;letter-spacing:-.01em;margin:0;line-height:1.15}
 .cf-sub{color:var(--cf-ink2);max-width:64ch;font-size:14px;line-height:1.55;margin:6px 0 0}
 .cf-hero{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:24px;align-items:end}
@@ -114,6 +130,7 @@ const CSS = `
 .cf-btn.gold[disabled]{opacity:.5;cursor:default}
 .cf-btn.ghost{height:30px;padding:0 10px;font-weight:600;font-size:12px;color:var(--cf-ink2);border:1px solid var(--cf-line)}
 .cf-btn.ghost:hover{color:var(--cf-ink)}
+.cf-btn[disabled]{opacity:.45;cursor:default}
 .cf-btn.danger{height:30px;padding:0 10px;font-size:12px;background:rgba(224,122,110,.16);color:var(--cf-bad)}
 .cf-msg{font-size:13px}
 .cf-msg.err{color:var(--cf-bad)} .cf-msg.ok{color:var(--cf-good)}
@@ -154,13 +171,35 @@ const CSS = `
 .cf-tag.kb{background:rgba(108,192,143,.14);color:var(--cf-good)}
 .cf-tag.nokb{background:rgba(227,184,95,.14);color:var(--cf-gold)}
 .cf-ex{margin:8px 0 0;padding-left:16px;color:var(--cf-ink2);font-size:12.5px;display:grid;gap:3px}
+.cf-tg{display:grid;grid-template-columns:380px minmax(0,1fr);gap:18px;align-items:start;background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:12px;padding:16px}
+.tg-chat{background:#0e1621;border-radius:12px;padding:14px 12px;font-family:-apple-system,"Segoe UI",Roboto,sans-serif}
+.tg-head{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+.tg-ava{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#c9ccd0,#8d949b);display:grid;place-items:center;color:#14181b;font-weight:800;font-size:14px}
+.tg-head b{color:#fff;font-size:14px;display:block}
+.tg-head span{color:#6d7f8f;font-size:12px}
+.tg-bubble{background:#182533;border-radius:12px;overflow:hidden;color:#f5f5f5;font-size:14px;line-height:1.45}
+.tg-album{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.tg-album img{width:100%;height:100%;object-fit:cover;display:block;background:#0b1118}
+.tg-album img:first-child{grid-column:1/-1;aspect-ratio:4/3}
+.tg-album img:not(:first-child){aspect-ratio:1/1}
+.tg-text{padding:9px 12px 4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.tg-text a{color:#6ab3f3;text-decoration:none}
+.tg-meta{display:flex;justify-content:flex-end;gap:10px;padding:0 12px 8px;color:#6d7f8f;font-size:11.5px}
+.cf-side{display:grid;gap:12px;align-content:start;min-width:0}
+.cf-side h4{margin:0;font-size:16px}
+.cf-list{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px;color:var(--cf-ink2)}
+.cf-list.warn{color:var(--cf-gold)}
+.cf-ta{box-sizing:border-box;width:100%;min-height:260px;background:var(--cf-bg);border:1px solid var(--cf-line);border-radius:8px;color:var(--cf-ink);padding:10px 12px;font:inherit;font-size:13.5px;line-height:1.5;resize:vertical}
+.cf-ta:focus{outline:none;border-color:var(--cf-blue)}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
   .cf-topic{grid-template-columns:44px minmax(0,1fr)}
+  .cf-tg{grid-template-columns:340px minmax(0,1fr)}
   .cf-topic .cf-acts{grid-column:1/-1}
   .cf{grid-template-columns:1fr}
-  .cf-rail{border-right:0;border-bottom:1px solid var(--cf-line);flex-direction:row;flex-wrap:wrap;gap:4px;padding:12px}
+  .cf-rail{border-right:0;border-bottom:1px solid var(--cf-line);flex-direction:row;flex-wrap:nowrap;gap:4px;padding:12px;overflow-x:auto}
+  .cf-nav{flex:0 0 auto}
   .cf-brand,.cf-grp{display:none}
   .cf-nav{padding:6px 9px;font-size:12px}
   .cf-hero{grid-template-columns:1fr}
@@ -231,10 +270,10 @@ function Studio({ ov, go }: { ov: Overview | null; go: (t: string) => void }) {
               if (ex) ex.t += " + " + s.label.toLowerCase(); else acc.push({ n: s.stage, t: s.label, d: s.what?.[0] || "" });
               return acc;
             }, [])].map((st) => (
-            <div key={st.n} className={"cf-stage" + (st.n <= 1 ? " now" : "")}>
+            <div key={st.n} className={"cf-stage" + (st.n <= 2 ? " now" : "")}>
               <span className="n">{st.n}</span>
               <div><p>{st.t}</p><small>{st.d}</small></div>
-              <span className={"cf-pill " + (st.n <= 1 ? "now" : "next")}>{st.n <= 1 ? "готово" : "далі"}</span>
+              <span className={"cf-pill " + (st.n <= 2 ? "now" : "next")}>{st.n <= 2 ? "готово" : "далі"}</span>
             </div>
           ))}
         </div>
@@ -463,6 +502,139 @@ function Questions() {
   );
 }
 
+const LINK_RX = /(https?:\/\/[^\s]+)/g;
+function TgText({ text }: { text: string }) {
+  const parts = text.split(LINK_RX);
+  return <div className="tg-text">{parts.map((p, i) => (i % 2 ? <a key={i} href={p} target="_blank" rel="noreferrer">{p}</a> : <span key={i}>{p}</span>))}</div>;
+}
+
+function TgPreview({ post, channel }: { post: TgPostT; channel: string }) {
+  const time = new Date(post.created_at).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="tg-chat" aria-label="Попередній перегляд поста в Telegram">
+      <div className="tg-head"><span className="tg-ava">W</span><div><b>Wallcov · рішення для інтерʼєру</b><span>{channel} · канал</span></div></div>
+      <div className="tg-bubble">
+        {post.photos.length > 0 && (
+          <div className="tg-album">{post.photos.map((ph) => <img key={ph.id} src={ph.preview_url || ph.url} alt={ph.title} loading="lazy" />)}</div>
+        )}
+        <TgText text={post.text} />
+        <div className="tg-meta"><span>👁 —</span><span>{time}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function TgPostCard({ post, channel, onChanged }: { post: TgPostT; channel: string; onChanged: () => void }) {
+  const [edit, setEdit] = useState(false);
+  const [text, setText] = useState(post.text);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => { setText(post.text); }, [post.text]);
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true); setMsg("");
+    try { await fn(); onChanged(); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } finally { setBusy(false); }
+  };
+  const patch = (b: Record<string, unknown>) => act(() => api.patch(`/api/content-factory/telegram/posts/${post.id}/`, b));
+  const caption = post.text.length;
+  return (
+    <div className="cf-tg">
+      <TgPreview post={{ ...post, text: edit ? text : post.text }} channel={channel} />
+      <div className="cf-side">
+        <div className="cf-role-h">
+          <h4>{post.title}</h4>
+          <span className={"cf-pill " + (post.status === "approved" ? "now" : "next")}>{post.status_display}</span>
+        </div>
+        {post.topic && <div className="cf-kv"><span>Питання клієнток</span><b style={{ fontWeight: 500 }}>{post.topic.title}</b></div>}
+        <div className="cf-kv"><span>Фото</span><b style={{ fontWeight: 500 }}>{post.photos.length ? `${post.photos.length} реальні · ${post.material}` : "немає реальних фото цього матеріалу"}</b></div>
+        <div className="cf-kv"><span>Довжина</span><b style={{ fontWeight: 500 }}>{caption} симв.{caption > 1024 ? " · довше підпису до фото — текст піде окремим повідомленням" : ""}</b></div>
+        {post.checks.length > 0 && (<div><div className="cf-kv"><span>Перевірте перед публікацією</span></div>
+          <ul className="cf-list warn">{post.checks.map((c, i) => <li key={i}>{c}</li>)}</ul></div>)}
+        {post.facts.length > 0 && (<div><div className="cf-kv"><span>Звідки факти (база знань)</span></div>
+          <ul className="cf-list">{post.facts.map((f, i) => <li key={i}>{f}</li>)}</ul></div>)}
+        {edit && <textarea id={`cf-tg-text-${post.id}`} className="cf-ta" value={text} onChange={(e) => setText(e.target.value)} aria-label="Текст поста" />}
+        <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+          {edit ? (<>
+            <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => patch({ text }).then(() => setEdit(false))}>Зберегти текст</button>
+            <button type="button" className="cf-btn ghost" onClick={() => { setText(post.text); setEdit(false); }}>Скасувати</button>
+          </>) : (<>
+            <button type="button" className="cf-btn ghost" onClick={() => setEdit(true)}>Редагувати текст</button>
+            <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photos/`))}>Інші фото · безкоштовно</button>
+            {post.status !== "approved"
+              ? <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => patch({ status: "approved" })}>Схвалити</button>
+              : <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => patch({ status: "draft" })}>Повернути в чернетки</button>}
+            <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => patch({ status: "rejected" })}>Відхилити</button>
+            <button type="button" className="cf-btn ghost" disabled title="Публікацію з CRM увімкнемо після вашого рішення щодо старого бота @wallcov_smm_bot">Опублікувати в {channel}</button>
+          </>)}
+        </div>
+        {msg && <div className="cf-msg err" role="alert">{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Telegram() {
+  const [data, setData] = useState<TgData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [budget, setBudget] = useState("");
+  const load = useCallback(async () => {
+    try { const d = await api.get<TgData>("/api/content-factory/telegram/"); setData(d); setBudget(String(d.settings.monthly_budget_usd)); }
+    catch { setMsg({ ok: false, text: "Не вдалося завантажити автопілот." }); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const save = async (b: Record<string, unknown>) => {
+    try { await api.patch("/api/content-factory/telegram/settings/", b); load(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося зберегти." }); }
+  };
+  const draft = async () => {
+    setBusy(true); setMsg(null);
+    try { const p: any = await api.post("/api/content-factory/telegram/draft/"); setMsg({ ok: true, text: `Готово: «${p.title}»` }); load(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося створити чернетку." }); }
+    finally { setBusy(false); }
+  };
+  if (!data) return <div className="cf-empty">Завантажую…</div>;
+  const s = data.settings;
+  const pct = s.monthly_budget_usd > 0 ? Math.min(100, (s.spent_month_usd / s.monthly_budget_usd) * 100) : 100;
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Telegram-автопілот</h1>
+        <p className="cf-sub">Щоранку — чернетка поста для {s.channel} з питання, яке клієнтки ставлять найчастіше. Факти лише з бази знань,
+          фото — лише реальні обʼєкти з бібліотеки. Ви дивитесь, правите й схвалюєте. Публікація з CRM поки вимкнена.</p>
+      </div>
+      <div className="cf-q-top">
+        <div className="cf-card">
+          <h3>Автопілот · витрати</h3>
+          <div className="cf-kv"><span>Щоранкова чернетка</span>
+            <span className={"cf-pill " + (s.daily_drafts ? "now" : "next")}>{s.daily_drafts ? "увімкнено · 08:10" : "вимкнено"}</span></div>
+          <div className="cf-kv"><span>Витрачено цього місяця</span><b>{usd(s.spent_month_usd)} з {usd(s.monthly_budget_usd)}</b></div>
+          <div className="cf-meter" aria-hidden="true"><i style={{ width: pct + "%" }} /></div>
+          <div className="cf-set">
+            <select id="cf-tg-model" className="cf-in" value={s.model} onChange={(e) => save({ model: e.target.value })} aria-label="Модель ШІ">
+              {s.models.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <label className="cf-kv" htmlFor="cf-tg-budget" style={{ alignItems: "center" }}>ліміт $/міс</label>
+            <input id="cf-tg-budget" className="cf-in" style={{ width: 70 }} inputMode="decimal" value={budget}
+              onChange={(e) => setBudget(e.target.value)} onBlur={() => budget !== String(s.monthly_budget_usd) && save({ monthly_budget_usd: budget })} />
+            <button type="button" className={"cf-btn " + (s.daily_drafts ? "ghost" : "gold")} style={{ height: 32 }}
+              onClick={() => save({ daily_drafts: !s.daily_drafts })}>{s.daily_drafts ? "Вимкнути" : "Увімкнути щоранку"}</button>
+          </div>
+        </div>
+        <div className="cf-card">
+          <h3>Наступний пост</h3>
+          <div className="cf-kv"><span>Тема</span><b style={{ fontWeight: 500, textAlign: "right" }}>{data.next_topic ? data.next_topic.title : "нових тем немає"}</b></div>
+          <div className="cf-kv"><span>Питали за 7 днів</span><b>{data.next_topic ? data.next_topic.count_7d : "—"}</b></div>
+          <div className="cf-kv"><span>Ціна чернетки</span><b>≈ {usd(s.estimate_usd)}</b></div>
+          <button type="button" className="cf-btn gold" disabled={busy || !data.next_topic} onClick={draft}>{busy ? "Пишу пост…" : "Створити чернетку"}</button>
+          {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")} role="status">{msg.text}</div>}
+        </div>
+      </div>
+      {data.posts.length ? data.posts.map((p) => <TgPostCard key={p.id} post={p} channel={s.channel} onChanged={load} />)
+        : <div className="cf-empty">Чернеток ще немає — натисніть «Створити чернетку».</div>}
+    </>
+  );
+}
+
 function Soon({ s }: { s: Section }) {
   return (
     <>
@@ -504,11 +676,14 @@ export default function ContentFactory() {
       <style>{CSS}</style>
       <Rail tab={section.id} setTab={go} total={list?.results.length ?? 0} />
       <main className="cf-main">
+        <div className="cf-page">
         {err && <div className="cf-msg err" role="alert">{err}</div>}
         {section.id === "studio" ? <Studio ov={ov} go={go} />
           : section.id === "channels" ? <Channels data={list} reload={load} />
           : section.id === "questions" ? <Questions />
+          : section.id === "telegram" ? <Telegram />
           : <Soon s={section} />}
+        </div>
       </main>
     </div>
   );

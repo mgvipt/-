@@ -13,3 +13,10 @@ urlpatterns += [
     path("api/content-factory/questions/run/", views.QuestionRunView.as_view()),
     path("api/content-factory/questions/<int:pk>/", views.QuestionTopicView.as_view()),
 ]
+urlpatterns += [
+    path("api/content-factory/telegram/", views.TelegramView.as_view()),
+    path("api/content-factory/telegram/settings/", views.TelegramSettingsView.as_view()),
+    path("api/content-factory/telegram/draft/", views.TelegramDraftView.as_view()),
+    path("api/content-factory/telegram/posts/<int:pk>/", views.TelegramPostView.as_view()),
+    path("api/content-factory/telegram/posts/<int:pk>/photos/", views.TelegramPhotosView.as_view()),
+]

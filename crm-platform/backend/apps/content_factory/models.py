@@ -168,3 +168,43 @@ class QuestionMention(models.Model):
     message_id = models.BigIntegerField(unique=True, help_text="inbox.Message.id (без FK — історію не чіпаємо)")
     channel = models.CharField(max_length=24, blank=True)
     asked_at = models.DateTimeField(db_index=True)
+
+
+# ── Етап 2 (24.09.2026): Telegram-автопілот ────────────────────────────────────────────────────
+
+class TgSettings(models.Model):
+    """Налаштування автопілота каналу. Публікації з CRM поки немає — лише чернетки на схвалення."""
+    daily_drafts = models.BooleanField(default=False, help_text="Щоранку чернетка з найчастішого питання (платно, в межах ліміту)")
+    model = models.CharField(max_length=40, choices=QuestionSettings.MODELS, default="claude-sonnet-4-6")
+    monthly_budget_usd = models.DecimalField(max_digits=6, decimal_places=2, default=2)
+    channel = models.CharField(max_length=64, default="@wallcovpro")
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class TgPost(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Чернетка"
+        APPROVED = "approved", "Схвалено"
+        REJECTED = "rejected", "Відхилено"
+        PUBLISHED = "published", "Опубліковано"
+
+    topic = models.ForeignKey(QuestionTopic, null=True, blank=True, on_delete=models.SET_NULL, related_name="tg_posts")
+    title = models.CharField(max_length=200)
+    text = models.TextField()
+    material = models.CharField(max_length=80, blank=True)
+    photo_ids = models.JSONField(default=list, blank=True, help_text="inbox.MediaLibraryItem — лише реальні фото обʼєктів")
+    facts = models.JSONField(default=list, blank=True, help_text="Назви записів бази знань, з яких узято факти")
+    checks = models.JSONField(default=list, blank=True, help_text="Що перевірити людині перед публікацією")
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    model = models.CharField(max_length=40, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    tg_message_id = models.CharField(max_length=40, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

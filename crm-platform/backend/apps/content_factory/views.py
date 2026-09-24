@@ -6,6 +6,7 @@ GET  /api/content-factory/channels/        — список сторінок
 POST /api/content-factory/channels/        — {link, platform?, role, title?, note?}
 PATCH/DELETE /api/content-factory/channels/<id>/
 Етап 1: GET /questions/, PATCH /questions/settings/, POST /questions/run/, PATCH /questions/<id>/
+Етап 2: GET /telegram/, PATCH /telegram/settings/, POST /telegram/draft/, PATCH /telegram/posts/<id>/, POST /telegram/posts/<id>/photos/
 """
 from datetime import timedelta
 
@@ -17,8 +18,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import questions as qsvc
-from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic,
-                     parse_channel_link)
+from . import telegram as tgsvc
+from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, TgPost,
+                     TgSettings, parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -193,3 +195,119 @@ class QuestionTopicView(_Base):
         t.status = st
         t.save(update_fields=["status"])
         return Response({"id": t.id, "status": t.status, "status_display": t.get_status_display()})
+
+
+# ── Етап 2 (24.09.2026): Telegram-автопілот (лише чернетки; публікація з CRM вимкнена) ─────────
+
+def _photos(request, ids):
+    from apps.inbox.models import MediaLibraryItem
+    from apps.inbox.views import _library_item_data
+    by_id = {m.id: m for m in MediaLibraryItem.objects.filter(id__in=ids).select_related("file", "preview_file")
+             .defer("file__data", "preview_file__data")}
+    out = []
+    for i in ids:
+        if i in by_id:
+            d = _library_item_data(request, by_id[i])
+            # preview_url з _library_item_data буває http:// — на https-сторінці браузер його блокує
+            https = lambda u: (u or "").replace("http://", "https://", 1)
+            out.append({"id": i, "title": d["title"], "url": https(d["url"]), "preview_url": https(d["preview_url"])})
+    return out
+
+
+def _post(request, p):
+    return {
+        "id": p.id, "title": p.title, "text": p.text, "material": p.material, "status": p.status,
+        "status_display": p.get_status_display(), "photos": _photos(request, p.photo_ids or []),
+        "facts": p.facts or [], "checks": p.checks or [], "model": p.model,
+        "topic": {"id": p.topic_id, "title": p.topic.title} if p.topic_id else None,
+        "created_at": timezone.localtime(p.created_at).isoformat(),
+    }
+
+
+def _tg_settings(s):
+    return {"daily_drafts": s.daily_drafts, "model": s.model, "models": QuestionSettings.MODELS,
+            "monthly_budget_usd": float(s.monthly_budget_usd), "spent_month_usd": round(tgsvc.month_spent(), 4),
+            "estimate_usd": tgsvc.estimate_usd(s.model), "channel": s.channel, "publish_enabled": False}
+
+
+class TelegramView(_Base):
+    def get(self, request):
+        nt = tgsvc.next_topic()
+        posts = TgPost.objects.select_related("topic").exclude(status=TgPost.Status.REJECTED)[:30]
+        return Response({
+            "settings": _tg_settings(TgSettings.get()),
+            "next_topic": {"id": nt.id, "title": nt.title, "count_7d": nt.n} if nt else None,
+            "posts": [_post(request, p) for p in posts],
+        })
+
+
+class TelegramSettingsView(_Base):
+    def patch(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Змінювати автопілот може лише власник."}, status=403)
+        s, data = TgSettings.get(), request.data or {}
+        if "daily_drafts" in data:
+            s.daily_drafts = bool(data["daily_drafts"])
+        if "model" in data:
+            if data["model"] not in dict(QuestionSettings.MODELS):
+                return Response({"error": "Невідома модель."}, status=400)
+            s.model = data["model"]
+        if "monthly_budget_usd" in data:
+            try:
+                b = round(float(data["monthly_budget_usd"]), 2)
+            except (TypeError, ValueError):
+                return Response({"error": "Ліміт має бути числом."}, status=400)
+            if not 0 <= b <= 50:
+                return Response({"error": "Ліміт — від $0 до $50 на місяць."}, status=400)
+            s.monthly_budget_usd = b
+        s.save()
+        return Response(_tg_settings(s))
+
+
+class TelegramDraftView(_Base):
+    """POST {topic_id?} — нова чернетка (платно, в межах ліміту). Лише власник."""
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Створювати платні чернетки може лише власник."}, status=403)
+        topic = None
+        if (request.data or {}).get("topic_id"):
+            topic = get_object_or_404(QuestionTopic, pk=request.data["topic_id"])
+        try:
+            p = tgsvc.generate(topic)
+        except tgsvc.BudgetError as e:
+            return Response({"error": str(e)}, status=402)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return Response(_post(request, p), status=201)
+
+
+class TelegramPostView(_Base):
+    """PATCH {title?, text?, status?} — правка тексту й схвалення. «Опубліковано» через API не ставиться."""
+    def patch(self, request, pk):
+        p = get_object_or_404(TgPost, pk=pk)
+        data = request.data or {}
+        if "text" in data:
+            text = str(data["text"] or "").strip()
+            if not text:
+                return Response({"error": "Текст поста порожній."}, status=400)
+            p.text = text[:4000]
+        if "title" in data:
+            p.title = str(data["title"] or "").strip()[:200] or p.title
+        if "status" in data:
+            if data["status"] not in (TgPost.Status.DRAFT, TgPost.Status.APPROVED, TgPost.Status.REJECTED):
+                return Response({"error": "Недоступний статус."}, status=400)
+            p.status = data["status"]
+        p.save()
+        return Response(_post(request, p))
+
+
+class TelegramPhotosView(_Base):
+    """POST — інші реальні фото того ж матеріалу (без ШІ, безкоштовно)."""
+    def post(self, request, pk):
+        p = get_object_or_404(TgPost, pk=pk)
+        new = tgsvc.pick_photos(p.material, exclude=p.photo_ids or []) if p.material else []
+        if not new:
+            return Response({"error": "Інших реальних фото цього матеріалу немає."}, status=400)
+        p.photo_ids = new
+        p.save(update_fields=["photo_ids", "updated_at"])
+        return Response(_post(request, p))

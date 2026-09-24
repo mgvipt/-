@@ -1,13 +1,16 @@
 """Контент-завод: етап 0 (посилання, доступ) і етап 1 (питання клієнтів). ШІ підмінено — жодних зовнішніх запитів."""
 from django.test import SimpleTestCase, TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.crm.models import AiUsage, Contact
 from apps.inbox.models import Channel, Conversation, Message
+from apps.inbox.models import MediaLibraryItem
 from . import questions as qsvc
-from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic,
-                     parse_channel_link)
+from . import telegram as tgsvc
+from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, TgPost,
+                     TgSettings, parse_channel_link)
 
 
 class ParseLinkTests(SimpleTestCase):
@@ -167,3 +170,73 @@ class QuestionRunTests(TestCase):
                                  format="json").status_code, 400)
         r = c.patch("/api/content-factory/questions/settings/", {"model": "claude-haiku-4-5"}, format="json")
         self.assertEqual(r.json()["model"], "claude-haiku-4-5")
+
+
+# ── Етап 2: Telegram-автопілот ────────────────────────────────────────────────────────────────
+class TelegramTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="tg-owner", password="x", is_superuser=True, is_staff=True)
+        self.trusted = User.objects.create_user(username="tg-trusted", password="x",
+                                                extra_permissions=["content_factory.access"])
+        now = timezone.now()
+        self.hot = QuestionTopic.objects.create(title="Чи можна мити шовк", material="Мокрий шовк", last_seen=now)
+        self.cold = QuestionTopic.objects.create(title="Де магазин", last_seen=now)
+        for i in range(5):
+            QuestionMention.objects.create(topic=self.hot, message_id=1000 + i, asked_at=now)
+        QuestionMention.objects.create(topic=self.cold, message_id=2000, asked_at=now)
+        for i in range(5):
+            MediaLibraryItem.objects.create(title=f"Шовк реальний {i}", material="Мокрий шовк",
+                                            tags="інтер'єр реальне фото", kind="image")
+        MediaLibraryItem.objects.create(title="AI інтерʼєр", material="Мокрий шовк", tags="інтер'єр", kind="image")
+        self.calls = []
+
+    def _fake(self, prompt):
+        self.calls.append(prompt)
+        AiUsage.objects.create(source=tgsvc.SOURCE, model="claude-sonnet-4-6", cost_usd=0.01)
+        return {"title": "Миття шовку", "text": "Шовк можна мити?\n\nТак — мʼякою губкою.", "material": "Мокрий шовк",
+                "checks": ["можна мити — перевірити"]}
+
+    def test_hot_topic_real_photos_cta(self):
+        p = tgsvc.generate(call=self._fake)
+        self.assertEqual(p.topic, self.hot)
+        self.assertIn("ig.me/m/dekor_dlia_stin", p.text)
+        self.assertEqual(len(p.photo_ids), 3)
+        ai_ids = set(MediaLibraryItem.objects.filter(title="AI інтерʼєр").values_list("id", flat=True))
+        self.assertFalse(ai_ids & set(p.photo_ids))  # лише реальні фото
+        self.assertIn("Чи можна мити шовк", self.calls[0])
+
+    def test_topic_not_repeated_and_rejected_frees_it(self):
+        p = tgsvc.generate(call=self._fake)
+        self.assertEqual(tgsvc.next_topic(), self.cold)
+        p.status = TgPost.Status.REJECTED
+        p.save()
+        self.assertEqual(tgsvc.next_topic(), self.hot)
+
+    def test_budget_blocks_before_call(self):
+        s = TgSettings.get()
+        s.monthly_budget_usd = 0.01
+        s.save()
+        AiUsage.objects.create(source=tgsvc.SOURCE, model="claude-sonnet-4-6", cost_usd=0.01)
+        with self.assertRaises(tgsvc.BudgetError):
+            tgsvc.generate(call=self._fake)
+        self.assertEqual(self.calls, [])
+
+    def test_api_owner_and_trusted(self):
+        c = APIClient()
+        c.force_authenticate(self.trusted)
+        self.assertEqual(c.get("/api/content-factory/telegram/").status_code, 200)
+        self.assertEqual(c.post("/api/content-factory/telegram/draft/").status_code, 403)  # платне — лише власник
+        p = tgsvc.generate(call=self._fake)
+        old = list(p.photo_ids)
+        r = c.post(f"/api/content-factory/telegram/posts/{p.id}/photos/")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotEqual(sorted(x["id"] for x in r.json()["photos"]), sorted(old))
+        r = c.patch(f"/api/content-factory/telegram/posts/{p.id}/", {"status": "approved", "text": "Новий текст"},
+                    format="json")
+        self.assertEqual((r.json()["status"], r.json()["text"]), ("approved", "Новий текст"))
+        self.assertEqual(c.patch(f"/api/content-factory/telegram/posts/{p.id}/", {"status": "published"},
+                                 format="json").status_code, 400)
+        c.force_authenticate(self.owner)
+        r = c.get("/api/content-factory/telegram/").json()
+        self.assertFalse(r["settings"]["publish_enabled"])
+        self.assertEqual(r["next_topic"]["id"], self.cold.id)

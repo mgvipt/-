@@ -94,6 +94,8 @@ CHECKS = [
     ("Контент-завод: менеджер без права — закрито", "manager", "/api/content-factory/channels/", {403}, []),
     ("Контент-завод: питання клієнтів + ліміт витрат", "owner", "/api/content-factory/questions/", {200}, ["topics", "settings"]),
     ("Контент-завод: питання — менеджеру закрито", "manager", "/api/content-factory/questions/", {403}, []),
+    ("Контент-завод: Telegram-автопілот (чернетки)", "owner", "/api/content-factory/telegram/", {200}, ["settings", "posts", "next_topic"]),
+    ("Контент-завод: Telegram — менеджеру закрито", "manager", "/api/content-factory/telegram/", {403}, []),
     ("Відгуки: «не просити» у картці клієнта", "manager", "CONTACT_REVIEW_OPTOUT", {200}, ["opt_out", "can_remove"]),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),
