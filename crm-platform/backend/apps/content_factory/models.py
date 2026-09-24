@@ -295,3 +295,60 @@ class TgPostStat(models.Model):
 
     class Meta:
         ordering = ["taken_at"]
+
+
+# ── Етап 3 (24.09.2026): стрічка рекомендацій і аналітик ─────────────────────────────────────────
+
+class FeedItem(models.Model):
+    """Ролик/карусель зі сторінок, які відстежує Virale (ChatPlace). Лише метадані й посилання."""
+    class Status(models.TextChoices):
+        NEW = "new", "Нове"
+        SAVED = "saved", "В ідеях"
+        USED = "used", "Зроблено з наших"
+        HIDDEN = "hidden", "Сховано"
+
+    external_id = models.CharField(max_length=64, unique=True)
+    username = models.CharField(max_length=100, db_index=True)
+    platform = models.CharField(max_length=20, blank=True)
+    url = models.URLField(max_length=500)
+    preview_url = models.URLField(max_length=500, blank=True)
+    caption = models.TextField(blank=True)
+    media_type = models.CharField(max_length=20, blank=True)
+    duration = models.FloatField(null=True, blank=True)
+    views = models.BigIntegerField(null=True, blank=True)
+    likes = models.IntegerField(null=True, blank=True)
+    comments = models.IntegerField(null=True, blank=True)
+    engagement = models.FloatField(null=True, blank=True)
+    viral_score = models.FloatField(null=True, blank=True)
+    is_own = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.NEW, db_index=True)
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-published_at"]
+
+
+class AnalystSettings(models.Model):
+    weekly_enabled = models.BooleanField(default=False, help_text="Щопонеділка звіт (платно, в межах ліміту)")
+    model = models.CharField(max_length=40, choices=QuestionSettings.MODELS, default="claude-sonnet-4-6")
+    monthly_budget_usd = models.DecimalField(max_digits=6, decimal_places=2, default=1)
+    last_feed_sync_at = models.DateTimeField(null=True, blank=True)
+    last_feed_note = models.CharField(max_length=300, blank=True)
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class AnalystReport(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    period_days = models.PositiveSmallIntegerField(default=7)
+    summary = models.TextField(help_text="Звіт простими словами")
+    ideas = models.JSONField(default=list, blank=True, help_text="[{title, hook, why, format, material}]")
+    inputs = models.JSONField(default=dict, blank=True, help_text="Цифри, на яких зроблено звіт")
+    model = models.CharField(max_length=40, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

@@ -41,3 +41,8 @@ urlpatterns += [
 urlpatterns += [
     path("api/content-factory/telegram/published/", views.TelegramPublishedView.as_view()),
 ]
+urlpatterns += [
+    path("api/content-factory/feed/", views.FeedView.as_view()),
+    path("api/content-factory/feed/<int:pk>/", views.FeedItemView.as_view()),
+    path("api/content-factory/analyst/", views.AnalystView.as_view()),
+]

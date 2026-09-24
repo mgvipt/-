@@ -10,6 +10,7 @@ PATCH/DELETE /api/content-factory/channels/<id>/
 Публікація (24.09): POST /telegram/posts/ (вручну), POST /telegram/posts/<id>/test|publish/, GET /telegram/media/
 Джерела (24.09): POST /sources/ingest/ (бот, секрет), GET /sources/, PATCH /sources/chats/<id>/, PATCH /sources/<id>/,
   GET /sources/thumb/<підпис>/ (без логіна, підпис діє 1 год)
+Етап 3: GET/POST /feed/ (стрічка Virale, оновити), PATCH /feed/<id>/, GET/PATCH/POST /analyst/ (звіти, налаштування)
 """
 import hmac
 import json
@@ -26,11 +27,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import questions as qsvc
+from . import analyst as ansvc
 from . import drive as drivesvc
 from . import sources as srcsvc
 from . import telegram as tgsvc
-from .models import (ChannelLinkError, ContentChannel, DriveFolder, QuestionMention, QuestionSettings, QuestionTopic,
-                     SourceAsset, SourceChat, TgPost, TgSettings, parse_channel_link)
+from .models import (AnalystReport, AnalystSettings, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
+                     QuestionMention, QuestionSettings, QuestionTopic, SourceAsset, SourceChat, TgPost, TgSettings,
+                     parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -564,3 +567,104 @@ class TelegramPublishedView(_Base):
 
     def post(self, request):
         return Response({"updated": tgsvc.collect_stats(force=True)})
+
+
+# ── Етап 3: стрічка рекомендацій і аналітик ───────────────────────────────────────────────────────
+
+def _bg(fn):
+    """Запустити довгу роботу у фоні (оновлення з ChatPlace йде з паузами між запитами)."""
+    import threading
+    from django.db import connection
+
+    def work():
+        try:
+            fn()
+        except Exception:
+            pass
+        finally:
+            connection.close()
+    threading.Thread(target=work, daemon=True).start()
+
+
+class FeedView(_Base):
+    """GET ?days=7&sort=outlier|views|er|date&status=&own=1 — ролики ніші. POST — оновити з Virale (у фоні, власник)."""
+    def get(self, request):
+        try:
+            days = max(1, min(int(request.GET.get("days", 7)), 90))
+        except ValueError:
+            days = 7
+        rows = ansvc.feed(days=days, sort=request.GET.get("sort", "outlier"), status=request.GET.get("status", ""),
+                          include_own=request.GET.get("own") == "1")
+        s = AnalystSettings.get()
+        return Response({
+            "items": [{"id": i.id, "username": i.username, "platform": i.platform, "url": i.url,
+                       "preview_url": i.preview_url, "caption": i.caption, "media_type": i.media_type,
+                       "duration": i.duration, "views": i.views, "likes": i.likes, "comments": i.comments,
+                       "engagement": i.engagement, "x": x, "status": i.status, "is_own": i.is_own,
+                       "published_at": _iso(i.published_at)} for i, x in rows],
+            "total": FeedItem.objects.count(), "last_sync_at": _iso(s.last_feed_sync_at), "last_note": s.last_feed_note,
+        })
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Оновлювати стрічку може лише власник."}, status=403)
+        _bg(ansvc.sync_feed)
+        return Response({"ok": True, "note": "Оновлюю — 22 сторінки з паузами, це 1–2 хвилини."})
+
+
+class FeedItemView(_Base):
+    def patch(self, request, pk):
+        i = get_object_or_404(FeedItem, pk=pk)
+        st = (request.data or {}).get("status")
+        if st not in FeedItem.Status.values:
+            return Response({"error": "Невідомий статус."}, status=400)
+        i.status = st
+        i.save(update_fields=["status"])
+        return Response({"id": i.id, "status": i.status})
+
+
+class AnalystView(_Base):
+    """GET — останні звіти й налаштування. PATCH — налаштування (власник). POST — звіт зараз (платно, власник)."""
+    def get(self, request):
+        s = AnalystSettings.get()
+        return Response({
+            "settings": {"weekly_enabled": s.weekly_enabled, "model": s.model, "models": QuestionSettings.MODELS,
+                         "monthly_budget_usd": float(s.monthly_budget_usd),
+                         "spent_month_usd": round(qsvc.month_spent(ansvc.SOURCE), 4),
+                         "estimate_usd": ansvc.estimate_usd(s.model)},
+            "reports": [{"id": r.id, "created_at": _iso(r.created_at), "period_days": r.period_days, "summary": r.summary,
+                         "ideas": r.ideas, "inputs": r.inputs, "model": r.model}
+                        for r in AnalystReport.objects.all()[:10]],
+        })
+
+    def patch(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        s, data = AnalystSettings.get(), request.data or {}
+        if "weekly_enabled" in data:
+            s.weekly_enabled = bool(data["weekly_enabled"])
+        if "model" in data:
+            if data["model"] not in dict(QuestionSettings.MODELS):
+                return Response({"error": "Невідома модель."}, status=400)
+            s.model = data["model"]
+        if "monthly_budget_usd" in data:
+            try:
+                b = round(float(data["monthly_budget_usd"]), 2)
+            except (TypeError, ValueError):
+                return Response({"error": "Ліміт має бути числом."}, status=400)
+            if not 0 <= b <= 50:
+                return Response({"error": "Ліміт — від $0 до $50 на місяць."}, status=400)
+            s.monthly_budget_usd = b
+        s.save()
+        return self.get(request)
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Робити платний звіт може лише власник."}, status=403)
+        try:
+            ansvc.generate_report(days=int((request.data or {}).get("days") or 7))
+        except ansvc.BudgetError as e:
+            return Response({"error": str(e)}, status=402)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self.get(request)

@@ -12,8 +12,10 @@ from apps.inbox.models import Channel, Conversation, Message
 from apps.inbox.models import MediaLibraryItem, SharedLink
 from . import questions as qsvc
 from . import telegram as tgsvc
-from .models import (ChannelLinkError, ContentChannel, DriveFolder, QuestionMention, QuestionSettings, QuestionTopic,
-                     SourceAsset, SourceChat, TgPost, TgSettings, parse_channel_link)
+from . import analyst as ansvc
+from .models import (AnalystReport, AnalystSettings, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
+                     QuestionMention, QuestionSettings, QuestionTopic, SourceAsset, SourceChat, TgPost, TgSettings,
+                     parse_channel_link)
 
 
 class ParseLinkTests(SimpleTestCase):
@@ -455,3 +457,58 @@ class DriveAndStatsTests(TestCase):
         self.assertEqual((r["summary"]["count"], r["summary"]["avg_views"]), (1, 1300))
         self.assertEqual(r["posts"][0]["tg_link"], "https://t.me/wallcovpro/1022")
         self.assertEqual([x["title"] for x in drafts], ["Чернетка"])  # опубліковані — лише у своїй вкладці
+
+
+# ── Етап 3: стрічка й аналітик (ChatPlace і ШІ підмінено) ─────────────────────────────────────────
+class FeedAnalystTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="an-owner", password="x", is_superuser=True, is_staff=True)
+        self.trusted = User.objects.create_user(username="an-trusted", password="x",
+                                                extra_permissions=["content_factory.access"])
+
+    def _fake_mcp(self, name, args=None):
+        if name == "virale_accounts_list":
+            return [{"id": "A1", "username": "mazanka_kyiv"}, {"id": "A2", "username": "dekor_dlia_stin"},
+                    {"id": "A3", "username": "private", "isRestricted": True}]
+        if name == "virale_videos_list":
+            u = "mazanka_kyiv" if args["accountId"] == "A1" else "dekor_dlia_stin"
+            now = timezone.now().strftime("%Y-%m-%d %H:%M:%S")
+            return {"data": [{"id": f"{u}-{n}", "username": u, "url": f"https://x/{n}", "viewsCount": v,
+                              "publishedAt": now, "caption": f"хук {n}"} for n, v in enumerate([1000, 1000, 5000])]}
+        if name == "virale_dashboard":
+            return {"accountHero": {"username": "dekor_dlia_stin", "followers": 65257, "medianViews": 9181}}
+        raise AssertionError(name)
+
+    def test_feed_sync_outlier_and_own_hidden(self):
+        with patch.object(ansvc, "_mcp", side_effect=self._fake_mcp), patch.object(ansvc, "PAUSE_SEC", 0):
+            r = ansvc.sync_feed()
+        self.assertEqual(r, {"accounts": 3, "items": 6})  # закритий акаунт пропущено
+        rows = ansvc.feed(days=7)
+        self.assertEqual({i.username for i, _ in rows}, {"mazanka_kyiv"})  # свої — окремо
+        top, x = rows[0]
+        self.assertEqual((top.views, x), (5000, 5.0))  # 5000 проти медіани 1000
+        c = APIClient()
+        c.force_authenticate(self.trusted)
+        self.assertEqual(c.post("/api/content-factory/feed/").status_code, 403)
+        self.assertEqual(c.patch(f"/api/content-factory/feed/{top.id}/", {"status": "saved"}, format="json").json()["status"], "saved")
+        self.assertEqual(c.get("/api/content-factory/feed/?status=saved").json()["items"][0]["x"], 5.0)
+
+    def test_report_budget_and_generation(self):
+        s = AnalystSettings.get()
+        s.monthly_budget_usd = 0
+        s.save()
+        with self.assertRaises(ansvc.BudgetError):
+            ansvc.generate_report(call=lambda p: {})
+        s.monthly_budget_usd = 1
+        s.save()
+        seen = []
+        fake = lambda p: seen.append(p) or {"summary": "Шовк зайшов.\n\nРобимо ще.", "ideas": [
+            {"title": "Шви", "hook": "Чи видно шви?", "why": "питали 9 разів", "format": "рилс", "material": "Галатея"}]}
+        with patch.object(ansvc, "_mcp", side_effect=self._fake_mcp):
+            r = ansvc.generate_report(call=fake)
+        self.assertEqual(r.ideas[0]["hook"], "Чи видно шви?")
+        self.assertIn("65257", seen[0])  # у ШІ пішли реальні цифри акаунта
+        c = APIClient()
+        c.force_authenticate(self.owner)
+        data = c.get("/api/content-factory/analyst/").json()
+        self.assertEqual((len(data["reports"]), data["settings"]["weekly_enabled"]), (1, False))

@@ -6,6 +6,7 @@
  *   календар 7 днів, фото й відео з бібліотеки, пост вручну.
  * «Джерела контенту» (24.09): файли з TG-груп, каналу й Google Drive лише за посиланням, мітки з підпису/шляху папок.
  * Telegram-автопілот: підвкладка «Опубліковані й аналітика» — перегляди/реакції з публічного віджета каналу, знімки в часі.
+ * Етап 3 (24.09): «Стрічка рекомендацій» (Virale, мітка ×N від звичного) і «Аналітик» (тижневий звіт + 5 ідей).
  * Прокрутка: .view у Layout має overflow:hidden, тому сторінка гортає САМА — .cf на всю висоту, .cf-main overflow:auto (вниз і вбік).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
@@ -53,6 +54,13 @@ type PubData = {
   posts: TgPostT[];
   summary: { count: number; avg_views: number | null; total_reactions: number; best: { id: number; title: string; views: number } | null };
 };
+type FeedT = {
+  id: number; username: string; platform: string; url: string; preview_url: string; caption: string; media_type: string;
+  duration: number | null; views: number | null; likes: number | null; comments: number | null; engagement: number | null;
+  x: number | null; status: string; is_own: boolean; published_at: string | null;
+};
+type ReportT = { id: number; created_at: string; period_days: number; summary: string; model: string;
+  ideas: { title: string; hook: string; why: string; format: string; material: string }[]; inputs: Record<string, any> };
 type DriveFolderT = { id: number; folder_id: string; title: string; enabled: boolean; files_count: number; last_error: string; last_sync_at: string | null; link: string };
 type TgData = {
   settings: { daily_drafts: boolean; model: string; models: [string, string][]; monthly_budget_usd: number;
@@ -73,11 +81,11 @@ const SECTIONS: Section[] = [
     "Щодня пост: питання дня → коротка відповідь з бази знань → 2–3 реальні фото → посилання на підбір",
     "Перші 2 тижні — через вашу кнопку «схвалити», далі повністю автоматично",
     "Посилання з міткою — CRM рахує ліди з каналу"] },
-  { id: "analyst", label: "Аналітик", stage: 3, group: "Аналітика", what: [
+  { id: "analyst", label: "Аналітик", stage: 3, group: "Аналітика", live: true, what: [
     "Аналізує сторінки з вкладки «Сторінки»: наші й конкурентів",
     "Щотижня звіт: що спрацювало, що ні, і 5 ідей на тиждень",
     "Окремо — які ролики принесли переписки та оплати"] },
-  { id: "feed", label: "Стрічка рекомендацій", stage: 3, group: "Аналітика", what: [
+  { id: "feed", label: "Стрічка рекомендацій", stage: 3, group: "Аналітика", live: true, what: [
     "Вірусні ролики ніші з фільтрами: соцмережа, період, тривалість, формат, хук",
     "Кнопка «зробити з наших» — той самий прийом, але ваша фактура з ваших нарізок",
     "Вибране одразу в план"] },
@@ -254,6 +262,21 @@ const CSS = `
 .cf-pub .big small{display:block;font-size:10.5px;font-weight:600;color:var(--cf-ink3)}
 .cf-pub a{color:var(--cf-blue);text-decoration:none;font-size:12px}
 .cf-spark{width:120px;height:34px;display:block}
+.cf-feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.cf-fcard{background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:11px;overflow:hidden;display:grid;grid-template-rows:auto 1fr}
+.cf-fcard .ph{position:relative;aspect-ratio:9/13;background:#0b1118}
+.cf-fcard .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-fcard .x{position:absolute;left:8px;top:8px;background:var(--cf-gold);color:#1b1608;font-weight:800;font-size:13px;padding:4px 8px;border-radius:6px}
+.cf-fcard .x.low{background:rgba(0,0,0,.65);color:#fff;font-weight:600}
+.cf-fcard .hook{position:absolute;left:0;right:0;bottom:0;padding:26px 9px 8px;background:linear-gradient(transparent,rgba(0,0,0,.85));color:#fff;font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.cf-fcard .bd{padding:8px 10px;display:grid;gap:6px;font-size:12px}
+.cf-fcard .bd a{color:var(--cf-blue);text-decoration:none}
+.cf-rep{white-space:pre-wrap;font-size:14px;line-height:1.6;max-width:78ch}
+.cf-idea{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;padding:10px 0;border-top:1px solid var(--cf-line)}
+.cf-idea:first-of-type{border-top:0}
+.cf-idea .n{font-weight:800;font-size:18px;color:var(--cf-gold)}
+.cf-idea b{font-size:14px}
+.cf-idea p{margin:3px 0 0;font-size:13px;color:var(--cf-ink2)}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
@@ -333,10 +356,10 @@ function Studio({ ov, go }: { ov: Overview | null; go: (t: string) => void }) {
               if (ex) ex.t += " + " + s.label.toLowerCase(); else acc.push({ n: s.stage, t: s.label, d: s.what?.[0] || "" });
               return acc;
             }, [])].map((st) => (
-            <div key={st.n} className={"cf-stage" + (st.n <= 2 ? " now" : "")}>
+            <div key={st.n} className={"cf-stage" + (st.n <= 3 ? " now" : "")}>
               <span className="n">{st.n}</span>
               <div><p>{st.t}</p><small>{st.d}</small></div>
-              <span className={"cf-pill " + (st.n <= 2 ? "now" : "next")}>{st.n <= 2 ? "готово" : "далі"}</span>
+              <span className={"cf-pill " + (st.n <= 3 ? "now" : "next")}>{st.n <= 3 ? "готово" : "далі"}</span>
             </div>
           ))}
         </div>
@@ -1033,6 +1056,129 @@ function Sources() {
   );
 }
 
+const fmtN = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + " млн" : n >= 1e3 ? Math.round(n / 1e3) + " тис" : String(n);
+
+function Feed() {
+  const [q, setQ] = useState({ days: 7, sort: "outlier", status: "" });
+  const [data, setData] = useState<{ items: FeedT[]; total: number; last_sync_at: string | null; last_note: string } | null>(null);
+  const [msg, setMsg] = useState("");
+  const load = useCallback(async () => {
+    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
+  }, [q]);
+  useEffect(() => { load(); }, [load]);
+  const sync = async () => { try { const r: any = await api.post("/api/content-factory/feed/"); setMsg(r.note); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } };
+  const mark = async (id: number, status: string) => { await api.patch(`/api/content-factory/feed/${id}/`, { status }); load(); };
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Стрічка рекомендацій</h1>
+        <p className="cf-sub">Ролики конкурентів і сторінок-натхнення з Virale. Жовта мітка «×3.4» — у скільки разів ролик набрав більше
+          переглядів, ніж зазвичай у цього автора: це і є те, що «вистрілило». Зберігайте в ідеї — з них робитимемо рилси з ваших нарізок.</p>
+      </div>
+      <div className="cf-set">
+        <div className="cf-chips">{[7, 30, 90].map((d) => <button key={d} type="button" className={"cf-chip" + (q.days === d ? " on" : "")} onClick={() => setQ({ ...q, days: d })}>{d} днів</button>)}</div>
+        <select className="cf-in" value={q.sort} onChange={(e) => setQ({ ...q, sort: e.target.value })} aria-label="Сортування">
+          <option value="outlier">Що вистрілило (×)</option><option value="views">Перегляди</option><option value="er">Залученість</option><option value="date">Нові</option>
+        </select>
+        <select className="cf-in" value={q.status} onChange={(e) => setQ({ ...q, status: e.target.value })} aria-label="Статус">
+          <option value="">Усі</option><option value="saved">В ідеях</option><option value="used">Зроблено з наших</option><option value="hidden">Сховані</option>
+        </select>
+        <button type="button" className="cf-btn ghost" onClick={sync}>Оновити з Virale</button>
+        <span className="cf-kv">{data ? `${data.total} роликів у базі${data.last_sync_at ? " · оновлено " + new Date(data.last_sync_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : " · ще не оновлювалась"}` : ""}</span>
+      </div>
+      {msg && <div className="cf-msg ok">{msg}</div>}
+      {!data ? <div className="cf-empty">Завантажую…</div> : data.items.length === 0
+        ? <div className="cf-empty">{data.total ? "За цей період нічого." : "Стрічка порожня — натисніть «Оновити з Virale»."}</div> : (
+        <div className="cf-feed">
+          {data.items.map((i) => (
+            <div key={i.id} className="cf-fcard">
+              <div className="ph">
+                {i.preview_url && <img src={i.preview_url} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+                {i.x != null && <span className={"x" + (i.x < 1.5 ? " low" : "")}>×{i.x}</span>}
+                <div className="hook">{(i.caption || "").split("\n")[0]}</div>
+              </div>
+              <div className="bd">
+                <div className="cf-kv"><b>@{i.username}</b><span>{fmtN(i.views)}</span></div>
+                <div className="cf-kv"><span>ER {i.engagement ?? "—"}% · {i.duration ? Math.round(i.duration) + " с" : i.media_type}</span>
+                  <a href={i.url} target="_blank" rel="noreferrer">Відкрити ↗</a></div>
+                <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+                  {i.status !== "saved" ? <button type="button" className="cf-btn gold" style={{ height: 26, fontSize: 11.5 }} onClick={() => mark(i.id, "saved")}>В ідеї</button>
+                    : <button type="button" className="cf-btn ghost" style={{ height: 26, fontSize: 11.5 }} onClick={() => mark(i.id, "new")}>З ідей</button>}
+                  {i.status !== "hidden" && <button type="button" className="cf-btn ghost" style={{ height: 26, fontSize: 11.5 }} onClick={() => mark(i.id, "hidden")}>Сховати</button>}
+                </div>
+              </div>
+            </div>))}
+        </div>)}
+    </>
+  );
+}
+
+function Analyst() {
+  const [data, setData] = useState<{ settings: any; reports: ReportT[] } | null>(null);
+  const [pick, setPick] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = useCallback(async () => { try { setData(await api.get("/api/content-factory/analyst/")); } catch { setMsg({ ok: false, text: "Не вдалося завантажити." }); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const save = async (b: Record<string, unknown>) => { try { setData(await api.patch("/api/content-factory/analyst/", b)); } catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); } };
+  const make = async () => {
+    setBusy(true); setMsg(null);
+    try { setData(await api.post("/api/content-factory/analyst/", { days: 7 })); setPick(0); setMsg({ ok: true, text: "Звіт готовий" }); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося зробити звіт." }); } finally { setBusy(false); }
+  };
+  if (!data) return <div className="cf-empty">Завантажую…</div>;
+  const s = data.settings;
+  const r = data.reports[pick];
+  const own = r?.inputs?.own || {};
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Аналітик</h1>
+        <p className="cf-sub">Раз на тиждень ШІ дивиться на ваш Instagram, питання клієнтів, пости в Telegram і те, що вистрілило в ніші,
+          і пише простими словами: що спрацювало, що ні — і 5 ідей на тиждень.</p>
+      </div>
+      <div className="cf-q-top">
+        <div className="cf-card">
+          <h3>Налаштування · витрати</h3>
+          <div className="cf-kv"><span>Щопонеділка звіт</span><span className={"cf-pill " + (s.weekly_enabled ? "now" : "next")}>{s.weekly_enabled ? "увімкнено · 08:30" : "вимкнено"}</span></div>
+          <div className="cf-kv"><span>Витрачено цього місяця</span><b>{usd(s.spent_month_usd)} з {usd(s.monthly_budget_usd)}</b></div>
+          <div className="cf-set">
+            <select className="cf-in" value={s.model} onChange={(e) => save({ model: e.target.value })} aria-label="Модель">{s.models.map(([v, l]: [string, string]) => <option key={v} value={v}>{l}</option>)}</select>
+            <button type="button" className={"cf-btn " + (s.weekly_enabled ? "ghost" : "gold")} style={{ height: 32 }} onClick={() => save({ weekly_enabled: !s.weekly_enabled })}>{s.weekly_enabled ? "Вимкнути" : "Увімкнути щотижня"}</button>
+          </div>
+        </div>
+        <div className="cf-card">
+          <h3>Звіт зараз</h3>
+          <div className="cf-kv"><span>Ціна одного звіту</span><b>≈ {usd(s.estimate_usd)}</b></div>
+          <button type="button" className="cf-btn gold" disabled={busy} onClick={make}>{busy ? "Аналізую… (до хвилини)" : "Зробити звіт за тиждень"}</button>
+          {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+        </div>
+      </div>
+      {!r ? <div className="cf-empty">Звітів ще немає.</div> : (<>
+        <div className="cf-set">
+          <select className="cf-in" value={pick} onChange={(e) => setPick(Number(e.target.value))} aria-label="Звіт">
+            {data.reports.map((x, n) => <option key={x.id} value={n}>{new Date(x.created_at).toLocaleDateString("uk-UA")} · {x.period_days} днів</option>)}
+          </select>
+        </div>
+        {own.followers != null && <div className="cf-kpis">
+          <div className="cf-kpi"><span>Підписники</span><b>{fmtN(own.followers)}</b></div>
+          <div className="cf-kpi"><span>Медіана переглядів</span><b>{fmtN(own.medianViews)}</b></div>
+          <div className="cf-kpi"><span>Медіана ніші</span><b>{fmtN(r.inputs?.niche?.views_p50)}</b></div>
+          <div className="cf-kpi"><span>Постів на тиждень</span><b>{own.postsPerWeek ?? "—"}</b></div>
+        </div>}
+        <div className="cf-card"><h3>Що відбувається</h3><div className="cf-rep">{r.summary}</div></div>
+        <div className="cf-card"><h3>5 ідей на тиждень</h3>
+          {r.ideas.map((i, n) => (
+            <div key={n} className="cf-idea"><span className="n">{n + 1}</span>
+              <div><b>{i.title}</b>{i.format && <span className="cf-tag" style={{ marginLeft: 8 }}>{i.format}</span>}{i.material && <span className="cf-tag kb" style={{ marginLeft: 6 }}>{i.material}</span>}
+                <p>Гачок: «{i.hook}»</p><p>Чому: {i.why}</p></div>
+            </div>))}
+        </div>
+      </>)}
+    </>
+  );
+}
+
 function Soon({ s }: { s: Section }) {
   return (
     <>
@@ -1081,6 +1227,8 @@ export default function ContentFactory() {
           : section.id === "questions" ? <Questions />
           : section.id === "telegram" ? <Telegram />
           : section.id === "sources" ? <Sources />
+          : section.id === "feed" ? <Feed />
+          : section.id === "analyst" ? <Analyst />
           : <Soon s={section} />}
         </div>
       </main>
