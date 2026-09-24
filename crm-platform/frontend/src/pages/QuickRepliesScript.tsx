@@ -158,16 +158,24 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
     style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.38)", display: "flex", alignItems: "center", justifyContent: "center", padding: narrow ? 6 : 16 }}>
     <div style={{ width: "min(1180px, 100%)", height: narrow ? "96vh" : "min(760px, 92vh)", background: "#fff", borderRadius: 14, boxShadow: "0 24px 64px rgba(15,23,42,.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* шапка */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
-        <button className="btn" type="button" onClick={() => setSalesScope("wholesale")}>Опт</button>
-        <button className="btn" type="button" onClick={() => setSalesScope("calls")}>Дзвінки</button>
-        <button className="btn" type="button" onClick={() => setCalculator(true)}>Калькулятор TOPCIMENT</button>
-        <b style={{ fontSize: 15 }}><Icon n="⚡" size={15} /> Швидкі відповіді</b>
-        <button className="btn" type="button" onClick={() => setAutomations(true)} style={{ background: "#e5f2e9", fontSize: 12 }}>Оплата, доставка, майстер-класи · автоматичні повідомлення</button>
-        <input value={q} onChange={(e) => { setQ(e.target.value); setSelId(null); }} autoFocus placeholder="Пошук по всіх розділах: «дорого», «галатея», «доставка»…"
-          style={{ flex: "1 1 240px", minWidth: 180, height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13 }} />
-        <button className="btn btn-light" type="button" onClick={onBack} style={{ fontSize: 12 }}><Icon n="🎨" size={13} /> Кольори й каталоги</button>
-        <button className="btn" type="button" onClick={onClose} aria-label="Закрити" style={{ padding: "2px 9px" }}>×</button>
+      {/* Шапка у два ряди (24.09, Олег: «все на купі, незручно орієнтуватись»):
+         1-й ряд — де я і що шукаю; 2-й ряд — куди перейти (бібліотека) і чим скористатись (інструменти). */}
+      <div style={{ borderBottom: "1px solid #e2e8f0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px 7px" }}>
+          <b style={{ fontSize: 15, whiteSpace: "nowrap" }}><Icon n="⚡" size={15} /> Швидкі відповіді</b>
+          <input value={q} onChange={(e) => { setQ(e.target.value); setSelId(null); }} autoFocus placeholder="Пошук по всіх розділах: «дорого», «галатея», «доставка»…"
+            style={{ flex: "1 1 240px", minWidth: 160, height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13 }} />
+          <button className="btn" type="button" onClick={onClose} aria-label="Закрити" style={{ padding: "2px 9px", flex: "0 0 auto" }}>×</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 14px 9px", flexWrap: "wrap" }}>
+          <button className="btn btn-light" type="button" onClick={onBack} style={{ fontSize: 12 }}><Icon n="🎨" size={13} /> Кольори й каталоги</button>
+          <span style={{ width: 1, height: 18, background: "#e2e8f0", margin: "0 3px" }} />
+          <span className="muted" style={{ fontSize: 11, letterSpacing: ".02em", textTransform: "uppercase", fontWeight: 700 }}>Інструменти</span>
+          <button className="btn" type="button" onClick={() => setSalesScope("wholesale")} style={{ fontSize: 12 }}>Опт</button>
+          <button className="btn" type="button" onClick={() => setSalesScope("calls")} style={{ fontSize: 12 }}>Дзвінки</button>
+          <button className="btn" type="button" onClick={() => setCalculator(true)} style={{ fontSize: 12 }}>Калькулятор TOPCIMENT</button>
+          <button className="btn" type="button" onClick={() => setAutomations(true)} style={{ background: "#e5f2e9", fontSize: 12 }}>Автоповідомлення: оплата, доставка, майстер-класи</button>
+        </div>
       </div>
       {narrow && <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "7px 10px", borderBottom: "1px solid #eef2f7", background: "#f8fafc" }}>
         {all.filter((s) => count(s.key) > 0 || s.group === "flow").map((s) => {
