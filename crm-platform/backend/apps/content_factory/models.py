@@ -115,3 +115,56 @@ def _build(platform, handle, kind=""):
         return platform, handle, f"https://www.youtube.com/@{handle}"
     handle = handle.lower()
     return platform, handle, f"https://t.me/{handle}"
+
+
+# ── Етап 1 (24.09.2026): питання клієнтів → теми ──────────────────────────────────────────────
+
+class QuestionSettings(models.Model):
+    """Один рядок налаштувань нічного розбору питань. За замовчуванням ВИМКНЕНО — вмикає власник."""
+    MODELS = [("claude-sonnet-4-6", "Sonnet 4.6 — точніше групує"), ("claude-haiku-4-5", "Haiku 4.5 — найдешевше")]
+    enabled = models.BooleanField(default=False)
+    model = models.CharField(max_length=40, choices=MODELS, default="claude-sonnet-4-6")
+    monthly_budget_usd = models.DecimalField(max_digits=6, decimal_places=2, default=2,
+                                             help_text="Ліміт на місяць. Досягнуто — розбір зупиняється до 1-го числа")
+    min_new = models.PositiveSmallIntegerField(default=5, help_text="Менше нових питань — ШІ не викликаємо")
+    backfill_days = models.PositiveSmallIntegerField(default=7, help_text="Перший запуск бере питання за стільки днів")
+    last_message_id = models.BigIntegerField(default=0, help_text="До якого повідомлення вже розібрано")
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_run_note = models.CharField(max_length=300, blank=True)
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class QuestionTopic(models.Model):
+    class Status(models.TextChoices):
+        NEW = "new", "Нова"
+        PLANNED = "planned", "У плані контенту"
+        DONE = "done", "Контент зроблено"
+        IGNORED = "ignored", "Не для контенту"
+
+    title = models.CharField(max_length=200, help_text="Питання словами клієнта, українською")
+    material = models.CharField(max_length=80, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.NEW, db_index=True)
+    examples = models.JSONField(default=list, blank=True, help_text="До 5 останніх формулювань, без телефонів і пошти")
+    kb_item_id = models.IntegerField(null=True, blank=True, help_text="Схожий затверджений запис бази знань (пошук за словами)")
+    kb_item_title = models.CharField(max_length=200, blank=True)
+    first_seen = models.DateTimeField(null=True, blank=True)
+    last_seen = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-last_seen"]
+
+    def __str__(self):
+        return self.title
+
+
+class QuestionMention(models.Model):
+    """Одне повідомлення клієнта, віднесене до теми. Одне повідомлення — одна тема (розбирається раз)."""
+    topic = models.ForeignKey(QuestionTopic, on_delete=models.CASCADE, related_name="mentions")
+    message_id = models.BigIntegerField(unique=True, help_text="inbox.Message.id (без FK — історію не чіпаємо)")
+    channel = models.CharField(max_length=24, blank=True)
+    asked_at = models.DateTimeField(db_index=True)

@@ -1,5 +1,6 @@
 /* Розділ «Контент-завод» (24.09.2026, етап 0). Доступ — лише власник або право content_factory.access.
  * Працює: «Студія» (план і лічильники) і «Сторінки» (наші сторінки, конкуренти, натхнення в IG / TikTok / YouTube / Telegram).
+ * Етап 1 (24.09): «Питання клієнтів» — нічний розбір питань у теми, з лімітом витрат (вмикає лише власник).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
 import { useCallback, useEffect, useState } from "react";
@@ -12,12 +13,23 @@ type Channel = {
 };
 type ChannelList = { results: Channel[]; roles: [string, string][]; platforms: [string, string][] };
 type Overview = { channels_total: number; by_role: Record<string, number>; by_platform: Record<string, number> };
+type Topic = {
+  id: number; title: string; material: string; status: string; status_display: string; count_period: number;
+  count_total: number; channels: Record<string, number>; examples: string[]; kb: { id: number; title: string } | null;
+  last_seen: string | null;
+};
+type QSettings = {
+  enabled: boolean; model: string; models: [string, string][]; monthly_budget_usd: number; spent_month_usd: number;
+  min_new: number; last_run_at: string | null; last_run_note: string;
+  pending: { questions: number; estimate_usd: number } | null;
+};
+type QData = { days: number; topics: Topic[]; statuses: [string, string][]; settings: QSettings };
 
 type Section = { id: string; label: string; stage: number; group?: string; live?: boolean; what?: string[] };
 const SECTIONS: Section[] = [
   { id: "studio", label: "Студія", stage: 0, live: true },
   { id: "channels", label: "Сторінки", stage: 0, live: true },
-  { id: "questions", label: "Питання клієнтів", stage: 1, group: "Сировина", what: [
+  { id: "questions", label: "Питання клієнтів", stage: 1, group: "Сировина", live: true, what: [
     "Щоночі ШІ групує вхідні з усіх каналів (Instagram, TikTok, Viber, Telegram, WhatsApp) у теми",
     "Біля теми — скільки разів спитали, чи є відповідь у базі знань, які є фото й відео",
     "Одна кнопка: зробити з теми рилс, карусель або пост у Telegram"] },
@@ -122,8 +134,31 @@ const CSS = `
 .cf-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .cf-sel{height:30px;background:var(--cf-bg);border:1px solid var(--cf-line);border-radius:7px;color:var(--cf-ink);font:inherit;font-size:12px;padding:0 6px}
 .cf-empty{border:1px dashed var(--cf-line);border-radius:9px;padding:14px 16px;color:var(--cf-ink3);font-size:13px}
+.cf-q-top{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px}
+.cf-meter{height:6px;border-radius:3px;background:var(--cf-panel2);overflow:hidden}
+.cf-meter i{display:block;height:100%;background:var(--cf-gold)}
+.cf-kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--cf-ink2)}
+.cf-kv b{color:var(--cf-ink);font-variant-numeric:tabular-nums}
+.cf-set{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cf-set .cf-in{width:auto;height:32px;font-size:12.5px}
+.cf-chips{display:flex;gap:6px;flex-wrap:wrap}
+.cf-chip{all:unset;cursor:pointer;font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--cf-line);color:var(--cf-ink2)}
+.cf-chip.on{background:var(--cf-panel2);color:var(--cf-ink);border-color:var(--cf-ink3)}
+.cf-chip:focus-visible{outline:2px solid var(--cf-blue)}
+.cf-topic{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:14px;align-items:start;background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:10px;padding:12px 14px}
+.cf-topic .cnt{font-size:24px;font-weight:800;color:var(--cf-gold);line-height:1;font-variant-numeric:tabular-nums;text-align:right}
+.cf-topic .cnt small{display:block;font-size:10px;font-weight:600;color:var(--cf-ink3);margin-top:4px}
+.cf-topic h4{margin:0;font-size:14.5px;line-height:1.35}
+.cf-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.cf-tag{font-size:11px;padding:3px 7px;border-radius:5px;background:var(--cf-panel2);color:var(--cf-ink2)}
+.cf-tag.kb{background:rgba(108,192,143,.14);color:var(--cf-good)}
+.cf-tag.nokb{background:rgba(227,184,95,.14);color:var(--cf-gold)}
+.cf-ex{margin:8px 0 0;padding-left:16px;color:var(--cf-ink2);font-size:12.5px;display:grid;gap:3px}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
+  .cf-q-top{grid-template-columns:1fr}
+  .cf-topic{grid-template-columns:44px minmax(0,1fr)}
+  .cf-topic .cf-acts{grid-column:1/-1}
   .cf{grid-template-columns:1fr}
   .cf-rail{border-right:0;border-bottom:1px solid var(--cf-line);flex-direction:row;flex-wrap:wrap;gap:4px;padding:12px}
   .cf-brand,.cf-grp{display:none}
@@ -177,7 +212,7 @@ function Studio({ ov, go }: { ov: Overview | null; go: (t: string) => void }) {
         <div>
           <h1 className="cf-h1">Контент-завод</h1>
           <p className="cf-sub">Рилси з ваших нарізок, каруселі й щоденні пости в Telegram — з реальних питань клієнтів і відповідей бази знань.
-            Аналітик щотижня підкаже, що знімати далі. Зараз працює етап 0: додайте сторінки, які будемо аналізувати.</p>
+            Аналітик щотижня підкаже, що знімати далі. Працюють «Сторінки» (що аналізувати) і «Питання клієнтів» (що людей цікавить найбільше).</p>
         </div>
         <div className="cf-sw" aria-hidden="true">{SWATCHES.map((bg, i) => <div key={i} style={{ background: bg }} />)}</div>
       </div>
@@ -196,10 +231,10 @@ function Studio({ ov, go }: { ov: Overview | null; go: (t: string) => void }) {
               if (ex) ex.t += " + " + s.label.toLowerCase(); else acc.push({ n: s.stage, t: s.label, d: s.what?.[0] || "" });
               return acc;
             }, [])].map((st) => (
-            <div key={st.n} className={"cf-stage" + (st.n === 0 ? " now" : "")}>
+            <div key={st.n} className={"cf-stage" + (st.n <= 1 ? " now" : "")}>
               <span className="n">{st.n}</span>
               <div><p>{st.t}</p><small>{st.d}</small></div>
-              <span className={"cf-pill " + (st.n === 0 ? "now" : "next")}>{st.n === 0 ? "зараз" : "далі"}</span>
+              <span className={"cf-pill " + (st.n <= 1 ? "now" : "next")}>{st.n <= 1 ? "готово" : "далі"}</span>
             </div>
           ))}
         </div>
@@ -314,6 +349,120 @@ function Channels({ data, reload }: { data: ChannelList | null; reload: () => vo
   );
 }
 
+const usd = (n: number) => "$" + (n < 0.1 ? n.toFixed(3) : n.toFixed(2));
+const CHANNEL_LABEL: Record<string, string> = { instagram: "IG", tiktok: "TikTok", echat: "Viber", echat_whatsapp: "WhatsApp", telegram: "TG", facebook: "FB" };
+
+function CostCard({ s, reload }: { s: QSettings; reload: () => void }) {
+  const [budget, setBudget] = useState(String(s.monthly_budget_usd));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { setBudget(String(s.monthly_budget_usd)); }, [s.monthly_budget_usd]);
+  const save = async (b: Record<string, unknown>) => {
+    setBusy(true); setMsg(null);
+    try { await api.patch("/api/content-factory/questions/settings/", b); reload(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося зберегти." }); }
+    finally { setBusy(false); }
+  };
+  const runNow = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r: any = await api.post("/api/content-factory/questions/run/");
+      setMsg({ ok: true, text: r.note || "Готово" }); reload();
+    } catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося запустити." }); }
+    finally { setBusy(false); }
+  };
+  const pct = s.monthly_budget_usd > 0 ? Math.min(100, (s.spent_month_usd / s.monthly_budget_usd) * 100) : 100;
+  const pend = s.pending;
+  return (
+    <div className="cf-q-top">
+      <div className="cf-card">
+        <h3>Розбір питань · витрати</h3>
+        <div className="cf-kv"><span>Стан</span>
+          <span className={"cf-pill " + (s.enabled ? "now" : "next")}>{s.enabled ? "увімкнено · щоночі 03:40" : "вимкнено"}</span></div>
+        <div className="cf-kv"><span>Витрачено цього місяця</span><b>{usd(s.spent_month_usd)} з {usd(s.monthly_budget_usd)}</b></div>
+        <div className="cf-meter" aria-hidden="true"><i style={{ width: pct + "%" }} /></div>
+        <div className="cf-set">
+          <select id="cf-q-model" className="cf-in" value={s.model} disabled={busy} onChange={(e) => save({ model: e.target.value })} aria-label="Модель ШІ">
+            {s.models.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <label className="cf-kv" htmlFor="cf-q-budget" style={{ alignItems: "center" }}>ліміт $/міс</label>
+          <input id="cf-q-budget" className="cf-in" style={{ width: 70 }} inputMode="decimal" value={budget}
+            onChange={(e) => setBudget(e.target.value)} onBlur={() => budget !== String(s.monthly_budget_usd) && save({ monthly_budget_usd: budget })} />
+          <button type="button" className={"cf-btn " + (s.enabled ? "ghost" : "gold")} style={{ height: 32 }} disabled={busy}
+            onClick={() => save({ enabled: !s.enabled })}>{s.enabled ? "Вимкнути" : "Увімкнути щоночі"}</button>
+        </div>
+        {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")} role="status">{msg.text}</div>}
+      </div>
+      <div className="cf-card">
+        <h3>Чекає розбору</h3>
+        <div className="cf-kv"><span>Нових питань (відібрано без ШІ)</span><b>{pend ? pend.questions : "—"}</b></div>
+        <div className="cf-kv"><span>Орієнтовна ціна розбору</span><b>{pend ? "≈ " + usd(pend.estimate_usd) : "—"}</b></div>
+        <div className="cf-kv"><span>Останній запуск</span><b style={{ fontWeight: 500, textAlign: "right" }}>{s.last_run_note || "ще не було"}</b></div>
+        <button type="button" className="cf-btn gold" disabled={busy || !pend?.questions} onClick={runNow}>
+          {busy ? "Розбираю…" : pend?.questions ? `Розібрати зараз · до 120 питань` : "Нових питань немає"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TopicRow({ t, statuses, onChanged }: { t: Topic; statuses: [string, string][]; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const setStatus = async (status: string) => { await api.patch(`/api/content-factory/questions/${t.id}/`, { status }); onChanged(); };
+  return (
+    <div className="cf-topic">
+      <div className="cnt">{t.count_period}<small>разів</small></div>
+      <div style={{ minWidth: 0 }}>
+        <h4>{t.title}</h4>
+        <div className="cf-tags">
+          {t.material && <span className="cf-tag">{t.material}</span>}
+          {Object.entries(t.channels).map(([ch, n]) => <span key={ch} className="cf-tag">{CHANNEL_LABEL[ch] || ch} · {n}</span>)}
+          {t.kb ? <span className="cf-tag kb" title={t.kb.title}>є в базі знань</span> : <span className="cf-tag nokb">немає в базі знань</span>}
+        </div>
+        {open && <ul className="cf-ex">{t.examples.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+      </div>
+      <div className="cf-acts">
+        <button type="button" className="cf-btn ghost" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? "Сховати" : "Як питають"}</button>
+        <select className="cf-sel" value={t.status} onChange={(e) => setStatus(e.target.value)} aria-label="Статус теми">
+          {statuses.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function Questions() {
+  const [days, setDays] = useState(7);
+  const [status, setStatus] = useState("active");
+  const [data, setData] = useState<QData | null>(null);
+  const [err, setErr] = useState("");
+  const load = useCallback(async () => {
+    try { setData(await api.get<QData>(`/api/content-factory/questions/?days=${days}&status=${status}`)); setErr(""); }
+    catch { setErr("Не вдалося завантажити питання."); }
+  }, [days, status]);
+  useEffect(() => { load(); }, [load]);
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Питання клієнтів</h1>
+        <p className="cf-sub">Щоночі CRM відбирає з переписок справжні питання (без ШІ), а ШІ групує лише нові в теми. Кожне повідомлення
+          розбирається один раз, є місячний ліміт. Найчастіші теми — готові ідеї для рилсів, каруселей і постів.</p>
+      </div>
+      {err && <div className="cf-msg err" role="alert">{err}</div>}
+      {data && <CostCard s={data.settings} reload={load} />}
+      <div className="cf-chips" role="group" aria-label="Період">
+        {[7, 30, 90].map((d) => <button key={d} type="button" className={"cf-chip" + (days === d ? " on" : "")} onClick={() => setDays(d)}>{d} днів</button>)}
+        <span style={{ width: 12 }} />
+        {[["active", "Усі робочі"], ["planned", "У плані"], ["done", "Зроблено"], ["ignored", "Не для контенту"]].map(([v, l]) =>
+          <button key={v} type="button" className={"cf-chip" + (status === v ? " on" : "")} onClick={() => setStatus(v)}>{l}</button>)}
+      </div>
+      {!data ? <div className="cf-empty">Завантажую…</div>
+        : data.topics.length ? data.topics.map((t) => <TopicRow key={t.id} t={t} statuses={data.statuses} onChanged={load} />)
+        : <div className="cf-empty">{data.settings.last_run_at ? "За цей період тем немає." : "Тем ще немає — увімкніть розбір або натисніть «Розібрати зараз»."}</div>}
+    </>
+  );
+}
+
 function Soon({ s }: { s: Section }) {
   return (
     <>
@@ -358,6 +507,7 @@ export default function ContentFactory() {
         {err && <div className="cf-msg err" role="alert">{err}</div>}
         {section.id === "studio" ? <Studio ov={ov} go={go} />
           : section.id === "channels" ? <Channels data={list} reload={load} />
+          : section.id === "questions" ? <Questions />
           : <Soon s={section} />}
       </main>
     </div>

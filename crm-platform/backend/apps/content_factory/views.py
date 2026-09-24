@@ -5,15 +5,20 @@ GET  /api/content-factory/overview/        — лічильники сторін
 GET  /api/content-factory/channels/        — список сторінок
 POST /api/content-factory/channels/        — {link, platform?, role, title?, note?}
 PATCH/DELETE /api/content-factory/channels/<id>/
+Етап 1: GET /questions/, PATCH /questions/settings/, POST /questions/run/, PATCH /questions/<id>/
 """
-from django.db.models import Count
+from datetime import timedelta
+
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import ChannelLinkError, ContentChannel, parse_channel_link
+from . import questions as qsvc
+from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic,
+                     parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -97,3 +102,94 @@ class ChannelDetailView(_Base):
     def delete(self, request, pk):
         get_object_or_404(ContentChannel, pk=pk).delete()
         return Response(status=204)
+
+
+# ── Етап 1 (24.09.2026): питання клієнтів ─────────────────────────────────────────────────────
+
+
+def _settings_payload(s, dry=None):
+    return {
+        "enabled": s.enabled, "model": s.model, "models": QuestionSettings.MODELS,
+        "monthly_budget_usd": float(s.monthly_budget_usd), "spent_month_usd": round(qsvc.month_spent(), 4),
+        "min_new": s.min_new, "last_run_at": timezone.localtime(s.last_run_at).isoformat() if s.last_run_at else None,
+        "last_run_note": s.last_run_note, "pending": dry,
+    }
+
+
+class QuestionsView(_Base):
+    """GET ?days=7&status=active — теми, відсортовані за кількістю питань за період."""
+    def get(self, request):
+        try:
+            days = max(1, min(int(request.GET.get("days", 7)), 90))
+        except ValueError:
+            days = 7
+        since = timezone.now() - timedelta(days=days)
+        status = request.GET.get("status", "active")
+        qs = QuestionTopic.objects.all()
+        if status == "active":
+            qs = qs.exclude(status=QuestionTopic.Status.IGNORED)
+        elif status in QuestionTopic.Status.values:
+            qs = qs.filter(status=status)
+        qs = qs.annotate(n_period=Count("mentions", filter=Q(mentions__asked_at__gte=since)),
+                         n_total=Count("mentions"))
+        topics = sorted(qs, key=lambda t: (-t.n_period, -t.n_total, t.id))[:200]
+        chans = {}
+        for tid, ch, n in (QuestionMention.objects.filter(topic_id__in=[t.id for t in topics], asked_at__gte=since)
+                           .values_list("topic_id", "channel").annotate(n=Count("id"))):
+            chans.setdefault(tid, {})[ch or "інше"] = n
+        s = QuestionSettings.get()
+        return Response({
+            "days": days,
+            "topics": [{
+                "id": t.id, "title": t.title, "material": t.material, "status": t.status,
+                "status_display": t.get_status_display(), "count_period": t.n_period, "count_total": t.n_total,
+                "channels": chans.get(t.id, {}), "examples": t.examples or [],
+                "kb": {"id": t.kb_item_id, "title": t.kb_item_title} if t.kb_item_id else None,
+                "last_seen": timezone.localtime(t.last_seen).isoformat() if t.last_seen else None,
+            } for t in topics if t.n_period or status != "active"],
+            "statuses": QuestionTopic.Status.choices,
+            "settings": _settings_payload(s, qsvc.run(dry_run=True)),
+        })
+
+
+class QuestionSettingsView(_Base):
+    """PATCH {enabled, model, monthly_budget_usd}. Увімкнути платний розбір і змінити ліміт — лише власник."""
+    def patch(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Змінювати налаштування розбору може лише власник."}, status=403)
+        s, data = QuestionSettings.get(), request.data or {}
+        if "enabled" in data:
+            s.enabled = bool(data["enabled"])
+        if "model" in data:
+            if data["model"] not in dict(QuestionSettings.MODELS):
+                return Response({"error": "Невідома модель."}, status=400)
+            s.model = data["model"]
+        if "monthly_budget_usd" in data:
+            try:
+                b = round(float(data["monthly_budget_usd"]), 2)
+            except (TypeError, ValueError):
+                return Response({"error": "Ліміт має бути числом."}, status=400)
+            if not 0 <= b <= 50:
+                return Response({"error": "Ліміт — від $0 до $50 на місяць."}, status=400)
+            s.monthly_budget_usd = b
+        s.save()
+        return Response(_settings_payload(s))
+
+
+class QuestionRunView(_Base):
+    """POST — розібрати нові питання зараз (одна порція до 120 питань; решту — наступним натисканням або вночі)."""
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Запускати платний розбір може лише власник."}, status=403)
+        return Response(qsvc.run(force=True, max_batches=1))
+
+
+class QuestionTopicView(_Base):
+    def patch(self, request, pk):
+        t = get_object_or_404(QuestionTopic, pk=pk)
+        st = (request.data or {}).get("status")
+        if st not in QuestionTopic.Status.values:
+            return Response({"error": "Невідомий статус."}, status=400)
+        t.status = st
+        t.save(update_fields=["status"])
+        return Response({"id": t.id, "status": t.status, "status_display": t.get_status_display()})

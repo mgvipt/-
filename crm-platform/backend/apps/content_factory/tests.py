@@ -1,9 +1,13 @@
-"""Контент-завод, етап 0: розбір посилань і доступ лише власнику. Без зовнішніх запитів."""
+"""Контент-завод: етап 0 (посилання, доступ) і етап 1 (питання клієнтів). ШІ підмінено — жодних зовнішніх запитів."""
 from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from .models import ChannelLinkError, ContentChannel, parse_channel_link
+from apps.crm.models import AiUsage, Contact
+from apps.inbox.models import Channel, Conversation, Message
+from . import questions as qsvc
+from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic,
+                     parse_channel_link)
 
 
 class ParseLinkTests(SimpleTestCase):
@@ -72,3 +76,94 @@ class AccessTests(TestCase):
         ov = c.get("/api/content-factory/overview/").json()
         self.assertEqual(ov["channels_total"], 0)  # вимкнена не рахується
         self.assertEqual(c.delete(f"/api/content-factory/channels/{pk}/").status_code, 204)
+
+
+# ── Етап 1: питання клієнтів ─────────────────────────────────────────────────────────────────
+
+
+class QuestionFilterTests(SimpleTestCase):
+    def test_filter_without_ai(self):
+        for t in ("Скільки коштує галатея на 12 квадратів", "Чи можна мити стіну з шовком?", "А есть фото этого набора?"):
+            self.assertTrue(qsvc.is_question(t), t)
+        for t in ("Дякую!", "ок", "+", "Добрий день", "Надсилаю фото стіни", "?" * 3):
+            self.assertFalse(qsvc.is_question(t), t)
+
+    def test_clean_hides_contacts(self):
+        c = qsvc.clean("Скільки коштує? мій номер +380 99 123 45 67, пошта a.b@gmail.com https://x.y/z")
+        self.assertNotIn("123", c)
+        self.assertNotIn("gmail", c)
+        self.assertNotIn("https", c)
+
+
+class QuestionRunTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="q-owner", password="x", is_superuser=True, is_staff=True)
+        self.manager = User.objects.create_user(username="q-manager", password="x")
+        ch = Channel.objects.create(kind="instagram", name="IG test", config={})
+        conv = Conversation.objects.create(channel=ch, contact=Contact.objects.create(first_name="Тест"), external_chat_id="t1")
+        self.msgs = [Message.objects.create(conversation=conv, direction="in", text=t) for t in (
+            "Скільки коштує Галатея на кімнату?", "скільки коштує галатея на кімнату", "Чи можна мити шовк?",
+            "Дякую!", "А доставка Новою поштою є?", "Як наносити без майстра?", "Чи буде видно шви?")]
+        Message.objects.create(conversation=conv, direction="out", text="Скільки у вас метрів?")
+
+    def _fake(self, calls):
+        def call(prompt):
+            calls.append(prompt)
+            AiUsage.objects.create(source=qsvc.SOURCE, model="claude-haiku-4-5", cost_usd=0.01)
+            return {"a": [[1, "n1"], [2, "n2"], [3, "n3"], [4, "n4"], [5, "n5"]],
+                    "new": [{"key": f"n{i}", "title": f"Тема {i}", "material": ""} for i in range(1, 6)]}
+        return call
+
+    def test_disabled_no_ai(self):
+        calls = []
+        r = qsvc.run(call=self._fake(calls))
+        self.assertEqual(calls, [])
+        self.assertIn("Вимкнено", r["note"])
+        self.assertEqual(QuestionSettings.get().last_message_id, 0)  # питання дочекаються вмикання
+
+    def test_dry_run_counts_and_dedups(self):
+        r = qsvc.run(dry_run=True)
+        self.assertEqual(r["questions"], 5)  # дубль склеєно, «Дякую» і вихідне — відсіяно
+        self.assertGreater(r["estimate_usd"], 0)
+
+    def test_run_once_then_nothing_to_pay(self):
+        s = QuestionSettings.get(); s.enabled = True; s.save()
+        calls = []
+        r = qsvc.run(call=self._fake(calls))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(r["assigned"], 6)  # 5 тем, дубль — друга згадка тієї ж теми
+        self.assertEqual(QuestionTopic.objects.count(), 5)
+        self.assertEqual(QuestionSettings.get().last_message_id, Message.objects.filter(direction="in").latest("id").id)
+        r2 = qsvc.run(call=self._fake(calls))
+        self.assertEqual(len(calls), 1)  # другий прохід — жодного платного виклику
+        self.assertIn("менше", r2["note"])
+
+    def test_budget_cap_stops_before_call(self):
+        s = QuestionSettings.get(); s.enabled = True; s.monthly_budget_usd = 1; s.save()
+        AiUsage.objects.create(source=qsvc.SOURCE, model="claude-haiku-4-5", cost_usd=1.0)
+        calls = []
+        r = qsvc.run(call=self._fake(calls))
+        self.assertEqual(calls, [])
+        self.assertIn("ліміту", r["note"])
+        self.assertFalse(QuestionMention.objects.exists())
+
+    def test_ai_error_keeps_pointer(self):
+        s = QuestionSettings.get(); s.enabled = True; s.save()
+        def boom(prompt):
+            raise RuntimeError("мережа")
+        r = qsvc.run(call=boom)
+        self.assertIn("Помилка ШІ", r["note"])
+        self.assertEqual(QuestionSettings.get().last_message_id, self.msgs[0].id - 1)
+
+    def test_api_access(self):
+        c = APIClient(); c.force_authenticate(self.manager)
+        self.assertEqual(c.get("/api/content-factory/questions/").status_code, 403)
+        c.force_authenticate(self.owner)
+        r = c.get("/api/content-factory/questions/")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()["settings"]["enabled"])
+        self.assertEqual(r.json()["settings"]["pending"]["questions"], 5)
+        self.assertEqual(c.patch("/api/content-factory/questions/settings/", {"monthly_budget_usd": 999},
+                                 format="json").status_code, 400)
+        r = c.patch("/api/content-factory/questions/settings/", {"model": "claude-haiku-4-5"}, format="json")
+        self.assertEqual(r.json()["model"], "claude-haiku-4-5")

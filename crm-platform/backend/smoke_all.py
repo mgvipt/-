@@ -92,6 +92,8 @@ CHECKS = [
     ("Контент-завод: огляд (власник)", "owner", "/api/content-factory/overview/", {200}, ["channels_total", "by_role"]),
     ("Контент-завод: сторінки (власник)", "owner", "/api/content-factory/channels/", {200}, ["results", "platforms"]),
     ("Контент-завод: менеджер без права — закрито", "manager", "/api/content-factory/channels/", {403}, []),
+    ("Контент-завод: питання клієнтів + ліміт витрат", "owner", "/api/content-factory/questions/", {200}, ["topics", "settings"]),
+    ("Контент-завод: питання — менеджеру закрито", "manager", "/api/content-factory/questions/", {403}, []),
     ("Відгуки: «не просити» у картці клієнта", "manager", "CONTACT_REVIEW_OPTOUT", {200}, ["opt_out", "can_remove"]),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),
