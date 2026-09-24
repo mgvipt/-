@@ -19,7 +19,7 @@ const effectFor = (asset: Asset) => {
   return match?.[1]?.trim() || "";
 };
 
-export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertText, clientName, initialTab }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void; onInsertText?: (t: string) => void; clientName?: string; initialTab?: "colors" | "quick" }) {
+export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertText, onStage, clientName, initialTab }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void; onInsertText?: (t: string) => void; onStage?: (items: Asset[]) => void; clientName?: string; initialTab?: "colors" | "quick" }) {
   // Підставляє імʼя клієнта замість {Ім'я}/{Имя} у шаблоні швидкої відповіді.
   const fillName = (txt: string) => {
     const raw = (clientName || "").trim();
@@ -33,6 +33,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   const [quickRefreshing, setQuickRefreshing] = useState(false);
   const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick" | "instructions">(initialTab || "colors");
   const [screen, setScreen] = useState<Screen>("materials"); const [material, setMaterial] = useState(""); const [color, setColor] = useState("");
+  const [zoom, setZoom] = useState<Asset | null>(null);
   const [picked, setPicked] = useState<number[]>([]); const [loaded, setLoaded] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const loadPicker = async (nextMaterial = "", nextColor = "") => {
     setError("");
@@ -94,10 +95,11 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   function openMaterial(name: string) { setMaterial(name); setColor(""); setQuery(""); setScreen("material"); loadPicker(name); }
   function openColor(code: string) { setColor(code); setQuery(""); setScreen("color"); loadPicker(material, code); }
   async function send(replyId?: number) { setBusy(true); setError(""); try { const m = await api.post<ChatMessage>(`/api/conversations/${conversationId}/send-library/`, replyId ? { reply_id: replyId } : { item_ids: picked }); onSent(m); onClose(); } catch (e: any) { setError(e?.response?.data?.detail || "Не вдалося надіслати"); } finally { setBusy(false); } }
-  const card = (a: Asset) => <button key={a.id} onClick={() => toggle(a.id)} style={{ border: picked.includes(a.id) ? "2px solid var(--brand)" : "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left", cursor: "pointer" }}>
-    {(a.preview_url || a.url) && a.kind !== "video" && <img src={a.preview_url || a.url} loading="lazy" decoding="async" style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 5 }} />}
+  const card = (a: Asset) => <div key={a.id} style={{ position: "relative", border: picked.includes(a.id) ? "2px solid var(--brand)" : "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left" }}>
+    <button type="button" onClick={() => toggle(a.id)} title={picked.includes(a.id) ? "Прибрати з вибраних" : "Вибрати"} style={{ position: "absolute", top: 8, left: 8, zIndex: 2, width: 22, height: 22, borderRadius: 6, cursor: "pointer", border: picked.includes(a.id) ? "none" : "1px solid #cbd5e1", background: picked.includes(a.id) ? "var(--brand)" : "rgba(255,255,255,.88)", color: "#fff", fontSize: 13, lineHeight: "20px", padding: 0 }}>{picked.includes(a.id) ? "✓" : ""}</button>
+    {(a.preview_url || a.url) && a.kind !== "video" && <img src={a.preview_url || a.url} loading="lazy" decoding="async" onClick={() => setZoom(a)} title="Відкрити фото" style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 5, cursor: "zoom-in" }} />}
     <div style={{ fontSize: 11, marginTop: 3 }}>{a.kind === "video" ? "🎥 " : ""}{a.kind === "catalog" ? "📖 " : ""}{a.material === "Мокрий шовк" && silkColorName(a.color_code) ? `${silkColorName(a.color_code)} · ` : ""}{a.title}</div>
-  </button>;
+  </div>;
   const back = () => { if (screen === "color") { setScreen("material"); setColor(""); loadPicker(material); } else { setScreen("materials"); setMaterial(""); loadPicker(); } setQuery(""); };
 
   // Швидкі відповіді — велике вікно-«скрипт продажів» з етапами розмови (14.09).
@@ -128,6 +130,14 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
     </>}
     </div>
     {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{error}</div>}
-    {picked.length > 0 && <button className="btn btn-primary" disabled={busy} onClick={() => send()} style={{ marginTop: 9, width: "100%", flexShrink: 0, position: "sticky", bottom: 0 }}>{busy ? "…" : `Надіслати (${picked.length})`}</button>}
+    {picked.length > 0 && <button className="btn btn-primary" disabled={busy} onClick={() => { if (onStage) { onStage(items.filter((x) => picked.includes(x.id))); setPicked([]); onClose(); } else { send(); } }} style={{ marginTop: 9, width: "100%", flexShrink: 0, position: "sticky", bottom: 0 }}>{busy ? "…" : onStage ? `Додати в повідомлення (${picked.length})` : `Надіслати (${picked.length})`}</button>}
+    {zoom && <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(8,12,20,.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 16 }}>
+      <img src={zoom.url || zoom.preview_url} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "min(900px, 92vw)", maxHeight: "calc(100vh - 150px)", objectFit: "contain", borderRadius: 10, background: "#000" }} />
+      <div style={{ color: "#e8edf5", fontSize: 13, textAlign: "center", maxWidth: "90vw" }}>{zoom.title}</div>
+      <div style={{ display: "flex", gap: 8 }} onClick={(e) => e.stopPropagation()}>
+        <button className="btn btn-primary" onClick={() => { if (onStage) { onStage([zoom]); setZoom(null); onClose(); } else { setPicked((v) => v.includes(zoom.id) ? v : [...v, zoom.id]); setZoom(null); } }}>{onStage ? "Додати в повідомлення" : "Вибрати"}</button>
+        <button className="btn" onClick={() => setZoom(null)}>Закрити</button>
+      </div>
+    </div>}
   </div>;
 }

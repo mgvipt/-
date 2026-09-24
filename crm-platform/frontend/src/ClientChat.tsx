@@ -159,7 +159,9 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     const cMode: CommentMode = modeOverride === "public" || modeOverride === "private" ? modeOverride : commentMode;
     try {
       for (const att of pending) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal });
+        const m = att.libId
+          ? await api.post<ChatMessage>(`/api/conversations/${conv.id}/send-library/`, { item_ids: [att.libId] })
+          : await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal });
         setMsgs((p) => [...p, m]);
       }
       setPending([]);
@@ -444,7 +446,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       {pending.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         {pending.map((att: any, i: number) => (
           <div key={i} style={{ position: "relative", border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", borderRadius: 8, background: internal ? "#fffbeb" : "#f8fafc", padding: att.kind === "photo" ? 0 : "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
-            {att.kind === "photo" ? <img src={att.dataURL} alt="" style={{ height: 54, maxWidth: 90, borderRadius: 8, objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 12, color: "#475569", display: "inline-flex", alignItems: "center", gap: 5 }}><Icon n="paperclip" size={15} /> {String(att.name).slice(0, 24)}</span>}
+            {att.kind === "photo" ? <img src={att.dataURL || att.url} alt="" style={{ height: 54, maxWidth: 90, borderRadius: 8, objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 12, color: "#475569", display: "inline-flex", alignItems: "center", gap: 5 }}><Icon n="paperclip" size={15} /> {String(att.name).slice(0, 24)}</span>}
             <button type="button" onClick={() => setPending((p: any[]) => p.filter((_: any, j: number) => j !== i))} title="Прибрати" style={{ position: "absolute", top: -7, right: -7, width: 18, height: 18, borderRadius: "50%", background: "#dc2626", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, lineHeight: "16px", padding: 0 }}>✕</button>
           </div>
         ))}
@@ -467,7 +469,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         <EmojiButton onPick={(e) => setText((t) => t + e)} />
         <div style={{ position: "relative", flex: "0 0 auto" }}>
           <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Бібліотека: кольори, каталоги і швидкі відповіді" onClick={() => { setLibraryQuick(false); setLibraryOpen((v) => !v); }} disabled={busy}><Icon n="grid" size={17} /></button>
-          {libraryOpen && conv && <MediaLibraryPicker initialTab={libraryQuick ? "quick" : "colors"} conversationId={conv.id} onSent={(m: any) => setMsgs((ms) => [...ms, m])} onClose={() => { setLibraryOpen(false); setLibraryQuick(false); }} onInsertText={(t: string) => setText((prev) => (prev ? prev + "\n" : "") + t)} clientName={cinfo?.display_name || cinfo?.nickname || ""} />}
+          {libraryOpen && conv && <MediaLibraryPicker initialTab={libraryQuick ? "quick" : "colors"} conversationId={conv.id} onSent={(m: any) => setMsgs((ms) => [...ms, m])} onStage={(its: any[]) => setPending((p) => [...p, ...its.map((x: any) => ({ libId: x.id, url: x.preview_url || x.url, name: x.title, kind: x.kind === "video" ? "video" : "photo" }))])} onClose={() => { setLibraryOpen(false); setLibraryQuick(false); }} onInsertText={(t: string) => setText((prev) => (prev ? prev + "\n" : "") + t)} clientName={cinfo?.display_name || cinfo?.nickname || ""} />}
         </div>
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}><Icon n="paperclip" size={17} /></button>
         <AiComposeAssist draft={text} convId={conv.id} onApply={setText} compact />

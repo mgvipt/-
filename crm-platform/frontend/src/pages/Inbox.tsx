@@ -306,7 +306,9 @@ export default function Inbox() {
     const cMode: CommentMode = modeOverride === "public" || modeOverride === "private" ? modeOverride : commentMode;
     try {
       for (const att of pending) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal: internalNote });
+        const m = att.libId
+          ? await api.post<ChatMessage>(`/api/conversations/${active.id}/send-library/`, { item_ids: [att.libId] })
+          : await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal: internalNote });
         setMsgs((ms) => [...ms, m]);
       }
       setPending([]);
@@ -732,7 +734,7 @@ export default function Inbox() {
               {pending.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 7 }}>
                 {pending.map((att: any, i: number) => (
                   <div key={i} style={{ position: "relative", border: "1px solid #e2e8f0", borderRadius: 8, background: "#f8fafc", padding: att.kind === "photo" ? 0 : "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
-                    {att.kind === "photo" ? <img src={att.dataURL} alt="" style={{ height: 54, maxWidth: 90, borderRadius: 8, objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 12, color: "#475569", display: "inline-flex", alignItems: "center", gap: 5 }}><Icon n="file" size={15} /> {att.name.slice(0, 24)}</span>}
+                    {att.kind === "photo" ? <img src={att.dataURL || att.url} alt="" style={{ height: 54, maxWidth: 90, borderRadius: 8, objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 12, color: "#475569", display: "inline-flex", alignItems: "center", gap: 5 }}><Icon n="file" size={15} /> {att.name.slice(0, 24)}</span>}
                     <button type="button" onClick={() => setPending((p) => p.filter((_: any, j: number) => j !== i))} title={t("Убрать","Прибрати")} style={{ position: "absolute", top: -7, right: -7, width: 18, height: 18, borderRadius: "50%", background: "#dc2626", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, lineHeight: "16px", padding: 0 }}>✕</button>
                   </div>
                 ))}
@@ -752,7 +754,7 @@ export default function Inbox() {
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
               <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto", height: 38, width: 38, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
               <EmojiButton onPick={(em) => setText((tx) => tx + em)} />
-              <div style={{ position: "relative", flex: "0 0 auto" }}><button className="btn" type="button" style={{ background: "#f1f5f9", height: 38, width: 38, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={t("Библиотека: цвета, каталоги и быстрые ответы","Бібліотека: кольори, каталоги і швидкі відповіді")} onClick={() => { setLibraryQuick(false); setLibraryOpen((v) => !v); }} disabled={sending}><Icon n="grid" size={17} /></button>{libraryOpen && active && <MediaLibraryPicker initialTab={libraryQuick ? "quick" : "colors"} conversationId={active.id} onSent={(m) => setMsgs((ms) => [...ms, m])} onClose={() => { setLibraryOpen(false); setLibraryQuick(false); }} onInsertText={(t) => setText((prev) => (prev ? prev + "\n" : "") + t)} clientName={active.contact_name || active.title || ""} />}</div>
+              <div style={{ position: "relative", flex: "0 0 auto" }}><button className="btn" type="button" style={{ background: "#f1f5f9", height: 38, width: 38, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={t("Библиотека: цвета, каталоги и быстрые ответы","Бібліотека: кольори, каталоги і швидкі відповіді")} onClick={() => { setLibraryQuick(false); setLibraryOpen((v) => !v); }} disabled={sending}><Icon n="grid" size={17} /></button>{libraryOpen && active && <MediaLibraryPicker initialTab={libraryQuick ? "quick" : "colors"} conversationId={active.id} onSent={(m) => setMsgs((ms) => [...ms, m])} onStage={(its: any[]) => setPending((p) => [...p, ...its.map((x) => ({ libId: x.id, url: x.preview_url || x.url, name: x.title, kind: x.kind === "video" ? "video" : "photo" }))])} onClose={() => { setLibraryOpen(false); setLibraryQuick(false); }} onInsertText={(t) => setText((prev) => (prev ? prev + "\n" : "") + t)} clientName={active.contact_name || active.title || ""} />}</div>
               <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto", height: 38, width: 38, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={t("Прикрепить файл с устройства","Прикріпити файл з пристрою")} onClick={() => fileRef.current?.click()} disabled={sending}><Icon n="paperclip" size={17} /></button>
               <textarea value={text} rows={1}
                 onChange={(e) => { if (e.target.value === "/" && !text && !internalNote) { setLibraryQuick(true); setLibraryOpen(true); return; } setText(e.target.value); if (composerH === null) { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 170) + "px"; } }}
