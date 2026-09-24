@@ -65,8 +65,9 @@ type ReportT = { id: number; created_at: string; period_days: number; summary: s
 type ReelT = {
   id: number; title: string; topic: string; material: string; caption: string; status: string; status_display: string;
   duration: number | null; error: string; facts: string[]; created_at: string; video_url: string;
-  beats: { text: string; scene_id: number; seconds: number; what: string; source: string }[];
+  beats: { text: string; scene_id: number; seconds: number; what: string; source: string; thumb_url?: string }[];
 };
+type SceneT = { id: number; what: string; shot: string; quality: number; seconds: number; thumb_url: string; source: string };
 type DriveFolderT = { id: number; folder_id: string; title: string; enabled: boolean; files_count: number; last_error: string; last_sync_at: string | null; link: string };
 type TgData = {
   settings: { daily_drafts: boolean; model: string; models: [string, string][]; monthly_budget_usd: number;
@@ -289,6 +290,18 @@ const CSS = `
 .cf-beat:first-of-type{border-top:0}
 .cf-beat i{font-style:normal;color:var(--cf-gold);font-weight:700;font-variant-numeric:tabular-nums}
 .cf-beat small{display:block;color:var(--cf-ink3);font-size:11.5px;margin-top:2px}
+.cf-tl{display:flex;gap:3px;height:46px}
+.cf-tl button{all:unset;cursor:pointer;box-sizing:border-box;min-width:34px;border-radius:6px;background:var(--cf-panel2);border:1px solid var(--cf-line);padding:4px 6px;font-size:11px;color:var(--cf-ink2);display:grid;align-content:space-between;overflow:hidden}
+.cf-tl button.on{border-color:var(--cf-gold);color:var(--cf-ink);background:rgba(227,184,95,.12)}
+.cf-tl button b{font-variant-numeric:tabular-nums;color:var(--cf-gold);font-size:11px}
+.cf-tl button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cf-edit{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:start;background:var(--cf-panel2);border-radius:9px;padding:10px}
+.cf-edit img{width:96px;height:128px;object-fit:cover;border-radius:6px;background:#0b1118}
+.cf-scenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:6px;max-height:300px;overflow:auto}
+.cf-scenes button{all:unset;cursor:pointer;position:relative;border-radius:6px;overflow:hidden;border:2px solid transparent;background:#0b1118;aspect-ratio:3/4}
+.cf-scenes button.on{border-color:var(--cf-gold)}
+.cf-scenes img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-scenes span{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);color:#fff;font-size:10px;padding:3px 4px;line-height:1.2}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
@@ -1197,6 +1210,86 @@ function Analyst() {
   );
 }
 
+function ScenePicker({ material, current, onPick }: { material: string; current: number; onPick: (s: SceneT) => void }) {
+  const [q, setQ] = useState("");
+  const [data, setData] = useState<{ scenes: SceneT[]; without_thumb: number } | null>(null);
+  const [note, setNote] = useState("");
+  const load = useCallback(async () => {
+    try { setData(await api.get(`/api/content-factory/reels/scenes/?material=${encodeURIComponent(material)}&q=${encodeURIComponent(q)}`)); } catch { setData({ scenes: [], without_thumb: 0 }); }
+  }, [material, q]);
+  useEffect(() => { load(); }, [load]);
+  const thumbs = async () => { const r: any = await api.post("/api/content-factory/reels/scenes/", { material }); setNote(r.note); };
+  return (
+    <div className="cf-picker">
+      <div className="cf-set">
+        <input className="cf-in" style={{ flex: 1 }} placeholder="Пошук сцени: блік, шпатель, спальня…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Пошук сцени" />
+        {data && data.without_thumb > 0 && <button type="button" className="cf-btn ghost" onClick={thumbs}>Зробити превʼю ({data.without_thumb})</button>}
+      </div>
+      {note && <div className="cf-msg ok">{note}</div>}
+      <div className="cf-scenes">
+        {(data?.scenes || []).map((s) => (
+          <button key={s.id} type="button" className={s.id === current ? "on" : ""} title={`${s.what} · ${s.seconds} с · якість ${s.quality}`} onClick={() => onPick(s)}>
+            {s.thumb_url ? <img src={s.thumb_url} alt="" loading="lazy" /> : null}<span>{s.seconds}с · {s.what.slice(0, 40)}</span>
+          </button>))}
+      </div>
+    </div>
+  );
+}
+
+function ReelEditor({ r, onChanged }: { r: ReelT; onChanged: () => void }) {
+  const [beats, setBeats] = useState(r.beats);
+  const [sel, setSel] = useState(0);
+  const [pick, setPick] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { setBeats(r.beats); }, [r.beats]);
+  const dirty = JSON.stringify(beats.map((b) => [b.text, b.scene_id, b.seconds])) !== JSON.stringify(r.beats.map((b) => [b.text, b.scene_id, b.seconds]));
+  const total = beats.reduce((a, b) => a + b.seconds, 0) || 1;
+  const starts = beats.map((_, i) => beats.slice(0, i).reduce((a, b) => a + b.seconds, 0));
+  const upd = (i: number, patch: Partial<ReelT["beats"][number]>) => setBeats(beats.map((b, n) => (n === i ? { ...b, ...patch } : b)));
+  const save = async () => {
+    setMsg(null);
+    try {
+      await api.patch(`/api/content-factory/reels/${r.id}/`, { beats: beats.map(({ text, scene_id, seconds }) => ({ text, scene_id, seconds })) });
+      const x: any = await api.post(`/api/content-factory/reels/${r.id}/render/`);
+      setMsg({ ok: true, text: x.note + " Оновіть сторінку за хвилину." }); onChanged();
+    } catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося зберегти." }); }
+  };
+  const b = beats[sel];
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <div className="cf-tl" role="tablist" aria-label="Кадри ролика">
+        {beats.map((x, i) => (
+          <button key={i} type="button" role="tab" aria-selected={i === sel} className={i === sel ? "on" : ""} style={{ flex: x.seconds / total }}
+            onClick={() => { setSel(i); setPick(false); }}>
+            <b>{starts[i].toFixed(1)}–{(starts[i] + x.seconds).toFixed(1)}с</b><span>{x.text}</span>
+          </button>))}
+      </div>
+      {b && (
+        <div className="cf-edit">
+          {b.thumb_url ? <img src={b.thumb_url} alt="" /> : <div className="cf-thumb" style={{ width: 96, height: 128 }} />}
+          <div style={{ display: "grid", gap: 8 }}>
+            <input className="cf-in" value={b.text} onChange={(e) => upd(sel, { text: e.target.value })} aria-label="Текст на кадрі" />
+            <div className="cf-set">
+              <label className="cf-kv" htmlFor={`cf-sec-${r.id}`}>секунд</label>
+              <input id={`cf-sec-${r.id}`} className="cf-in" style={{ width: 70 }} inputMode="decimal" value={b.seconds}
+                onChange={(e) => upd(sel, { seconds: Number(e.target.value.replace(",", ".")) || 0 })} />
+              <button type="button" className="cf-btn ghost" onClick={() => setPick(!pick)}>{pick ? "Сховати сцени" : "Замінити кадр"}</button>
+              {b.source && <a href={b.source} target="_blank" rel="noreferrer" style={{ color: "var(--cf-blue)", fontSize: 12 }}>оригінал ↗</a>}
+            </div>
+            <div className="cf-kv"><span>Зараз у кадрі: {b.what || "—"}</span></div>
+          </div>
+        </div>)}
+      {pick && b && <ScenePicker material={r.material} current={b.scene_id}
+        onPick={(s) => { upd(sel, { scene_id: s.id, what: s.what, thumb_url: s.thumb_url, source: s.source, seconds: Math.min(b.seconds, s.seconds) }); setPick(false); }} />}
+      <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+        <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={!dirty} onClick={save}>Зберегти й перемонтувати</button>
+        {dirty && <button type="button" className="cf-btn ghost" onClick={() => setBeats(r.beats)}>Скасувати зміни</button>}
+      </div>
+      {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+    </div>
+  );
+}
+
 function Reels() {
   const [data, setData] = useState<{ reels: ReelT[]; materials: { name: string; videos: number }[]; marked: Record<string, number>; scenes: number; spent_month_usd: number; ideas: { title: string; material: string }[] } | null>(null);
   const [topic, setTopic] = useState("");
@@ -1242,8 +1335,7 @@ function Reels() {
             <div className="cf-role-h"><h4>{r.title}</h4><span className={"cf-pill " + (r.status === "approved" ? "now" : "next")}>{r.status_display}</span></div>
             <div className="cf-kv"><span>{r.material} · {r.duration ? `${r.duration} с` : ""} · {new Date(r.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></div>
             {r.error && <div className="cf-msg err">{r.error}</div>}
-            <div>{r.beats.map((b, n) => (
-              <div key={n} className="cf-beat"><i>{b.seconds}с</i><div>{b.text}<small>кадр: {b.what}{b.source ? <> · <a href={b.source} target="_blank" rel="noreferrer" style={{ color: "var(--cf-blue)" }}>оригінал ↗</a></> : null}</small></div></div>))}</div>
+            {r.beats.length > 0 && <ReelEditor r={r} onChanged={load} />}
             {r.caption && <div className="cf-card" style={{ padding: 10 }}><h3>Підпис</h3><div className="cf-rep" style={{ fontSize: 13 }}>{r.caption}</div></div>}
             {r.facts.filter((f) => f.startsWith("Перевірити")).length > 0 && <ul className="cf-list warn">{r.facts.filter((f) => f.startsWith("Перевірити")).map((f, i) => <li key={i}>{f}</li>)}</ul>}
             <div className="cf-acts" style={{ justifyContent: "flex-start" }}>

@@ -366,6 +366,8 @@ class VideoScene(models.Model):
     what = models.CharField(max_length=300)
     quality = models.PositiveSmallIntegerField(default=3, help_text="1–5: різкість, світло, чи видно фактуру")
     tags = models.JSONField(default=list, blank=True)
+    thumb = models.ForeignKey("inbox.SharedLink", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                              help_text="Кадр із середини сцени (240px) — для вибору при заміні")
 
     class Meta:
         ordering = ["asset_id", "start"]

@@ -675,15 +675,22 @@ class AnalystView(_Base):
 
 # ── Етапи 4–5: рилси з нарізок ────────────────────────────────────────────────────────────────────
 
+def _scene_thumb(request, s):
+    if not s or not s.thumb_id:
+        return ""
+    return request.build_absolute_uri(f"/api/f/{s.thumb.token}/").replace("http://", "https://", 1)
+
+
 def _reel(request, r):
-    scenes = {s.id: s for s in VideoScene.objects.filter(id__in=[b.get("scene_id") for b in r.beats]).select_related("asset")}
+    scenes = {s.id: s for s in VideoScene.objects.filter(id__in=[b.get("scene_id") for b in r.beats]).select_related("asset", "thumb")}
     return {
         "id": r.id, "title": r.title, "topic": r.topic, "material": r.material, "caption": r.caption,
         "status": r.status, "status_display": r.get_status_display(), "duration": r.duration, "error": r.error,
         "facts": r.facts, "created_at": _iso(r.created_at),
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
         "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else "",
-                       source=scenes[b["scene_id"]].asset.link if b.get("scene_id") in scenes else "") for b in r.beats],
+                       source=scenes[b["scene_id"]].asset.link if b.get("scene_id") in scenes else "",
+                       thumb_url=_scene_thumb(request, scenes.get(b.get("scene_id")))) for b in r.beats],
     }
 
 
@@ -721,10 +728,46 @@ class ReelsView(_Base):
         return Response({"ok": True, "note": "Роблю рилс: розмітка нових відео, сценарій, монтаж — 3–8 хвилин."})
 
 
+class ReelScenesView(_Base):
+    """GET ?material=&q= — сцени для заміни кадру (з превʼю). POST {material} — добудувати превʼю (безкоштовно, у фоні)."""
+    def get(self, request):
+        qs = VideoScene.objects.filter(asset__hidden=False).select_related("asset", "thumb").order_by("-quality", "id")
+        if request.GET.get("material"):
+            qs = qs.filter(asset__material=request.GET["material"])
+        if request.GET.get("q"):
+            qs = qs.filter(Q(what__icontains=request.GET["q"]) | Q(shot__icontains=request.GET["q"]))
+        return Response({"scenes": [{"id": s.id, "what": s.what, "shot": s.shot, "quality": s.quality,
+                                     "seconds": round(s.end - s.start, 1), "thumb_url": _scene_thumb(request, s),
+                                     "source": s.asset.link} for s in qs[:150]],
+                         "without_thumb": qs.filter(thumb=None).count()})
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        material = str((request.data or {}).get("material") or "")
+        _bg(lambda: reelsvc.backfill_thumbs(material))
+        return Response({"ok": True, "note": "Готую превʼю кадрів — хвилина-дві."})
+
+
 class ReelView(_Base):
     def patch(self, request, pk):
         r = get_object_or_404(ReelDraft, pk=pk)
         data = request.data or {}
+        if "beats" in data:
+            beats = []
+            for b in data["beats"] or []:
+                sc = VideoScene.objects.filter(pk=b.get("scene_id")).first()
+                if not sc:
+                    return Response({"error": "Такої сцени немає."}, status=400)
+                try:
+                    secs = max(0.8, min(float(b.get("seconds") or 2.5), sc.end - sc.start))
+                except (TypeError, ValueError):
+                    return Response({"error": "Тривалість має бути числом."}, status=400)
+                beats.append({"text": reelsvc.clean_text(str(b.get("text") or ""))[:80], "scene_id": sc.id,
+                              "seconds": round(secs, 2)})
+            if not 2 <= len(beats) <= 8:
+                return Response({"error": "У ролику має бути від 2 до 8 кадрів."}, status=400)
+            r.beats = beats
         if "status" in data:
             if data["status"] not in ReelDraft.Status.values:
                 return Response({"error": "Невідомий статус."}, status=400)
@@ -735,7 +778,17 @@ class ReelView(_Base):
         return Response(_reel(request, r))
 
     def post(self, request, pk, action=None):
-        """POST /reels/<id>/test/ — надіслати рилс Олегу в Telegram для перегляду з телефона (не в канал)."""
+        """POST /reels/<id>/test/ — надіслати Олегу в Telegram; /render/ — перемонтувати за зміненими кадрами (у фоні)."""
+        if action == "render":
+            r = get_object_or_404(ReelDraft, pk=pk)
+
+            def work():
+                try:
+                    reelsvc.rerender(r)
+                except Exception as e:
+                    ReelDraft.objects.filter(pk=r.pk).update(error=f"Перемонтаж не вдався: {str(e)[:200]}")
+            _bg(work)
+            return Response({"ok": True, "note": "Перемонтовую — до хвилини."})
         if action != "test":
             return Response(status=405)
         if not request.user.is_superuser:

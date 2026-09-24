@@ -12,6 +12,7 @@
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -73,8 +74,18 @@ def _light_copy(src, folder):
     out = os.path.join(folder, f"light{uuid.uuid4().hex}.mp4")
     _run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-t", "90", "-an", "-vf", "scale=-2:360,fps=2",
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "32", out])
+    return out
+
+
+def _thumb(src, second, folder):
+    """Кадр із середини сцени, 240px по висоті → SharedLink (jpeg ~10–20 КБ)."""
+    from secrets import token_urlsafe
+    from apps.inbox.models import SharedLink
+    out = os.path.join(folder, f"th{uuid.uuid4().hex}.jpg")
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{second:.2f}", "-i", src, "-frames:v", "1",
+          "-vf", "scale=-2:240", "-q:v", "5", out])
     with open(out, "rb") as f:
-        return f.read()
+        return SharedLink.objects.create(token=token_urlsafe(24), filename="scene.jpg", content_type="image/jpeg", data=f.read())
 
 
 MARKUP_PROMPT = """Це відео з обʼєкта/салону Wallcov (декоративні штукатурки). Розбий його на сцени по 1–6 секунд.
@@ -113,7 +124,9 @@ def markup(asset, folder):
     """Розмітити одне відео (один раз). Повертає кількість сцен."""
     if asset.markup_at:
         return asset.scenes.count()
-    light = _light_copy(fetch_original(asset, folder), folder)
+    light_path = _light_copy(fetch_original(asset, folder), folder)
+    with open(light_path, "rb") as f:
+        light = f.read()
     data = _gemini([{"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(light).decode()}},
                     {"text": MARKUP_PROMPT}])
     VideoScene.objects.filter(asset=asset).delete()
@@ -128,9 +141,13 @@ def markup(asset, folder):
             continue
         if end - start < 0.8:
             continue
+        try:
+            th = _thumb(light_path, (start + end) / 2, folder)
+        except ReelError:
+            th = None
         VideoScene.objects.create(asset=asset, start=start, end=end, shot=str(s.get("shot", ""))[:40],
                                   what=str(s.get("what", ""))[:300], quality=max(1, min(5, int(s.get("quality") or 3))),
-                                  tags=[str(t)[:30] for t in (s.get("tags") or [])][:5])
+                                  tags=[str(t)[:30] for t in (s.get("tags") or [])][:5], thumb=th)
         n += 1
     asset.markup_at = timezone.now()
     asset.save(update_fields=["markup_at"])
@@ -149,9 +166,10 @@ def candidates(material, limit=15, max_mb=60):
 PLAN_SYSTEM = """Ти монтажер коротких вертикальних роликів Wallcov (декоративні штукатурки, Україна). Аудиторія — жінки, які роблять ремонт самі.
 Зроби рилс 12–16 секунд на задану тему з ГОТОВИХ сцен (каталог нижче: id, секунди, що в кадрі, якість).
 Структура: 1) гачок ≤2,5 с — найкрасивіший кадр фактури + текст-питання; 2) 3–4 кадри з відповіддю; 3) останній кадр — заклик.
-Текст на екрані — українською, до 7 слів на кадр, просто, без жаргону. Факти (цифри витрати, ціни, властивості) — ЛИШЕ з блоку
+Текст на екрані — українською, до 7 слів на кадр, просто, без жаргону. Пиши прямо й по-людськи, як говорить власник: факт → що робити. ЗАБОРОНЕНО шаблони на кшталт «Плануєш ремонт і не знаєш…», «Хочеш …, але боїшся/не знаєш…», «Мрієш про…», «А ти знала…», риторичні питання-пустушки й будь-які емодзі та смайли. Факти (цифри витрати, ціни, властивості) — ЛИШЕ з блоку
 «База знань»; якщо точної цифри немає — не пиши її, а запропонуй написати в Direct. Бери сцени з quality ≥3, не повторюй одну сцену.
-seconds кожного кадру не довше за довжину сцени. caption — підпис до рилса 2–4 речення + заклик написати кодове слово в Direct.
+seconds кожного кадру не довше за довжину сцени. caption — підпис до рилса 2–4 речення без емодзі: конкретика про матеріал + заклик написати кодове слово в Direct.
+checks — ЛИШЕ факти з тексту/підпису, які людина має звірити (цифри, властивості, ціни); технічні перевірки монтажу НЕ пиши.
 Відповідай ЛИШЕ JSON: {"title":"...","caption":"...","beats":[{"text":"...","scene_id":123,"seconds":2.5}],"checks":["що перевірити людині"]}"""
 
 
@@ -173,11 +191,24 @@ def plan(topic, material, scenes, call=None):
         if sid in valid:
             sc = valid[sid]
             secs = max(1.0, min(float(b.get("seconds") or 2.5), sc.end - sc.start))
-            beats.append({"text": str(b.get("text") or "")[:80], "scene_id": sid, "seconds": round(secs, 2)})
+            beats.append({"text": clean_text(str(b.get("text") or ""))[:80], "scene_id": sid, "seconds": round(secs, 2)})
     if len(beats) < 3:
         raise ReelError("Замало придатних сцен для ролика — розмітьте більше відео цього матеріалу.")
-    return {"title": str(r.get("title") or topic)[:200], "caption": str(r.get("caption") or ""),
+    return {"title": clean_text(str(r.get("title") or topic))[:200], "caption": _clean_caption(str(r.get("caption") or "")),
             "beats": beats[:6], "checks": r.get("checks") or [], "facts": fact_titles}
+
+
+_EMOJI_RX = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]")
+
+
+def clean_text(text):
+    """Прибрати емодзі (шрифт їх не малює — квадратик □) і зайві пробіли."""
+    return " ".join(_EMOJI_RX.sub("", text or "").split())
+
+
+def _clean_caption(text):
+    """Підпис: без емодзі, зберігаючи абзаци."""
+    return "\n".join(clean_text(line) for line in (text or "").splitlines()).strip()
 
 
 def _wrap(text, width=18):
@@ -232,7 +263,7 @@ def make_reel(topic, material, markup_limit=15, call=None):
         link = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{material}.mp4",
                                          content_type="video/mp4", data=data)
         return ReelDraft.objects.create(title=p["title"], topic=topic, material=material, caption=p["caption"],
-                                        beats=p["beats"], facts=p["facts"] + [f"Перевірити: {c}" for c in p["checks"]][:10],
+                                        beats=p["beats"], facts=p["facts"] + [f"Перевірити: {clean_text(str(c))}" for c in p["checks"]][:10],
                                         file=link, duration=round(dur, 1))
     finally:
         shutil.rmtree(folder, ignore_errors=True)
@@ -240,3 +271,42 @@ def make_reel(topic, material, markup_limit=15, call=None):
 
 def spent_month():
     return round(questions.month_spent(MARKUP_SOURCE) + questions.month_spent(PLAN_SOURCE), 4)
+
+
+def backfill_thumbs(material, limit=200):
+    """Превʼю для вже розмічених сцен без кадру (без ШІ, безкоштовно): качаємо оригінал, беремо кадр."""
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    done = 0
+    try:
+        for sc in VideoScene.objects.filter(asset__material=material, thumb=None).select_related("asset")[:limit]:
+            try:
+                sc.thumb = _thumb(fetch_original(sc.asset, folder), (sc.start + sc.end) / 2, folder)
+                sc.save(update_fields=["thumb"])
+                done += 1
+            except Exception:
+                continue
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return done
+
+
+def rerender(reel):
+    """Перемонтувати рилс за відредагованими кадрами (без нових викликів ШІ)."""
+    from secrets import token_urlsafe
+    from apps.inbox.models import SharedLink
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        data, dur = render({"beats": reel.beats}, folder)
+        old = reel.file
+        reel.file = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{reel.material}.mp4",
+                                              content_type="video/mp4", data=data)
+        reel.duration, reel.error = round(dur, 1), ""
+        reel.status = ReelDraft.Status.DRAFT
+        reel.save(update_fields=["file", "duration", "error", "status"])
+        if old:
+            old.delete()
+        return reel
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
