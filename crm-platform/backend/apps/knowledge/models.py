@@ -228,3 +228,41 @@ class KnowledgeCheck(models.Model):
     model = models.CharField(max_length=40, blank=True, default="")
     run = models.ForeignKey(KnowledgeRun, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     checked_at = models.DateTimeField(auto_now=True)
+
+
+class ColorRef(models.Model):
+    """Колір зі світового каталогу (RAL Classic, NCS). RAL Design рахується формулою з коду,
+    тому в таблиці його немає. Зберігаємо і hex (для плитки на екрані), і Lab (для звірки)."""
+    SYSTEMS = [("ral", "RAL Classic"), ("ncs", "NCS")]
+    system = models.CharField(max_length=4, choices=SYSTEMS, db_index=True)
+    code = models.CharField(max_length=32, db_index=True)
+    name_uk = models.CharField(max_length=80, blank=True, default="")
+    name_ru = models.CharField(max_length=80, blank=True, default="")
+    name_en = models.CharField(max_length=80, blank=True, default="")
+    hex = models.CharField(max_length=7)
+    lab_l = models.FloatField()
+    lab_a = models.FloatField()
+    lab_b = models.FloatField()
+
+    class Meta:
+        unique_together = [("system", "code")]
+        indexes = [models.Index(fields=["system", "code"])]
+
+    def __str__(self):
+        return "%s %s" % (self.get_system_display(), self.code)
+
+
+class SwatchColor(models.Model):
+    """Середній колір нашого образка (фото коду кольору з бібліотеки) — щоб звіряти з RAL/NCS.
+    Рахується командою colors_index, перераховується при появі нових образків."""
+    item_id = models.IntegerField(unique=True, help_text="MediaLibraryItem")
+    material = models.CharField(max_length=80, db_index=True)
+    color_code = models.CharField(max_length=40, db_index=True)
+    hex = models.CharField(max_length=7)
+    lab_l = models.FloatField()
+    lab_a = models.FloatField()
+    lab_b = models.FloatField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "%s %s" % (self.material, self.color_code)

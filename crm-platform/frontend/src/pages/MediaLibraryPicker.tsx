@@ -32,7 +32,8 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   };
   const [items, setItems] = useState<Asset[]>([]); const [replies, setReplies] = useState<Reply[]>([]); const [materialSummaries, setMaterialSummaries] = useState<MaterialSummary[]>([]);
   const [quickRefreshing, setQuickRefreshing] = useState(false);
-  const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick" | "instructions">(initialTab || "colors");
+  const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick" | "instructions" | "ral">(initialTab || "colors");
+  const [ralQ, setRalQ] = useState(""); const [ralBusy, setRalBusy] = useState(false); const [ralData, setRalData] = useState<any>(null);
   const [screen, setScreen] = useState<Screen>("materials"); const [material, setMaterial] = useState(""); const [color, setColor] = useState("");
   const [zoom, setZoom] = useState<Asset | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
@@ -109,6 +110,15 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
     });
     return ordered;
   }, [colorGroups, material]);
+  // Підбір нашого кольору за кодом клієнта (RAL Classic, RAL Design, NCS) і навпаки.
+  async function ralSearch(q?: string) {
+    const query = (q ?? ralQ).trim();
+    if (!query) return;
+    setRalBusy(true); setError("");
+    try { setRalData(await api.get<any>(`/api/knowledge/colors/?q=${encodeURIComponent(query)}`)); }
+    catch { setError("Не вдалося підібрати колір"); }
+    finally { setRalBusy(false); }
+  }
   function toggle(id: number) { setPicked((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]); }
   function openMaterial(name: string) { setMaterial(name); setColor(""); setQuery(""); setScreen("material"); loadPicker(name); }
   function openColor(code: string) { setColor(code); setQuery(""); setScreen("color"); loadPicker(material, code); }
@@ -140,11 +150,61 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   return <>
   <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: 390, maxWidth: "calc(100vw - 24px)", maxHeight: 470, display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><b style={{ fontSize: 13 }}>Бібліотека</b><span style={{ flex: 1 }} /><button className="btn" style={{ padding: "1px 7px" }} onClick={onClose}>×</button></div>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setMaterial(""); setColor(""); setQuery(""); loadPicker(); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12 }}>⚡ Швидкі відповіді</button><button className="btn" style={{fontSize:12}} onClick={() => setTab("instructions")}>Інструкції</button></div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setMaterial(""); setColor(""); setQuery(""); loadPicker(); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12 }}>⚡ Швидкі відповіді</button><button className="btn" style={{fontSize:12}} onClick={() => setTab("instructions")}>Інструкції</button><button className="btn" style={{ fontSize: 12, background: tab === "ral" ? "#e0edff" : undefined }} onClick={() => setTab("ral")}>🎨 RAL / NCS</button></div>
     <input value={query} onChange={(e) => setQuery(e.target.value)} autoFocus
       placeholder={screen === "materials" ? "Пошук матеріалу" : "Знайти назву або код кольору"}
       style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, marginBottom: 8, flexShrink: 0 }} />
     <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+    {tab === "ral" && <div>
+      <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.45, marginBottom: 8 }}>
+        Клієнт назвав колір за каталогом (RAL 7016, RAL Design 270 30 25, NCS S 2005-Y20R) — введіть код і побачите наші найближчі кольори з фото.
+        Можна і навпаки: введіть наш код (FBK20-1,5) — покаже, який це приблизно RAL або NCS.
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 9 }}>
+        <input value={ralQ} onChange={(e) => setRalQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ralSearch(); }}
+          placeholder="RAL 9010 · NCS S 1002-Y · FBK20-1,5"
+          style={{ flex: 1, boxSizing: "border-box", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13 }} />
+        <button className="btn btn-primary" disabled={ralBusy || !ralQ.trim()} onClick={() => ralSearch()} style={{ fontSize: 12.5 }}>{ralBusy ? "…" : "Підібрати"}</button>
+      </div>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+        {["RAL 9010", "RAL 1013", "RAL 7016", "NCS S 1002-Y"].map((x) => (
+          <button key={x} className="btn" style={{ fontSize: 11.5, padding: "2px 8px" }} onClick={() => { setRalQ(x); ralSearch(x); }}>{x}</button>))}
+      </div>
+      {ralData?.found?.map((f: any) => <section key={f.code} style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+          <span style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid #dbe3ee", background: f.hex, flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}><b style={{ fontSize: 13 }}>{f.label}</b>{f.name ? <span className="muted" style={{ fontSize: 11.5 }}> · {f.name}</span> : null}
+            <br /><span className="muted" style={{ fontSize: 11 }}>наші найближчі кольори</span></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {f.ours?.map((o: any) => <div key={o.item_id} style={{ position: "relative", border: picked.includes(o.item_id) ? "2px solid var(--brand)" : "1px solid #dbe3ee", background: "#fff", borderRadius: 9, padding: 5 }}>
+            <button type="button" onClick={() => toggle(o.item_id)} title={picked.includes(o.item_id) ? "Прибрати" : "Вибрати"}
+              style={{ position: "absolute", top: 8, left: 8, zIndex: 2, width: 20, height: 20, borderRadius: 6, cursor: "pointer",
+                border: picked.includes(o.item_id) ? "none" : "1px solid #cbd5e1", background: picked.includes(o.item_id) ? "var(--brand)" : "rgba(255,255,255,.9)", color: "#fff", fontSize: 12, lineHeight: "18px", padding: 0 }}>{picked.includes(o.item_id) ? "✓" : ""}</button>
+            {o.preview_url && <img src={o.preview_url} loading="lazy" onClick={() => setZoom({ id: o.item_id, title: o.title, url: o.url, preview_url: o.preview_url } as any)}
+              style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", display: "block" }} />}
+            <div style={{ fontSize: 11.5, marginTop: 4 }}><b>{o.code}</b><br />
+              <span className="muted">{o.material} · збіг {o.level}</span></div>
+          </div>)}
+        </div>
+      </section>)}
+      {ralData?.reverse?.refs && <section style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+          <span style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid #dbe3ee", background: ralData.reverse.hex }} />
+          <div><b style={{ fontSize: 13 }}>{ralData.reverse.material} {ralData.reverse.code}</b><br />
+            <span className="muted" style={{ fontSize: 11 }}>це приблизно такі кольори каталогів</span></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {ralData.reverse.refs.map((r: any) => <div key={r.system + r.code} style={{ display: "flex", gap: 7, alignItems: "center", border: "1px solid #dbe3ee", borderRadius: 9, padding: 6 }}>
+            <span style={{ width: 26, height: 26, borderRadius: 6, background: r.hex, border: "1px solid #dbe3ee", flexShrink: 0 }} />
+            <div style={{ minWidth: 0, fontSize: 11.5 }}><b>{r.system === "ral" ? r.code : "NCS " + r.code}</b><br />
+              <span className="muted">{r.name ? r.name + " · " : ""}{r.level}</span></div>
+          </div>)}
+        </div>
+      </section>}
+      {ralData && !ralData.found?.length && !ralData.reverse?.refs && <div className="muted" style={{ fontSize: 12 }}>Не впізнали код. Приклади: RAL 9010, RAL Design 270 30 25, NCS S 2005-Y20R, або наш код FBK20-1,5.</div>}
+      {ralData && <div className="muted" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.4 }}>{ralData.note}</div>}
+    </div>}
     {tab === "colors" && <>
       {screen !== "materials" && <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}><button className="btn" onClick={back} style={{ fontSize: 12 }}>← {screen === "color" ? material : "Усі матеріали"}</button>{screen === "material" && realCount > 0 && <button type="button" onClick={() => setPhotosOpen((v) => !v)} title="Фото наших обʼєктів: інтерʼєри й образці" style={{ fontSize: 12, cursor: "pointer", borderRadius: 8, padding: "4px 9px", border: photosOpen ? "1px solid var(--brand)" : "1px solid #dbe3ee", background: photosOpen ? "#e6eef8" : "#fff", fontWeight: photosOpen ? 700 : 500 }}>📸 Реальні обʼєкти <span className="muted" style={{ fontWeight: 500 }}>{realCount}</span></button>}</div>}
       {screen === "materials" && <><div className="muted" style={{ fontSize: 12, marginBottom: 7 }}>Спочатку оберіть матеріал — далі побачите лише кольори-образки. Відео та інтер'єри відкриваються всередині кольору.</div><div style={{ display: "grid", gap: 7 }}>{materials.map((entry) => <button key={entry.name} onClick={() => openMaterial(entry.name)} className="btn" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>{entry.preview_url && <img src={entry.preview_url} loading="lazy" decoding="async" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 6 }} />}<span><b>{entry.name}</b><br /><span className="muted" style={{ fontSize: 11 }}>{["Фарби", "Підготовка та витратні матеріали"].includes(entry.name) ? `${entry.codes} товарів · фото й актуальна ціна` : entry.name === "Плінтуси Cezar" ? `${entry.codes} моделей і довжин` : entry.codes === 0 && entry.photos ? `${entry.photos} фото наших обʼєктів` : `${entry.codes} кольорів · ${entry.catalog_pages} сторінок каталогу${entry.photos ? ` · ${entry.photos} фото обʼєктів` : ""}`}</span></span><span style={{ marginLeft: "auto" }}>›</span></button>)}</div></>}

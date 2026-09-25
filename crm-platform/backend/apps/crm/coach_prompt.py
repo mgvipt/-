@@ -32,6 +32,11 @@ def ask_rop(conv, question):
         ad_line = ad_prompt(conv)
     except Exception:
         ad_line = ""
+    try:  # 25.09.2026 (Олег): менеджер питає «підбери під RAL 7016» — CRM рахує сама, ШІ лише переказує
+        from apps.knowledge.colors import prompt_block as color_block
+        color_line = color_block("%s %s" % (q, dialog[-1500:]))
+    except Exception:
+        color_line = ""
     prompt = (
         "Клієнт: %s\nКанал: %s\n\nПереписка:\n%s\n\n"
         "\u2753 ПИТАННЯ МЕНЕДЖЕРА (відповідай САМЕ на нього): «%s»\n\n"
@@ -51,6 +56,8 @@ def ask_rop(conv, question):
          dialog or "(переписки ще немає)", q, kb or "(база знань порожня по цій темі)")
     if ad_line:
         prompt = prompt.replace("\n\nПереписка:\n", "\n" + ad_line + "\n\nПереписка:\n", 1)
+    if color_line:
+        prompt = prompt.replace("\n\nПереписка:\n", "\n" + color_line + "\n\nПереписка:\n", 1)
     try:
         # 22.09.2026: НЕ COACH_SYSTEM — той величезний промпт заточений під тактику продажу і на
         # простому фактичному питанні (напр. «де наш магазин») відволікає модель від чіткого факту,

@@ -349,7 +349,12 @@ def reply_now(conv_id):
                  "компанії), далі коротко по суті запиту і ОРІЄНТИР ЦІНИ (ціна тест-набору або за 1 м², "
                  "залежно від питання) + одне відкрите питання. Фото матеріалу і сторінку кольорів CRM "
                  "надішле окремим повідомленням — не дублюй їх у своєму тексті. Далі в діалозі не вітайся.")
-        ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), language_hint(incoming.text),
+        try:  # 25.09.2026 (Олег): клієнт назвав RAL/NCS — CRM сама підбирає наші кольори, агент лише переказує
+            from apps.knowledge.colors import prompt_block as color_block
+            color_ctx = color_block(incoming.text or "")
+        except Exception:
+            color_ctx = ""
+        ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), color_ctx, language_hint(incoming.text),
                                       hello if first else "") if x)
         r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,

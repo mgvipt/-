@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from .views import KnowledgeItemViewSet, MetaView, PreviewView, SettingsView
+from .views import KnowledgeItemViewSet, MetaView, PreviewView, SettingsView, ColorsView
 
 router = SimpleRouter()
 router.register("items", KnowledgeItemViewSet, basename="knowledge-items")
@@ -18,6 +18,7 @@ urlpatterns = [
     path("publish/preview/", v2.PublishPreviewView.as_view()),
     path("publish/", v2.PublishView.as_view()),
     path("webchat/audience/", v2.WebchatAudienceView.as_view()),
+    path("colors/", ColorsView.as_view()),
     path("meta/", MetaView.as_view()),
     path("preview/", PreviewView.as_view()),
     path("settings/", SettingsView.as_view()),

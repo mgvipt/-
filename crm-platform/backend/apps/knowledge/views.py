@@ -393,3 +393,43 @@ class SettingsView(APIView):
         cfg.updated_by = request.user
         cfg.save()
         return Response(settings_dict(cfg))
+
+
+class ColorsView(APIView):
+    """Підбір кольору: клієнт називає RAL або NCS — віддаємо наші найближчі кольори з фото.
+    І навпаки: наш код (FBK16-1,5) → який це приблизно RAL/NCS. 25.09.2026 (Олег)."""
+
+    def get(self, request):
+        from apps.inbox.models import MediaLibraryItem
+        from apps.inbox.views import _library_item_data
+        from . import colors as C
+
+        q = (request.query_params.get("q") or "").strip()
+        material = (request.query_params.get("material") or "").strip() or None
+        if not q:
+            return Response({"found": [], "ours": [], "note": C.DISCLAIMER})
+
+        def with_photo(rows):
+            items = {x.id: x for x in MediaLibraryItem.objects.filter(
+                id__in=[r["item_id"] for r in rows]).select_related("file", "preview_file")}
+            out = []
+            for r in rows:
+                item = items.get(r["item_id"])
+                data = _library_item_data(request, item) if item else {}
+                out.append(dict(r, title=data.get("title", ""), preview_url=data.get("preview_url", ""),
+                                url=data.get("url", "")))
+            return out
+
+        found = []
+        for f in C.parse(q):
+            found.append({"system": f["system"], "code": f["code"], "label": f["label"], "name": f.get("name", ""),
+                          "hex": f["hex"], "ours": with_photo(C.ours_for(f["lab"], limit=6, material=material))})
+
+        reverse = []
+        if not found:
+            sw = C.by_our_code(q)
+            if sw:
+                lab = (sw.lab_l, sw.lab_a, sw.lab_b)
+                reverse = {"material": sw.material, "code": sw.color_code, "hex": sw.hex,
+                           "refs": C.refs_for(lab, limit=6)}
+        return Response({"query": q, "found": found, "reverse": reverse, "note": C.DISCLAIMER})
