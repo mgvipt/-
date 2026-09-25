@@ -72,7 +72,9 @@ type ReportT = { id: number; created_at: string; period_days: number; summary: s
 type ReelT = {
   id: number; title: string; topic: string; material: string; caption: string; status: string; status_display: string;
   duration: number | null; error: string; facts: string[]; created_at: string; video_url: string; style_id: number | null; style_name: string;
-  beats: { text: string; scene_id: number; seconds: number; what: string; source: string; thumb_url?: string }[];
+  blog_id: number | null; busy: boolean;
+  beats: { text: string; scene_id?: number; seconds: number; what: string; source: string; thumb_url?: string;
+    image_id?: number; ai?: string; prompt?: string; orig_scene_id?: number; fx?: { transition?: string; motion?: string } }[];
 };
 type StyleT = {
   id: number; name: string; origin: string; origin_display: string; font: string; weight: string; size: number; color: string;
@@ -93,6 +95,7 @@ type Section = { id: string; label: string; stage: number; group?: string; live?
 const SECTIONS: Section[] = [
   { id: "studio", label: "Сьогодні", stage: 0, live: true },
   { id: "channels", label: "Сторінки", stage: 0, live: true },
+  { id: "blogs", label: "Блоги", stage: 0, live: true },
   { id: "questions", group: "Сировина", label: "Питання клієнтів", stage: 1, live: true, what: [
     "Щоночі ШІ групує вхідні з усіх каналів (Instagram, TikTok, Viber, Telegram, WhatsApp) у теми",
     "Біля теми — скільки разів спитали, чи є відповідь у базі знань, які є фото й відео",
@@ -113,7 +116,7 @@ const SECTIONS: Section[] = [
     "Сценарій з питання клієнтів → добір кадрів з ваших нарізок → монтаж 9:16 → субтитри → голос",
     "ШІ-кадри лише для фону; стіна в кадрі — завжди справжня",
     "Спершу чернетка — ви дивитесь і натискаєте «в публікацію»"] },
-  { id: "carousels", group: "Виробництво", label: "Каруселі", stage: 6, what: [
+  { id: "carousels", group: "Виробництво", label: "Каруселі", stage: 6, live: true, what: [
     "З бібліотеки реальних фото й бази знань, у фірмовому стилі",
     "Ціна «від» і кодове слово — лише перевірені з бази знань"] },
   { id: "telegram", group: "Публікація", label: "Telegram-автопілот", stage: 2, live: true, what: [
@@ -474,7 +477,8 @@ const CSS = `
   .cf-sheet{position:relative;width:100%;max-height:86vh;overflow:auto;background:#181d20;color:var(--cf-ink);border-radius:18px 18px 0 0;
     padding:8px 14px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -18px 40px rgba(0,0,0,.5);animation:cfUp .22s cubic-bezier(.2,.8,.2,1)}
   .cf-sheet-grip{width:40px;height:4px;border-radius:2px;background:var(--cf-line);margin:4px auto 12px}
-  .cf-sheet-top{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+  .cf-sheet-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 6px}
+  .cf-sheet .cf-blogsw{margin:0 2px}
   .cf-sheet-big{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:3px;padding:14px;border-radius:12px;background:var(--cf-panel);border:1px solid var(--cf-line)}
   .cf-sheet-big.on{border-color:var(--cf-gold)}
   .cf-sheet-big b{font-size:15px}
@@ -569,6 +573,104 @@ const CSS = `
     padding:8px 10px calc(14px + env(safe-area-inset-bottom));animation:cfUp .2s cubic-bezier(.2,.8,.2,1)}
   .cf-pk-title{display:block;padding:10px 12px 8px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--cf-ink2);border-bottom:1px solid var(--cf-line);margin-bottom:4px}
   .cf-pk-list li[role=option]{padding:13px 12px;font-size:15px}
+}
+/* ── 25.09: блоги, каруселі, ШІ-інструменти ── */
+.cf-blogsw{display:grid;gap:4px;margin:4px 2px 8px;padding:8px;border-radius:10px;background:var(--cf-panel);border:1px solid var(--cf-line);box-shadow:inset 3px 0 0 var(--bc)}
+.cf-blogsw .lbl{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--cf-ink3)}
+.cf-blogsw .cf-pk{min-width:0}
+.cf-blogsw .cf-pk-btn{height:34px;font-size:13px;font-weight:700}
+.cf-proof-btn i{display:inline-block;width:12px;height:12px;margin-right:6px;border-radius:3px;background:linear-gradient(135deg,var(--cf-gold),#7fb0d4)}
+.cf-proof{flex-basis:100%;display:grid;gap:8px;background:var(--cf-panel2);border:1px solid var(--cf-line);border-radius:10px;padding:10px 12px;font-size:13px}
+.cf-proof ul{margin:0;padding-left:16px;display:grid;gap:5px}
+.cf-proof s{color:var(--cf-bad);text-decoration-thickness:1px}
+.cf-proof ins{color:var(--cf-good);text-decoration:none;font-weight:600}
+.cf-proof small{display:block;color:var(--cf-ink3);font-size:11.5px}
+.cf-field{display:grid;gap:6px;font-size:12px;color:var(--cf-ink2)}
+.cf-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cf-colors{display:flex;gap:6px;flex-wrap:wrap}
+.cf-colors button{all:unset;cursor:pointer;width:26px;height:26px;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+.cf-colors button.on{box-shadow:0 0 0 2px var(--cf-bg),0 0 0 4px var(--cf-ink)}
+.cf-toggles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.cf-switch{all:unset;box-sizing:border-box;cursor:pointer;display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:10px;background:var(--cf-bg);border:1px solid var(--cf-line)}
+.cf-switch i{flex:0 0 34px;height:20px;border-radius:10px;background:var(--cf-panel2);position:relative;transition:background .15s;margin-top:1px}
+.cf-switch i::after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:var(--cf-ink3);transition:transform .15s,background .15s}
+.cf-switch.on i{background:rgba(227,184,95,.35)}
+.cf-switch.on i::after{transform:translateX(14px);background:var(--cf-gold)}
+.cf-switch b{display:block;font-size:13px}
+.cf-switch small{display:block;font-size:11.5px;color:var(--cf-ink3);margin-top:2px}
+.cf-switch:focus-visible{outline:2px solid var(--cf-blue)}
+.cf-brief{display:grid;gap:6px;padding:10px;border:1px dashed var(--cf-line);border-radius:10px}
+.cf-brief > span{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--cf-ink3)}
+.cf-savebar{position:sticky;bottom:0;z-index:4;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:rgba(28,34,37,.94);border:1px solid var(--cf-line);backdrop-filter:blur(6px)}
+.cf-blog-ed{display:grid;gap:12px}
+.cf-blogs{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.cf-bcard{all:unset;box-sizing:border-box;cursor:pointer;position:relative;display:grid;gap:6px;align-content:start;padding:14px 14px 12px 18px;border-radius:12px;background:var(--cf-panel);border:1px solid var(--cf-line);overflow:hidden}
+.cf-bcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--bc)}
+.cf-bcard.on{border-color:var(--bc);background:var(--cf-panel2)}
+.cf-bcard:focus-visible{outline:2px solid var(--cf-blue)}
+.cf-bcard .dot{width:10px;height:10px;border-radius:50%;background:var(--bc)}
+.cf-bcard b{font-size:14.5px}
+.cf-bcard small{color:var(--cf-ink2);font-size:12px;overflow-wrap:anywhere}
+.cf-bcard .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--cf-ink3)}
+.cf-bcard .meta i{font-style:normal}
+.cf-bcard em{font-style:normal;font-weight:700;padding:2px 6px;border-radius:5px}
+.cf-bcard em.ok{background:rgba(108,192,143,.14);color:var(--cf-good)}
+.cf-bcard em.todo{background:rgba(227,184,95,.14);color:var(--cf-gold)}
+.cf-bcard.add{cursor:default;border-style:dashed;background:none}
+.cf-accs{display:flex;gap:8px;flex-wrap:wrap}
+.cf-acc{display:inline-flex;align-items:center;gap:8px;padding:5px 6px 5px 5px;border-radius:9px;background:var(--cf-bg);border:1px solid var(--cf-line);font-size:13px}
+.cf-acc .cf-mark{width:26px;height:26px;font-size:9px;font-style:normal}
+.cf-acc a{color:var(--cf-ink);text-decoration:none;font-weight:600}
+.cf-acc button{all:unset;cursor:pointer;color:var(--cf-ink3);font-size:12px;padding:0 4px}
+.cf-fact-new{display:grid;gap:8px;padding:10px;border-radius:10px;background:var(--cf-bg);border:1px solid var(--cf-line)}
+.cf-facts{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.cf-facts li{display:grid;grid-template-columns:86px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px;border-radius:9px;background:var(--cf-bg);border:1px solid var(--cf-line)}
+.cf-facts li.off{opacity:.5}
+.cf-facts .k{font-style:normal;font-size:11px;font-weight:700;padding:3px 6px;border-radius:5px;background:var(--cf-panel2);color:var(--cf-ink2);text-align:center}
+.cf-facts .k.rule{color:var(--cf-blue)} .cf-facts .k.ban{color:var(--cf-bad)} .cf-facts .k.example{color:var(--cf-good)}
+.cf-facts b{font-size:13.5px}
+.cf-facts p{margin:3px 0 0;font-size:12.5px;color:var(--cf-ink2);white-space:pre-wrap}
+.cf-car{background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:12px;padding:14px;display:grid;gap:12px}
+.cf-car.busy{opacity:.85}
+.cf-strip{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px}
+.cf-strip button{all:unset;cursor:pointer;position:relative;flex:0 0 170px;aspect-ratio:4/5;border-radius:10px;overflow:hidden;background:#0b1118;border:2px solid transparent;scroll-snap-align:start;display:grid;place-items:center;color:var(--cf-ink3)}
+.cf-strip button.on{border-color:var(--cf-gold)}
+.cf-strip img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-strip em{position:absolute;right:6px;bottom:6px;font-style:normal;font-size:10px;font-weight:800;background:rgba(0,0,0,.7);color:#fff;padding:2px 5px;border-radius:4px}
+.cf-slide-ed{display:grid;gap:8px;padding:12px;border-radius:10px;background:var(--cf-bg);border:1px solid var(--cf-line)}
+.cf-img-tools{display:grid;gap:8px;padding-top:6px;border-top:1px solid var(--cf-line)}
+.cf-dl{display:inline-grid;place-items:center;min-width:26px;height:26px;border-radius:6px;border:1px solid var(--cf-line);color:var(--cf-ink2);font-size:11px;text-decoration:none}
+.cf-spin{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid var(--cf-line);border-top-color:var(--cf-gold);animation:cfSpin .8s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes cfSpin{to{transform:rotate(360deg)}}
+.cf-note{font-size:12.5px;color:var(--cf-gold);background:rgba(227,184,95,.08);border-radius:8px;padding:8px 10px}
+.cf-reed{display:grid;gap:10px}
+.cf-reed.busy .cf-tl,.cf-reed.busy .cf-edit{opacity:.6}
+.cf-tl button{position:relative}
+.cf-tl button.ai{background:rgba(127,176,212,.1)}
+.cf-tl button .tr{position:absolute;left:-5px;top:50%;width:8px;height:8px;margin-top:-4px;transform:rotate(45deg);background:var(--cf-blue)}
+.cf-edit-img{position:relative}
+.cf-edit-img em{position:absolute;left:4px;bottom:4px;font-style:normal;font-size:10px;font-weight:700;background:rgba(0,0,0,.72);color:#fff;padding:2px 5px;border-radius:4px}
+.cf-fx{display:grid;gap:8px}
+.cf-fx > div{display:grid;gap:4px}
+.cf-fx span{font-size:11px;color:var(--cf-ink3)}
+.cf-aitools{display:grid;gap:8px;padding:10px 12px;border-radius:10px;border:1px solid var(--cf-line);background:linear-gradient(135deg,rgba(227,184,95,.06),rgba(127,176,212,.06))}
+.cf-aitools .lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--cf-ink2)}
+.cf-btn.ghost.on{border-color:var(--cf-gold);color:var(--cf-ink)}
+.cf-advice{display:grid;gap:8px}
+.cf-advice ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.cf-advice li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--cf-bg);border:1px solid var(--cf-line)}
+.cf-advice li b{font-size:13.5px}
+.cf-advice li small{display:block;color:var(--cf-ink2);font-size:12px;margin:2px 0 5px}
+.cf-thumb-ai{all:unset;cursor:pointer;position:absolute;left:3px;top:3px;font-size:9.5px;font-weight:800;padding:2px 4px;border-radius:4px;background:var(--cf-gold);color:#1b1608}
+.cf-thumb.on{outline:2px solid var(--cf-gold)}
+@media (max-width:760px){
+  .cf-grid2,.cf-toggles{grid-template-columns:1fr}
+  .cf-blogs{grid-template-columns:1fr}
+  .cf-facts li{grid-template-columns:1fr}
+  .cf-strip button{flex-basis:62%}
+  .cf-advice li{grid-template-columns:1fr}
+  .cf-savebar{bottom:-2px}
+  .cf-blogsw .cf-pk-btn{height:44px;font-size:15px}
 }
 `;
 
@@ -683,7 +785,22 @@ function When({ value, onChange }: { value: string; onChange: (v: string) => voi
 }
 
 /* ── Каркас: конвеєр і шапка розділу ── */
-function Rail({ tab, setTab, today }: { tab: string; setTab: (t: string) => void; today: Today | null }) {
+type BlogCtx = { blogs: BlogT[]; blogId: number | null; setBlogId: (id: number) => void };
+
+/** Вибір блогу: тематика рилсів і каруселей у всьому заводі. */
+function BlogSwitch({ blogs, blogId, setBlogId }: BlogCtx) {
+  const cur = blogs.find((b) => b.id === blogId);
+  if (!blogs.length) return null;
+  return (
+    <div className="cf-blogsw" style={{ ["--bc" as string]: cur?.color || "#e3b85f" }}>
+      <span className="lbl">Блог</span>
+      <Pick label="Блог" value={String(blogId ?? "")} onChange={(v) => setBlogId(Number(v))}
+        opts={blogs.map((b) => ({ v: String(b.id), l: b.name, hint: b.ready ? "" : "налаштувати" }))} />
+    </div>
+  );
+}
+
+function Rail({ tab, setTab, today, ctx }: { tab: string; setTab: (t: string) => void; today: Today | null; ctx: BlogCtx }) {
   const badge: Record<string, { n: number; hot?: boolean } | undefined> = today ? {
     telegram: today.drafts ? { n: today.drafts, hot: true } : undefined,
     reels: today.reels_draft ? { n: today.reels_draft, hot: true } : undefined,
@@ -695,7 +812,8 @@ function Rail({ tab, setTab, today }: { tab: string; setTab: (t: string) => void
   let step = 0;
   return (
     <nav className="cf-rail" aria-label="Розділи контент-заводу">
-      <div className="cf-brand"><span className="cf-logo" aria-hidden="true" />Контент-завод<small>Wallcov · лише власник</small></div>
+      <div className="cf-brand"><span className="cf-logo" aria-hidden="true" />Контент-завод<small>лише власник</small></div>
+      <BlogSwitch {...ctx} />
       {SECTIONS.map((s) => {
         const head = s.group && s.group !== lastGroup ? s.group : "";
         if (s.group && head) { lastGroup = s.group; step += 1; }
@@ -716,7 +834,7 @@ function Rail({ tab, setTab, today }: { tab: string; setTab: (t: string) => void
 }
 
 /** Телефон: замість бічного меню — шапка з поточним розділом і шторка з усіма кроками. */
-function MobileNav({ s, go, today }: { s: Section; go: (t: string) => void; today: Today | null }) {
+function MobileNav({ s, go, today, ctx }: { s: Section; go: (t: string) => void; today: Today | null; ctx: BlogCtx }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -727,6 +845,7 @@ function MobileNav({ s, go, today }: { s: Section; go: (t: string) => void; toda
   const count: Record<string, number> = today ? { telegram: today.drafts, reels: today.reels_draft, sources: today.sources_24h,
     feed: today.hot.length, questions: today.topics.length } : {};
   const waiting = (today?.drafts || 0) + (today?.reels_draft || 0);
+  const curBlog = ctx.blogs.find((b) => b.id === ctx.blogId);
   const groups = Array.from(new Set(SECTIONS.filter((x) => x.group).map((x) => x.group as string)));
   const stepOf = (g?: string) => (g ? groups.indexOf(g) + 1 : 0);
   const pickTab = (id: string) => { go(id); setOpen(false); };
@@ -735,7 +854,7 @@ function MobileNav({ s, go, today }: { s: Section; go: (t: string) => void; toda
       <div className="cf-mbar">
         <button type="button" className="cf-mbar-cur" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}>
           <span className="cf-logo" aria-hidden="true" />
-          <span className="t"><small>{s.group ? `${stepOf(s.group)} · ${s.group}` : "Контент-завод"}</small><b>{s.label}</b></span>
+          <span className="t"><small>{s.group ? `${stepOf(s.group)} · ${s.group}` : "Контент-завод"}{curBlog ? ` · ${curBlog.name}` : ""}</small><b>{s.label}</b></span>
           <span className="cf-mbar-menu" aria-hidden="true"><i /><i /><i /></span>
           {waiting > 0 && <em className="cf-mbar-dot">{waiting}</em>}
         </button>
@@ -745,10 +864,11 @@ function MobileNav({ s, go, today }: { s: Section; go: (t: string) => void; toda
           <div className="cf-sheet-back" onClick={() => setOpen(false)} />
           <nav className="cf-sheet">
             <div className="cf-sheet-grip" aria-hidden="true" />
+            <BlogSwitch {...ctx} />
             <div className="cf-sheet-top">
               {SECTIONS.filter((x) => !x.group).map((x) => (
                 <button key={x.id} type="button" className={"cf-sheet-big" + (x.id === s.id ? " on" : "")} onClick={() => pickTab(x.id)}>
-                  <b>{x.label}</b><small>{x.id === "studio" ? (waiting ? `${waiting} чекають рішення` : "що робити зараз") : "що аналізуємо"}</small>
+                  <b>{x.label}</b><small>{x.id === "studio" ? (waiting ? `${waiting} чекають рішення` : "що робити зараз") : x.id === "blogs" ? "тема й база знань" : "що аналізуємо"}</small>
                 </button>
               ))}
             </div>
@@ -1220,6 +1340,8 @@ function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; c
   const [note, setNote] = useState("");
   const [picker, setPicker] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [aiPhoto, setAiPhoto] = useState<number | null>(null);
+  const [aiText, setAiText] = useState("");
   const [when, setWhen] = useState(localInput(post.scheduled_at));
   useEffect(() => { setWhen(localInput(post.scheduled_at)); }, [post.scheduled_at]);
   const published = post.status === "published";
@@ -1246,10 +1368,21 @@ function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; c
               <div key={"s" + s.id} className="cf-thumb"><img src={s.thumb_url} alt={s.caption} /><em>{s.kind === "video" ? "▶ TG" : "TG"}</em>
                 <button type="button" aria-label="Прибрати" onClick={() => patch({ source_ids: post.source_ids.filter((x) => x !== s.id) })}>✕</button></div>))}
             {[...post.videos.map((m) => ({ ...m, v: true })), ...post.photos.map((m) => ({ ...m, v: false }))].map((m) => (
-              <div key={(m.v ? "v" : "p") + m.id} className="cf-thumb"><img src={m.preview_url || m.url} alt={m.title} />{m.v && <em>▶ відео</em>}
+              <div key={(m.v ? "v" : "p") + m.id} className={"cf-thumb" + (aiPhoto === m.id && !m.v ? " on" : "")}><img src={m.preview_url || m.url} alt={m.title} />{m.v && <em>▶ відео</em>}
+                {!m.v && <button type="button" className="cf-thumb-ai" aria-label="ШІ-обробка фото" onClick={() => { setAiPhoto(aiPhoto === m.id ? null : m.id); setAiText(""); }}>ШІ</button>}
                 <button type="button" aria-label="Прибрати" onClick={() => patch(m.v ? { video_ids: post.video_ids.filter((x) => x !== m.id) } : { photo_ids: post.photo_ids.filter((x) => x !== m.id) })}>✕</button></div>))}
             <button type="button" className="cf-btn ghost" style={{ height: 64 }} onClick={() => setPicker(!picker)}>{picker ? "Готово" : "+ Фото / відео"}</button>
           </div>
+          {aiPhoto !== null && (
+            <div className="cf-aitools">
+              <span className="lbl">ШІ для вибраного фото · ≈$0.04 · оригінал у бібліотеці не зміниться</span>
+              <div className="cf-set">
+                <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photo-ai/`, { photo_id: aiPhoto, op: "improve" }).then(() => setAiPhoto(null)), "Фото покращено")}>Покращити</button>
+                <input className="cf-in" value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="Або що додати/змінити на фото" aria-label="Завдання для ШІ" />
+                <button type="button" className="cf-btn ghost" disabled={busy || !aiText.trim()} onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photo-ai/`, { photo_id: aiPhoto, op: "edit", prompt: aiText }).then(() => setAiPhoto(null)), "Готово")}>Домалювати</button>
+              </div>
+              {busy && <span className="cf-quiet">ШІ малює — 10–30 секунд…</span>}
+            </div>)}
           {picker && <MediaPicker post={post} onSave={(b) => patch(b)} />}
         </>)}
         {published && <div className="cf-kv"><span>Опубліковано</span><b>{new Date(post.published_at as string).toLocaleString("uk-UA")}</b></div>}
@@ -1260,6 +1393,7 @@ function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; c
         {post.facts.length > 0 && (<div><div className="cf-kv"><span>Звідки факти (база знань)</span></div>
           <ul className="cf-list">{post.facts.map((f, i) => <li key={i}>{f}</li>)}</ul></div>)}
         {edit && <textarea id={`cf-tg-text-${post.id}`} className="cf-ta" value={text} onChange={(e) => setText(e.target.value)} aria-label="Текст поста" />}
+        {edit && <div className="cf-acts" style={{ justifyContent: "flex-start" }}><ProofBtn text={text} onApply={setText} /></div>}
         {!published && <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
           {edit ? (<>
             <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => patch({ text }).then(() => setEdit(false))}>Зберегти текст</button>
@@ -1696,53 +1830,131 @@ function ScenePicker({ material, current, onPick }: { material: string; current:
   );
 }
 
-function ReelEditor({ r, onChanged }: { r: ReelT; onChanged: () => void }) {
+type AdviceT = { title: string; why: string; action: { type: string; beat: number; value: string | number } };
+const FX_T: Opt[] = [{ v: "cut", l: "Без переходу" }, { v: "fade", l: "Розчинення" }, { v: "slide", l: "Зсув" }, { v: "zoom", l: "Наїзд" }];
+const FX_M: Opt[] = [{ v: "none", l: "Статично" }, { v: "zoomin", l: "Наближення" }, { v: "zoomout", l: "Віддалення" }];
+const ACTION_LABEL: Record<string, string> = { transition: "перехід", motion: "рух камери", text: "текст", seconds: "тривалість",
+  edit_frame: "домалювати ШІ", regenerate: "новий ШІ-кадр" };
+
+function ReelEditor({ r, blog, onChanged }: { r: ReelT; blog: BlogT | undefined; onChanged: () => void }) {
   const [beats, setBeats] = useState(r.beats);
   const [sel, setSel] = useState(0);
   const [pick, setPick] = useState(false);
+  const [ai, setAi] = useState<"" | "edit" | "regenerate">("");
+  const [prompt, setPrompt] = useState("");
+  const [advice, setAdvice] = useState<AdviceT[] | null>(null);
+  const [adviceBusy, setAdviceBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => { setBeats(r.beats); }, [r.beats]);
-  const dirty = JSON.stringify(beats.map((b) => [b.text, b.scene_id, b.seconds])) !== JSON.stringify(r.beats.map((b) => [b.text, b.scene_id, b.seconds]));
+  useEffect(() => { setAi(""); setPrompt(""); }, [sel]);
+  const key = (x: ReelT["beats"]) => JSON.stringify(x.map((b) => [b.text, b.scene_id, b.image_id, b.seconds, b.fx?.transition || "cut", b.fx?.motion || ""]));
+  const dirty = key(beats) !== key(r.beats);
   const total = beats.reduce((a, b) => a + b.seconds, 0) || 1;
   const starts = beats.map((_, i) => beats.slice(0, i).reduce((a, b) => a + b.seconds, 0));
-  const upd = (i: number, patch: Partial<ReelT["beats"][number]>) => setBeats(beats.map((b, n) => (n === i ? { ...b, ...patch } : b)));
-  const save = async () => {
+  const upd = (i: number, patch: Partial<ReelT["beats"][number]>) => setBeats((bs) => bs.map((b, n) => (n === i ? { ...b, ...patch } : b)));
+  const setFx = (i: number, k: "transition" | "motion", v: string) => setBeats((bs) => bs.map((b, n) => (n === i ? { ...b, fx: { ...(b.fx || {}), [k]: v } } : b)));
+  const payload = (bs: ReelT["beats"]) => bs.map(({ text, scene_id, seconds, image_id, ai: a, prompt: p, orig_scene_id, fx }) =>
+    ({ text, scene_id, seconds, image_id, ai: a, prompt: p, orig_scene_id, fx }));
+  const save = async (bs = beats) => {
     setMsg(null);
     try {
-      await api.patch(`/api/content-factory/reels/${r.id}/`, { beats: beats.map(({ text, scene_id, seconds }) => ({ text, scene_id, seconds })) });
+      await api.patch(`/api/content-factory/reels/${r.id}/`, { beats: payload(bs) });
       const x: any = await api.post(`/api/content-factory/reels/${r.id}/render/`);
-      setMsg({ ok: true, text: x.note + " Оновіть сторінку за хвилину." }); onChanged();
+      setMsg({ ok: true, text: x.note }); onChanged();
     } catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося зберегти." }); }
   };
+  const frame = async (op: string, index = sel, p = prompt) => {
+    setMsg(null);
+    try {
+      if (dirty) await api.patch(`/api/content-factory/reels/${r.id}/`, { beats: payload(beats) });
+      const x: any = await api.post(`/api/content-factory/reels/${r.id}/frame/`, { index, op, prompt: p });
+      setMsg({ ok: true, text: x.note }); setAi(""); onChanged();
+    } catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
+  };
+  const getAdvice = async () => {
+    setAdviceBusy(true); setMsg(null);
+    try { const x: any = await api.post(`/api/content-factory/reels/${r.id}/advice/`); setAdvice(x.advice); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); } finally { setAdviceBusy(false); }
+  };
+  const apply = (a: AdviceT) => {
+    const { type, beat, value } = a.action;
+    setAdvice((xs) => (xs || []).filter((x) => x !== a));
+    if (type === "edit_frame") return frame("edit", beat, String(value));
+    if (type === "regenerate") return frame("regenerate", beat, String(value));
+    setSel(beat);
+    if (type === "transition" || type === "motion") setFx(beat, type, String(value));
+    if (type === "text") upd(beat, { text: String(value) });
+    if (type === "seconds") upd(beat, { seconds: Number(value) });
+  };
   const b = beats[sel];
+  const isAi = !!b?.image_id;
   return (
-    <div style={{ display: "grid", gap: 10 }}>
+    <div className={"cf-reed" + (r.busy ? " busy" : "")}>
+      {r.busy && <div className="cf-note"><span className="cf-spin" aria-hidden="true" />ШІ обробляє кадр і перемонтовує — оновиться сам.</div>}
       <div className="cf-tl" role="tablist" aria-label="Кадри ролика">
         {beats.map((x, i) => (
-          <button key={i} type="button" role="tab" aria-selected={i === sel} className={i === sel ? "on" : ""} style={{ flex: x.seconds / total }}
+          <button key={i} type="button" role="tab" aria-selected={i === sel} className={(i === sel ? "on" : "") + (x.image_id ? " ai" : "")} style={{ flex: x.seconds / total }}
             onClick={() => { setSel(i); setPick(false); }}>
-            <b>{starts[i].toFixed(1)}–{(starts[i] + x.seconds).toFixed(1)}с</b><span>{x.text}</span>
+            <b>{starts[i].toFixed(1)}–{(starts[i] + x.seconds).toFixed(1)}с</b><span>{x.image_id ? "ШІ · " : ""}{x.text}</span>
+            {i > 0 && (x.fx?.transition || "cut") !== "cut" && <i className="tr" title="перехід" aria-hidden="true" />}
           </button>))}
       </div>
       {b && (
         <div className="cf-edit">
-          {b.thumb_url ? <img src={b.thumb_url} alt="" /> : <div className="cf-thumb" style={{ width: 96, height: 128 }} />}
+          <div className="cf-edit-img">
+            {b.thumb_url ? <img src={b.thumb_url} alt="" /> : <div className="cf-thumb" style={{ width: 96, height: 128 }} />}
+            {isAi && <em>{b.ai === "improved" ? "покращено ШІ" : b.ai === "edited" ? "домальовано ШІ" : "ШІ-кадр"}</em>}
+          </div>
           <div style={{ display: "grid", gap: 8 }}>
             <input className="cf-in" value={b.text} onChange={(e) => upd(sel, { text: e.target.value })} aria-label="Текст на кадрі" />
             <div className="cf-set">
               <label className="cf-kv" htmlFor={`cf-sec-${r.id}`}>секунд</label>
               <input id={`cf-sec-${r.id}`} className="cf-in" style={{ width: 70 }} inputMode="decimal" value={b.seconds}
                 onChange={(e) => upd(sel, { seconds: Number(e.target.value.replace(",", ".")) || 0 })} />
-              <button type="button" className="cf-btn ghost" onClick={() => setPick(!pick)}>{pick ? "Сховати сцени" : "Замінити кадр"}</button>
+              {!isAi && <button type="button" className="cf-btn ghost" onClick={() => setPick(!pick)}>{pick ? "Сховати сцени" : "Замінити кадр"}</button>}
               {b.source && <a href={b.source} target="_blank" rel="noreferrer" style={{ color: "var(--cf-blue)", fontSize: 12 }}>оригінал ↗</a>}
             </div>
-            <div className="cf-kv"><span>Зараз у кадрі: {b.what || "—"}</span></div>
+            <div className="cf-fx">
+              {sel > 0 && <div><span>Перехід перед кадром</span><Seg label="Перехід" value={b.fx?.transition || "cut"} onChange={(v) => setFx(sel, "transition", v)} opts={FX_T} /></div>}
+              <div><span>Рух камери</span><Seg label="Рух камери" value={b.fx?.motion || (isAi ? "zoomin" : "none")} onChange={(v) => setFx(sel, "motion", v)} opts={FX_M} /></div>
+            </div>
+            <div className="cf-kv"><span>У кадрі: {b.what || "—"}</span></div>
           </div>
         </div>)}
-      {pick && b && <ScenePicker material={r.material} current={b.scene_id}
+      {b && (
+        <div className="cf-aitools">
+          <span className="lbl">ШІ для цього кадру · ≈$0.04</span>
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="cf-btn ghost" disabled={r.busy} onClick={() => frame("improve")}>Покращити</button>
+            <button type="button" className={"cf-btn ghost" + (ai === "edit" ? " on" : "")} disabled={r.busy} onClick={() => setAi(ai === "edit" ? "" : "edit")}>Додати елемент / ефект</button>
+            <button type="button" className={"cf-btn ghost" + (ai === "regenerate" ? " on" : "")} disabled={r.busy} onClick={() => { setAi(ai === "regenerate" ? "" : "regenerate"); setPrompt(b.prompt || b.text); }}>Перегенерувати повністю</button>
+            {b.orig_scene_id && <button type="button" className="cf-btn ghost" disabled={r.busy} onClick={() => frame("revert")}>Повернути справжній кадр</button>}
+          </div>
+          {ai && (
+            <div className="cf-set">
+              <input className="cf-in" value={prompt} onChange={(e) => setPrompt(e.target.value)} autoFocus
+                placeholder={ai === "edit" ? "Що додати: стрілку на шов, світіння лампи, кота Барсика в кут…" : "Опишіть новий кадр повністю"} aria-label="Завдання для ШІ" />
+              <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={!prompt.trim()} onClick={() => frame(ai)}>{ai === "edit" ? "Домалювати" : "Намалювати"}</button>
+            </div>)}
+          {blog?.label_ai && !isAi && <p className="cf-quiet">Правило блогу: фактуру покриття ШІ не змінює, а ШІ-кадр отримує напис «ШІ-візуалізація».</p>}
+        </div>)}
+      {pick && b && <ScenePicker material={r.material} current={b.scene_id ?? 0}
         onPick={(s) => { upd(sel, { scene_id: s.id, what: s.what, thumb_url: s.thumb_url, source: s.source, seconds: Math.min(b.seconds, s.seconds) }); setPick(false); }} />}
+      <div className="cf-advice">
+        <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="cf-btn ghost cf-proof-btn" disabled={adviceBusy} onClick={getAdvice}><i aria-hidden="true" />{adviceBusy ? "Думаю…" : "Поради ШІ під мету блогу · ≈$0.02"}</button>
+          {blog && !blog.ready && <span className="cf-quiet">спершу налаштуйте блог</span>}
+        </div>
+        {advice && (advice.length === 0 ? <p className="cf-quiet">Корисних порад під мету блогу немає — ролик уже зроблено добре.</p> : (
+          <ul>{advice.map((a, i) => (
+            <li key={i}>
+              <div><b>{a.title}</b><small>{a.why}</small>
+                <span className="cf-tag">кадр {a.action.beat + 1} · {ACTION_LABEL[a.action.type] || a.action.type}: {String(a.action.value)}</span></div>
+              <button type="button" className="cf-btn ghost" disabled={r.busy} onClick={() => apply(a)}>{a.action.type === "edit_frame" || a.action.type === "regenerate" ? "Зробити · ≈$0.04" : "Застосувати"}</button>
+            </li>))}</ul>))}
+      </div>
       <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
-        <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={!dirty} onClick={save}>Зберегти й перемонтувати</button>
+        <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={!dirty || r.busy} onClick={() => save()}>Зберегти й перемонтувати</button>
         {dirty && <button type="button" className="cf-btn ghost" onClick={() => setBeats(r.beats)}>Скасувати зміни</button>}
       </div>
       {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
@@ -1799,17 +2011,378 @@ function StylePicker({ value, onChange }: { value: number | null; onChange: (id:
   );
 }
 
-function Reels() {
-  const [data, setData] = useState<{ reels: ReelT[]; materials: { name: string; videos: number }[]; marked: Record<string, number>; scenes: number; spent_month_usd: number; ideas: { title: string; material: string }[] } | null>(null);
+/* ── 25.09: блоги, вичитка ШІ, каруселі ── */
+type BlogT = {
+  id: number; slug: string; name: string; kind: string; kind_display: string; about: string; color: string; is_default: boolean;
+  use_crm_kb: boolean; label_ai: boolean; real_footage: boolean; ready: boolean; facts_count: number; reels: number; carousels: number;
+  accounts: { id: number; platform: string; handle: string; url: string }[];
+};
+type FactT = { id: number; kind: string; kind_display: string; title: string; text: string; active: boolean };
+type BlogFull = BlogT & { master_prompt: string; goal: string; cta: string; template: string; facts: FactT[]; kinds: [string, string][] };
+type SlideT = { headline: string; body: string; hint: string; image_kind: string; image_prompt: string; png_url: string };
+type CarouselT = {
+  id: number; blog_id: number | null; topic: string; title: string; caption: string; template: string; status: string; status_display: string;
+  busy: boolean; error: string; facts: string[]; created_at: string; slides: SlideT[];
+};
+type CarData = { carousels: CarouselT[]; templates: [string, string][]; materials: string[]; spent_month_usd: number;
+  images_spent_month_usd: number; images_cap_usd: number };
+type ProofT = { text: string; changes: { was: string; now: string; why: string }[] };
+
+/** Кнопка «Перевірити ШІ»: орфографія й формулювання; показує правки, застосовує лише після «Прийняти». */
+function ProofBtn({ text, blogId, onApply }: { text: string; blogId?: number | null; onApply: (t: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<ProofT | null>(null);
+  const [err, setErr] = useState("");
+  const run = async () => {
+    setBusy(true); setErr(""); setRes(null);
+    try { setRes(await api.post<ProofT>("/api/content-factory/proofread/", { text, blog_id: blogId || null })); }
+    catch (e: any) { setErr(e?.data?.error || "Не вдалося перевірити."); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <button type="button" className="cf-btn ghost cf-proof-btn" disabled={busy || !text.trim()} onClick={run}>
+        <i aria-hidden="true" />{busy ? "Перевіряю…" : "Перевірити ШІ"}</button>
+      {err && <span className="cf-msg err">{err}</span>}
+      {res && (
+        <div className="cf-proof" role="status">
+          <b>{res.changes.length ? `Правок: ${res.changes.length}` : "Помилок і незграбних місць не знайдено"}</b>
+          {res.changes.length > 0 && <ul>{res.changes.map((c, i) => (
+            <li key={i}><s>{c.was}</s> → <ins>{c.now}</ins>{c.why && <small>{c.why}</small>}</li>))}</ul>}
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            {res.changes.length > 0 && <button type="button" className="cf-btn gold" style={{ height: 32 }} onClick={() => { onApply(res.text); setRes(null); }}>Прийняти правки</button>}
+            <button type="button" className="cf-btn ghost" onClick={() => setRes(null)}>Закрити</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} className={"cf-switch" + (on ? " on" : "")} onClick={() => onChange(!on)}>
+      <i aria-hidden="true" /><span><b>{label}</b>{hint && <small>{hint}</small>}</span>
+    </button>
+  );
+}
+
+const BLOG_COLORS = ["#e3b85f", "#f2a33a", "#7fb0d4", "#d7f24a", "#c9ccd0", "#b89d78", "#6cc08f", "#5fb3c9", "#b07fd4", "#e07a6e"];
+
+function BlogEditor({ id, onChanged }: { id: number; onChanged: () => void }) {
+  const [b, setB] = useState<BlogFull | null>(null);
+  const [form, setForm] = useState<Partial<BlogFull>>({});
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [link, setLink] = useState("");
+  const [brief, setBrief] = useState("");
+  const [briefBusy, setBriefBusy] = useState(false);
+  const [fact, setFact] = useState({ kind: "fact", title: "", text: "" });
+  const [factFilter, setFactFilter] = useState("");
+  const load = useCallback(async () => {
+    const x = await api.get<BlogFull>(`/api/content-factory/blogs/${id}/`);
+    setB(x); setForm({ name: x.name, about: x.about, master_prompt: x.master_prompt, goal: x.goal, cta: x.cta, color: x.color, kind: x.kind,
+      use_crm_kb: x.use_crm_kb, label_ai: x.label_ai, real_footage: x.real_footage });
+  }, [id]);
+  useEffect(() => { setMsg(null); load().catch(() => setMsg({ ok: false, text: "Не вдалося завантажити блог." })); }, [load]);
+  if (!b) return <div className="cf-empty">Завантажую…</div>;
+  const f = (k: keyof BlogFull, v: unknown) => setForm({ ...form, [k]: v });
+  const dirty = (Object.keys(form) as (keyof BlogFull)[]).some((k) => form[k] !== b[k]);
+  const act = async (fn: () => Promise<unknown>, ok?: string) => {
+    setMsg(null);
+    try { const x = await fn(); if (x && typeof x === "object" && "id" in (x as any)) { await load(); } if (ok) setMsg({ ok: true, text: ok }); onChanged(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
+  };
+  const facts = b.facts.filter((x) => !factFilter || x.kind === factFilter);
+  return (
+    <div className="cf-blog-ed">
+      <div className="cf-card">
+        <h3>Профіль блогу</h3>
+        <div className="cf-grid2">
+          <label className="cf-field"><span>Назва</span><input className="cf-in" value={form.name || ""} onChange={(e) => f("name", e.target.value)} /></label>
+          <label className="cf-field"><span>Про що — одним рядком</span><input className="cf-in" value={form.about || ""} onChange={(e) => f("about", e.target.value)} /></label>
+        </div>
+        <div className="cf-field"><span>Тип</span>
+          <Seg label="Тип блогу" value={form.kind || "other"} onChange={(v) => f("kind", v)}
+            opts={[{ v: "brand", l: "Бренд" }, { v: "personal", l: "Особистий" }, { v: "hiring", l: "Найм" }, { v: "fun", l: "Розважальний" }, { v: "other", l: "Інше" }]} /></div>
+        <div className="cf-field"><span>Колір блогу</span>
+          <div className="cf-colors">{BLOG_COLORS.map((c) => (
+            <button key={c} type="button" aria-label={c} aria-pressed={form.color === c} className={form.color === c ? "on" : ""} style={{ background: c }} onClick={() => f("color", c)} />))}</div></div>
+        <div className="cf-toggles">
+          <Toggle on={!!form.use_crm_kb} onChange={(v) => f("use_crm_kb", v)} label="База знань CRM" hint="брати ще й факти з AI ЦЕНТР (для Wallcov)" />
+          <Toggle on={!!form.real_footage} onChange={(v) => f("real_footage", v)} label="Є власні нарізки" hint="рилси з наших відео; інакше кадри малює ШІ" />
+          <Toggle on={!!form.label_ai} onChange={(v) => f("label_ai", v)} label="Позначати ШІ-кадри" hint="напис «ШІ-візуалізація» на згенерованому" />
+        </div>
+      </div>
+      <div className="cf-card">
+        <h3>Мета блогу</h3>
+        <p className="cf-quiet">Під неї ШІ радить ефекти, кадри й заклики. Одне-два речення: чого має досягати контент.</p>
+        <textarea className="cf-ta" style={{ minHeight: 70 }} value={form.goal || ""} placeholder="Напр.: заявки в Direct; підписки й досмотр серій; відгуки кандидатів на вакансію"
+          onChange={(e) => f("goal", e.target.value)} aria-label="Мета блогу" />
+      </div>
+      <div className="cf-card">
+        <h3>Майстер-промт</h3>
+        <p className="cf-quiet">Головна інструкція для ШІ: тема, аудиторія, тон, формати, візуал, заборони. Поки є «[заповніть]» — блог не генерує.</p>
+        <textarea className="cf-ta" style={{ minHeight: 230 }} value={form.master_prompt || ""} onChange={(e) => f("master_prompt", e.target.value)} aria-label="Майстер-промт" />
+        <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+          <ProofBtn text={form.master_prompt || ""} blogId={b.id} onApply={(t) => f("master_prompt", t)} />
+          {!(form.master_prompt || "").trim() && <button type="button" className="cf-btn ghost" onClick={() => f("master_prompt", b.template)}>Вставити шаблон</button>}
+        </div>
+        <div className="cf-brief">
+          <span>Скласти з опису · ≈$0.003</span>
+          <textarea className="cf-ta" style={{ minHeight: 70 }} value={brief} onChange={(e) => setBrief(e.target.value)}
+            placeholder="Опишіть своїми словами: про що блог, для кого, як говорите, що показуєте, чого не можна." aria-label="Опис блогу" />
+          <button type="button" className="cf-btn ghost" disabled={briefBusy || brief.trim().length < 20} onClick={async () => {
+            setBriefBusy(true); setMsg(null);
+            try { const r: any = await api.post(`/api/content-factory/blogs/${b.id}/brief/`, { brief });
+              setForm({ ...form, master_prompt: r.master_prompt || form.master_prompt, cta: r.cta || form.cta, about: r.about || form.about });
+              setMsg({ ok: true, text: "Чернетку вставлено — перегляньте й натисніть «Зберегти»." }); }
+            catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); } finally { setBriefBusy(false); }
+          }}>{briefBusy ? "Складаю…" : "Скласти майстер-промт"}</button>
+        </div>
+        <label className="cf-field"><span>Заклик у кінці</span>
+          <textarea className="cf-ta" style={{ minHeight: 60 }} value={form.cta || ""} onChange={(e) => f("cta", e.target.value)} /></label>
+      </div>
+      <div className="cf-savebar">
+        <button type="button" className="cf-btn gold" disabled={!dirty} onClick={() => act(() => api.patch(`/api/content-factory/blogs/${b.id}/`, form).then(load), "Збережено")}>Зберегти блог</button>
+        {dirty && <button type="button" className="cf-btn ghost" onClick={load}>Скасувати</button>}
+        {msg && <span className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</span>}
+      </div>
+      <div className="cf-card">
+        <h3>Акаунти блогу</h3>
+        <div className="cf-accs">{b.accounts.map((a) => (
+          <span key={a.id} className="cf-acc"><i className={"cf-mark " + a.platform}>{PLATFORM_MARK[a.platform]}</i>
+            <a href={a.url} target="_blank" rel="noreferrer">@{a.handle}</a>
+            <button type="button" aria-label="Відвʼязати" onClick={() => act(() => api.del(`/api/content-factory/blogs/${b.id}/accounts/?channel=${a.id}`).then(load))}>✕</button></span>))}
+          {b.accounts.length === 0 && <span className="cf-quiet">Акаунтів ще немає.</span>}</div>
+        <div className="cf-set">
+          <input className="cf-in" value={link} onChange={(e) => setLink(e.target.value)} placeholder="Посилання на профіль: instagram.com/…, tiktok.com/@…" aria-label="Посилання на акаунт" />
+          <button type="button" className="cf-btn ghost" disabled={!link.trim()} onClick={() => act(() => api.post(`/api/content-factory/blogs/${b.id}/accounts/`, { link }).then(() => { setLink(""); return load(); }))}>Додати акаунт</button>
+        </div>
+      </div>
+      <div className="cf-card">
+        <h3>База знань блогу · {b.facts.length}</h3>
+        <p className="cf-quiet">Правила й заборони ШІ читає завжди; факти й приклади — ті, що ближчі до теми.{b.use_crm_kb ? " Плюс затверджена база знань CRM." : ""}</p>
+        <div className="cf-fact-new">
+          <Seg label="Тип запису" value={fact.kind} onChange={(v) => setFact({ ...fact, kind: v })} opts={b.kinds.map(([v, l]) => ({ v, l }))} />
+          <input className="cf-in" value={fact.title} onChange={(e) => setFact({ ...fact, title: e.target.value })} placeholder="Коротко: що саме (напр. «Барсик завжди рудий»)" aria-label="Заголовок" />
+          <textarea className="cf-ta" style={{ minHeight: 60 }} value={fact.text} onChange={(e) => setFact({ ...fact, text: e.target.value })} placeholder="Деталі (необовʼязково)" aria-label="Текст запису" />
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="cf-btn ghost" disabled={!fact.title.trim()} onClick={() => act(() => api.post(`/api/content-factory/blogs/${b.id}/facts/`, fact).then(() => { setFact({ ...fact, title: "", text: "" }); return load(); }))}>Додати запис</button>
+            <ProofBtn text={`${fact.title}\n${fact.text}`.trim()} blogId={b.id} onApply={(t) => { const [h, ...rest] = t.split("\n"); setFact({ ...fact, title: h, text: rest.join("\n") }); }} />
+          </div>
+        </div>
+        {b.facts.length > 0 && <Seg label="Фільтр" value={factFilter} onChange={setFactFilter} opts={[{ v: "", l: "Усі" }, ...b.kinds.map(([v, l]) => ({ v, l }))]} />}
+        <ul className="cf-facts">{facts.map((x) => (
+          <li key={x.id} className={x.active ? "" : "off"}>
+            <em className={"k " + x.kind}>{x.kind_display}</em>
+            <div><b>{x.title}</b>{x.text && <p>{x.text}</p>}</div>
+            <div className="cf-acts">
+              <button type="button" className="cf-btn ghost" onClick={() => act(() => api.patch(`/api/content-factory/blogs/${b.id}/facts/${x.id}/`, { active: !x.active }).then(load))}>{x.active ? "Вимкнути" : "Увімкнути"}</button>
+              <button type="button" className="cf-btn danger" onClick={() => act(() => api.del(`/api/content-factory/blogs/${b.id}/facts/${x.id}/`).then(load))}>Видалити</button>
+            </div>
+          </li>))}</ul>
+      </div>
+    </div>
+  );
+}
+
+function Blogs({ blogs, blogId, setBlogId, reload }: { blogs: BlogT[]; blogId: number | null; setBlogId: (id: number) => void; reload: () => void }) {
+  const [name, setName] = useState("");
+  const [err, setErr] = useState("");
+  const cur = blogs.find((b) => b.id === blogId) || blogs[0];
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Блоги</h1>
+        <p className="cf-sub">У кожного блогу свої акаунти, мета, майстер-промт і база знань. Вибраний блог задає тематику рилсів і каруселей у всьому заводі.</p>
+      </div>
+      <div className="cf-blogs">
+        {blogs.map((b) => (
+          <button key={b.id} type="button" className={"cf-bcard" + (cur?.id === b.id ? " on" : "")} style={{ ["--bc" as string]: b.color }} onClick={() => setBlogId(b.id)}>
+            <span className="dot" aria-hidden="true" />
+            <b>{b.name}</b>
+            <small>{b.accounts.map((a) => "@" + a.handle).join(" · ") || "без акаунтів"}</small>
+            <span className="meta">{b.ready ? <em className="ok">налаштовано</em> : <em className="todo">заповнити промт</em>}
+              <i>{b.facts_count} записів · {b.reels} рилсів · {b.carousels} каруселей</i></span>
+          </button>))}
+        <div className="cf-bcard add">
+          <input className="cf-in" value={name} onChange={(e) => setName(e.target.value)} placeholder="Новий блог: назва" aria-label="Назва нового блогу" />
+          <button type="button" className="cf-btn ghost" disabled={!name.trim()} onClick={async () => {
+            setErr("");
+            try { const x: any = await api.post("/api/content-factory/blogs/", { name }); setName(""); reload(); setBlogId(x.id); }
+            catch (e: any) { setErr(e?.data?.error || "Не вдалося."); }
+          }}>Додати блог</button>
+          {err && <span className="cf-msg err">{err}</span>}
+        </div>
+      </div>
+      {cur && <BlogEditor key={cur.id} id={cur.id} onChanged={reload} />}
+    </>
+  );
+}
+
+function LibPicker({ material, onPick }: { material: string; onPick: (id: number) => void }) {
+  const [mat, setMat] = useState(material);
+  const [data, setData] = useState<{ items: TgPhoto[]; materials: string[] } | null>(null);
+  useEffect(() => {
+    api.get<{ items: TgPhoto[]; materials: string[] }>(`/api/content-factory/telegram/media/?kind=image&material=${encodeURIComponent(mat)}`)
+      .then(setData).catch(() => setData({ items: [], materials: [] }));
+  }, [mat]);
+  return (
+    <div className="cf-picker">
+      <Pick small label="Матеріал" value={mat} onChange={setMat} opts={[{ v: "", l: "Усі матеріали" }, ...(data?.materials || []).map((m) => ({ v: m, l: m }))]} />
+      <div className="cf-pick-grid">{!data ? <span className="cf-kv">Завантажую…</span> : data.items.length === 0 ? <span className="cf-kv">Нічого немає</span>
+        : data.items.map((m) => <button key={m.id} type="button" title={m.title} onClick={() => onPick(m.id)}><img src={m.preview_url || m.url} alt={m.title} loading="lazy" /></button>)}</div>
+    </div>
+  );
+}
+
+function CarouselCard({ c, blog, onChanged }: { c: CarouselT; blog: BlogT | undefined; onChanged: () => void }) {
+  const [sel, setSel] = useState(0);
+  const [slides, setSlides] = useState(c.slides);
+  const [caption, setCaption] = useState(c.caption);
+  const [prompt, setPrompt] = useState("");
+  const [lib, setLib] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { setSlides(c.slides); setCaption(c.caption); }, [c.slides, c.caption]);
+  useEffect(() => { setPrompt(c.slides[sel]?.image_prompt || c.slides[sel]?.hint || ""); setLib(false); }, [sel, c.slides]);
+  const dirty = JSON.stringify(slides.map((s) => [s.headline, s.body])) !== JSON.stringify(c.slides.map((s) => [s.headline, s.body])) || caption !== c.caption;
+  const act = async (fn: () => Promise<any>) => {
+    setMsg(null);
+    try { const x = await fn(); if (x?.note) setMsg({ ok: true, text: x.note }); onChanged(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
+  };
+  const s = slides[sel];
+  const base = `/api/content-factory/carousels/${c.id}/`;
+  if (c.busy && !c.slides.length) return <div className="cf-car busy"><div className="cf-spin" aria-hidden="true" /><b>{c.title}</b><span className="cf-quiet">Пишу слайди й малюю…</span></div>;
+  if (c.error && !c.slides.length) return <div className="cf-car"><b>{c.title}</b><div className="cf-msg err">{c.error}</div>
+    <button type="button" className="cf-btn ghost" onClick={() => act(() => api.del(base))}>Прибрати</button></div>;
+  return (
+    <div className={"cf-car" + (c.busy ? " busy" : "")}>
+      <div className="cf-role-h"><h4>{c.title}</h4><span className={"cf-pill " + (c.status === "approved" ? "now" : "next")}>{c.status_display}</span>
+        {c.busy && <span className="cf-quiet">оновлюю слайд…</span>}</div>
+      <div className="cf-strip" role="tablist" aria-label="Слайди">
+        {c.slides.map((x, i) => (
+          <button key={i} type="button" role="tab" aria-selected={i === sel} className={i === sel ? "on" : ""} onClick={() => setSel(i)}>
+            {x.png_url ? <img src={x.png_url} alt={`Слайд ${i + 1}`} loading="lazy" /> : <span>{i + 1}</span>}
+            {x.image_kind === "ai" && <em>ШІ</em>}
+          </button>))}
+      </div>
+      {s && (
+        <div className="cf-slide-ed">
+          <div className="cf-kv"><span>Слайд {sel + 1} з {slides.length}</span></div>
+          <input className="cf-in" value={s.headline} onChange={(e) => setSlides(slides.map((x, n) => n === sel ? { ...x, headline: e.target.value } : x))} aria-label="Заголовок слайда" />
+          <textarea className="cf-ta" style={{ minHeight: 80 }} value={s.body} onChange={(e) => setSlides(slides.map((x, n) => n === sel ? { ...x, body: e.target.value } : x))} aria-label="Текст слайда" />
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <ProofBtn text={`${s.headline}\n${s.body}`} blogId={c.blog_id} onApply={(t) => { const [h, ...rest] = t.split("\n"); setSlides(slides.map((x, n) => n === sel ? { ...x, headline: h, body: rest.join(" ").trim() } : x)); }} />
+          </div>
+          <div className="cf-img-tools">
+            <span className="cf-kv"><span>Картинка: {s.image_kind === "library" ? "реальне фото" : s.image_kind === "ai" ? "ШІ" : "без картинки"}</span></span>
+            <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+              <button type="button" className="cf-btn ghost" onClick={() => setLib(!lib)}>{lib ? "Сховати фото" : "Фото з бібліотеки"}</button>
+              {s.image_kind !== "none" && <button type="button" className="cf-btn ghost" disabled={c.busy} onClick={() => act(() => api.post(`${base}image/`, { index: sel, op: "improve" }))}>Покращити ШІ · ≈$0.04</button>}
+              {s.image_kind !== "none" && <button type="button" className="cf-btn ghost" onClick={() => act(() => api.post(`${base}image/`, { index: sel, op: "none" }))}>Без картинки</button>}
+            </div>
+            {lib && <LibPicker material="" onPick={(id) => { setLib(false); act(() => api.post(`${base}image/`, { index: sel, op: "library", lib_id: id })); }} />}
+            <div className="cf-set">
+              <input className="cf-in" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Що намалювати ШІ на цьому слайді" aria-label="Опис картинки" />
+              <button type="button" className="cf-btn ghost" disabled={c.busy || !prompt.trim()} onClick={() => act(() => api.post(`${base}image/`, { index: sel, op: "ai", prompt }))}>Намалювати ШІ · ≈$0.04</button>
+            </div>
+            {blog?.label_ai && <p className="cf-quiet">Для цього блогу ШІ-картинка отримає напис «ШІ-візуалізація»; фактуру покриття — лише з реальних фото.</p>}
+          </div>
+        </div>
+      )}
+      <label className="cf-field"><span>Підпис до допису</span>
+        <textarea className="cf-ta" style={{ minHeight: 90 }} value={caption} onChange={(e) => setCaption(e.target.value)} /></label>
+      <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+        <ProofBtn text={caption} blogId={c.blog_id} onApply={setCaption} />
+        {dirty && <button type="button" className="cf-btn gold" style={{ height: 32 }} onClick={() => act(() => api.patch(base, { slides: slides.map(({ headline, body }) => ({ headline, body })), caption }))}>Зберегти й перемалювати</button>}
+        {dirty && <button type="button" className="cf-btn ghost" onClick={() => { setSlides(c.slides); setCaption(c.caption); }}>Скасувати</button>}
+      </div>
+      <div className="cf-set">
+        <Seg label="Дизайн" value={c.template} onChange={(v) => act(() => api.patch(base, { template: v }))}
+          opts={[{ v: "photo", l: "Фото на весь слайд" }, { v: "plaster", l: "Світла штукатурка" }, { v: "graphite", l: "Графіт" }]} />
+      </div>
+      {c.facts.filter((f) => f.startsWith("Перевірити")).length > 0 && <ul className="cf-list warn">{c.facts.filter((f) => f.startsWith("Перевірити")).map((f, i) => <li key={i}>{f}</li>)}</ul>}
+      <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+        <button type="button" className="cf-btn ghost" onClick={() => act(() => api.post(`${base}test/`))}>Надіслати мені в Telegram</button>
+        {c.status !== "approved" && <button type="button" className="cf-btn gold" style={{ height: 32 }} onClick={() => act(() => api.patch(base, { status: "approved" }))}>Схвалити</button>}
+        {c.status !== "rejected" && <button type="button" className="cf-btn ghost" onClick={() => act(() => api.patch(base, { status: "rejected" }))}>Відхилити</button>}
+        {c.slides.map((x, i) => x.png_url && <a key={i} className="cf-dl" href={x.png_url} target="_blank" rel="noreferrer" download>{i + 1}</a>)}
+      </div>
+      {c.error && <div className="cf-msg err">{c.error}</div>}
+      {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+    </div>
+  );
+}
+
+function Carousels({ blog }: { blog: BlogT | undefined }) {
+  const [data, setData] = useState<CarData | null>(null);
+  const [topic, setTopic] = useState("");
+  const [n, setN] = useState("6");
+  const [tpl, setTpl] = useState("photo");
+  const [images, setImages] = useState("auto");
+  const [material, setMaterial] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = useCallback(async () => {
+    if (!blog) return;
+    try { setData(await api.get<CarData>(`/api/content-factory/carousels/?blog=${blog.id}`)); } catch { /* */ }
+  }, [blog]);
+  useEffect(() => { load(); }, [load]);
+  const busy = !!data?.carousels.some((c) => c.busy);
+  useEffect(() => { if (!busy) return; const t = setInterval(load, 5000); return () => clearInterval(t); }, [busy, load]);
+  if (!blog) return <div className="cf-empty">Спершу створіть блог.</div>;
+  const make = async () => {
+    setMsg(null);
+    try { const r: any = await api.post("/api/content-factory/carousels/", { blog_id: blog.id, topic, slides: Number(n), template: tpl, images, material });
+      setMsg({ ok: true, text: r.note }); setTopic(""); load(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
+  };
+  return (
+    <>
+      <div>
+        <h1 className="cf-h1">Каруселі</h1>
+        <p className="cf-sub">Слайди 1080×1350 у тематиці блогу «{blog.name}»: текст за майстер-промтом і базою знань, картинки — реальні фото, ШІ або дизайнерський фон. Кожен слайд можна переписати, перевірити ШІ й перемалювати.</p>
+      </div>
+      {!blog.ready && <div className="cf-empty">Блог «{blog.name}» ще не налаштований — допишіть майстер-промт у розділі «Блоги».</div>}
+      <div className="cf-card">
+        <h3>Нова карусель</h3>
+        <input className="cf-in" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Тема: наприклад «Чим мокрий шовк відрізняється від фарби»" aria-label="Тема каруселі" />
+        <div className="cf-set">
+          <Seg label="Кількість слайдів" value={n} onChange={setN} opts={[{ v: "4", l: "4 слайди" }, { v: "6", l: "6" }, { v: "8", l: "8" }]} />
+          <Seg label="Дизайн" value={tpl} onChange={setTpl} opts={[{ v: "photo", l: "Фото" }, { v: "plaster", l: "Штукатурка" }, { v: "graphite", l: "Графіт" }]} />
+        </div>
+        <div className="cf-set">
+          <Seg label="Картинки" value={images} onChange={setImages} opts={[{ v: "auto", l: "Авто" }, { v: "library", l: "Реальні фото" }, { v: "ai", l: "ШІ-картинки" }, { v: "none", l: "Без фото" }]} />
+          {(images === "library" || (images === "auto" && blog.use_crm_kb)) && (
+            <Pick small label="Матеріал для фото" value={material} onChange={setMaterial} placeholder="Матеріал для фото"
+              opts={(data?.materials || []).map((m) => ({ v: m, l: m }))} />)}
+        </div>
+        <p className="cf-quiet">Текст ≈$0.02–0.04{images === "ai" ? ` · ШІ-картинки ≈$0.04 кожна (${n} шт.)` : ""} · ШІ-картинки цього місяця ${data?.images_spent_month_usd.toFixed(2) ?? "0"} з ${data?.images_cap_usd ?? 10}</p>
+        <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="cf-btn gold" disabled={!topic.trim() || !blog.ready} onClick={make}>Зробити карусель</button>
+        </div>
+        {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+      </div>
+      {!data ? <div className="cf-empty">Завантажую…</div> : data.carousels.length === 0 ? <div className="cf-empty">Каруселей цього блогу ще немає.</div>
+        : data.carousels.map((c) => <CarouselCard key={c.id} c={c} blog={blog} onChanged={load} />)}
+    </>
+  );
+}
+
+function Reels({ blog }: { blog: BlogT | undefined }) {
+  const [data, setData] = useState<{ reels: ReelT[]; materials: { name: string; videos: number }[]; marked: Record<string, number>; scenes: number; spent_month_usd: number; ideas: { title: string; material: string }[]; images_spent_month_usd: number; images_cap_usd: number } | null>(null);
   const [topic, setTopic] = useState("");
   const [material, setMaterial] = useState("Галатея");
   const [styleId, setStyleId] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const load = useCallback(async () => { try { setData(await api.get("/api/content-factory/reels/")); } catch { setMsg({ ok: false, text: "Не вдалося завантажити." }); } }, []);
+  const load = useCallback(async () => { try { setData(await api.get(`/api/content-factory/reels/${blog ? `?blog=${blog.id}` : ""}`)); } catch { setMsg({ ok: false, text: "Не вдалося завантажити." }); } }, [blog]);
   useEffect(() => { load(); }, [load]);
+  const busyAny = !!data?.reels.some((r) => r.busy);
+  useEffect(() => { if (!busyAny) return; const t = setInterval(load, 6000); return () => clearInterval(t); }, [busyAny, load]);
+  const footage = blog ? blog.real_footage : true;
   const make = async () => {
     setMsg(null);
-    try { const r: any = await api.post("/api/content-factory/reels/", { topic, material, style_id: styleId }); setMsg({ ok: true, text: r.note + " Оновіть сторінку за кілька хвилин." }); }
+    try { const r: any = await api.post("/api/content-factory/reels/", { topic, material: footage ? material : "", style_id: styleId, blog_id: blog?.id });
+      setMsg({ ok: true, text: r.note + " Оновіть сторінку за кілька хвилин." }); }
     catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
   };
   const act = async (r: ReelT, b: Record<string, unknown>) => { await api.patch(`/api/content-factory/reels/${r.id}/`, b); load(); };
@@ -1821,7 +2394,7 @@ function Reels() {
   return (
     <>
       <div>
-        <h1 className="cf-h1">Рилси з ваших нарізок</h1>
+        <h1 className="cf-h1">{footage ? "Рилси з ваших нарізок" : `Рилси · ${blog?.name}`}</h1>
         <p className="cf-sub">ШІ один раз переглядає відео потрібного матеріалу й запамʼятовує, що на якій секунді. Потім пише сценарій на 12–16 секунд
           (факти лише з бази знань), підбирає кадри й монтує 9:16 з великими субтитрами. Стіна в кадрі — завжди справжня. Музику додасте в Instagram.</p>
       </div>
@@ -1829,10 +2402,12 @@ function Reels() {
         <h3>Новий рилс</h3>
         <div className="cf-set">
           <input id="cf-reel-topic" className="cf-in" style={{ flex: 1, minWidth: 260 }} placeholder="Тема: наприклад «Чи видно шви на Галатеї»" value={topic} onChange={(e) => setTopic(e.target.value)} />
-          <Pick label="Матеріал" value={material} onChange={setMaterial} width={260}
-            opts={data.materials.map((m) => ({ v: m.name, l: m.name, hint: `${m.videos} відео · розмічено ${data.marked[m.name] || 0}` }))} />
-          <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={!topic.trim()} onClick={make}>Зробити рилс</button>
+          {footage && <Pick label="Матеріал" value={material} onChange={setMaterial} width={260}
+            opts={data.materials.map((m) => ({ v: m.name, l: m.name, hint: `${m.videos} відео · розмічено ${data.marked[m.name] || 0}` }))} />}
+          <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={!topic.trim() || (blog && !blog.ready)} onClick={make}>Зробити рилс</button>
         </div>
+        {!footage && <p className="cf-quiet">У цього блогу немає власних нарізок — кожен кадр намалює ШІ за майстер-промтом блогу (4–6 кадрів ≈ $0.2–0.3). ШІ-картинки цього місяця: ${data.images_spent_month_usd?.toFixed(2) ?? "0"} з ${data.images_cap_usd ?? 10}.</p>}
+        {blog && !blog.ready && <div className="cf-empty">Блог «{blog.name}» ще не налаштований — допишіть майстер-промт у «Блогах».</div>}
         {data.ideas.length > 0 && <div className="cf-chips">{data.ideas.map((i) => <button key={i.title} type="button" className="cf-chip" onClick={() => { setTopic(i.title); if (i.material) setMaterial(i.material); }}>💡 {i.title}</button>)}</div>}
         <h3 style={{ marginTop: 6 }}>Стиль тексту</h3>
         <StylePicker value={styleId} onChange={setStyleId} />
@@ -1844,9 +2419,9 @@ function Reels() {
           {r.video_url ? <video src={r.video_url} controls playsInline preload="metadata" /> : <div className="cf-empty">{r.error || "без відео"}</div>}
           <div className="cf-side">
             <div className="cf-role-h"><h4>{r.title}</h4><span className={"cf-pill " + (r.status === "approved" ? "now" : "next")}>{r.status_display}</span></div>
-            <div className="cf-kv"><span>{r.material} · стиль: {r.style_name} · {r.duration ? `${r.duration} с` : ""} · {new Date(r.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></div>
+            <div className="cf-kv"><span>{r.material || "ШІ-кадри"} · стиль: {r.style_name} · {r.duration ? `${r.duration} с` : ""} · {new Date(r.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></div>
             {r.error && <div className="cf-msg err">{r.error}</div>}
-            {r.beats.length > 0 && <ReelEditor r={r} onChanged={load} />}
+            {r.beats.length > 0 && <ReelEditor r={r} blog={blog} onChanged={load} />}
             {r.caption && <div className="cf-card" style={{ padding: 10 }}><h3>Підпис</h3><div className="cf-rep" style={{ fontSize: 13 }}>{r.caption}</div></div>}
             {r.facts.filter((f) => f.startsWith("Перевірити")).length > 0 && <ul className="cf-list warn">{r.facts.filter((f) => f.startsWith("Перевірити")).map((f, i) => <li key={i}>{f}</li>)}</ul>}
             <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
@@ -1882,6 +2457,17 @@ export default function ContentFactory() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [list, setList] = useState<ChannelList | null>(null);
   const [err, setErr] = useState("");
+  const [blogs, setBlogs] = useState<BlogT[]>([]);
+  const [blogId, setBlogIdState] = useState<number | null>(() => {
+    try { return Number(localStorage.getItem("cf.blog")) || null; } catch { return null; }
+  });
+  const setBlogId = (id: number) => { setBlogIdState(id); try { localStorage.setItem("cf.blog", String(id)); } catch { /* приватний режим */ } };
+  const loadBlogs = useCallback(async () => {
+    try { const d = await api.get<{ blogs: BlogT[] }>("/api/content-factory/blogs/"); setBlogs(d.blogs); } catch { /* блоги необовʼязкові для інших вкладок */ }
+  }, []);
+  useEffect(() => { loadBlogs(); }, [loadBlogs]);
+  const blog = blogs.find((b) => b.id === blogId) || blogs.find((b) => b.is_default) || blogs[0];
+  const ctx: BlogCtx = { blogs, blogId: blog?.id ?? null, setBlogId };
   const load = useCallback(async () => {
     try {
       const [o, l] = await Promise.all([
@@ -1899,8 +2485,8 @@ export default function ContentFactory() {
   return (
     <div className="cf">
       <style>{CSS}</style>
-      <Rail tab={section.id} setTab={go} today={ov?.today ?? null} />
-      <MobileNav s={section} go={go} today={ov?.today ?? null} />
+      <Rail tab={section.id} setTab={go} today={ov?.today ?? null} ctx={ctx} />
+      <MobileNav s={section} go={go} today={ov?.today ?? null} ctx={ctx} />
       <main className="cf-main">
         <div className="cf-page">
         {err && <div className="cf-msg err" role="alert">{err}</div>}
@@ -1912,7 +2498,9 @@ export default function ContentFactory() {
           : section.id === "sources" ? <Sources />
           : section.id === "feed" ? <Feed />
           : section.id === "analyst" ? <Analyst />
-          : section.id === "reels" ? <Reels />
+          : section.id === "reels" ? <Reels key={blog?.id} blog={blog} />
+          : section.id === "carousels" ? <Carousels key={blog?.id} blog={blog} />
+          : section.id === "blogs" ? <Blogs blogs={blogs} blogId={blog?.id ?? null} setBlogId={setBlogId} reload={loadBlogs} />
           : <Soon s={section} />}
         </div>
       </main>

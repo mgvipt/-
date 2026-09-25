@@ -30,6 +30,8 @@ class ContentChannel(models.Model):
     role = models.CharField(max_length=16, choices=Role.choices, default=Role.COMPETITOR)
     note = models.TextField(blank=True)
     is_active = models.BooleanField(default=True, help_text="Вимкнена сторінка не аналізується, але історія лишається")
+    blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="channels",
+                             help_text="Для наших сторінок — до якого блогу належить акаунт")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -390,6 +392,8 @@ class ReelDraft(models.Model):
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
     error = models.CharField(max_length=300, blank=True)
     style = models.ForeignKey("ReelStyle", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="reels")
+    busy = models.BooleanField(default=False, help_text="Йде ШІ-обробка кадру / перемонтаж")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -423,3 +427,81 @@ class ReelStyle(models.Model):
 
     class Meta:
         ordering = ["origin", "name"]
+
+
+# ── 25.09.2026: блоги Олега — у кожного свої акаунти, база знань і майстер-промт ───────────────────
+
+class Blog(models.Model):
+    """Блог (напрям контенту): Wallcov, особистий, найм, «Стіни в шоці»… Генерація йде в його тематиці."""
+    class Kind(models.TextChoices):
+        BRAND = "brand", "Бренд"
+        PERSONAL = "personal", "Особистий"
+        HIRING = "hiring", "Найм"
+        FUN = "fun", "Розважальний"
+        OTHER = "other", "Інше"
+
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=60, unique=True)
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.OTHER)
+    about = models.CharField(max_length=300, blank=True, help_text="Одним рядком: про що блог")
+    master_prompt = models.TextField(blank=True, help_text="Тема, аудиторія, тон, формати, заборони, заклик — усе, що ШІ має знати")
+    goal = models.TextField(blank=True, help_text="Мета блогу (заявки, підписники, найм…) — під неї ШІ радить ефекти й кадри")
+    cta = models.TextField(blank=True, help_text="Заклик у кінці підпису/останнього слайда")
+    use_crm_kb = models.BooleanField(default=False, help_text="Брати факти ще й з бази знань CRM (AI ЦЕНТР) — для Wallcov")
+    label_ai = models.BooleanField(default=False, help_text="Позначати ШІ-кадри «ШІ-візуалізація» (правило Wallcov)")
+    real_footage = models.BooleanField(default=False, help_text="Є власні нарізки відео (рилси з наших кадрів)")
+    color = models.CharField(max_length=9, default="#e3b85f")
+    is_default = models.BooleanField(default=False)
+    sort = models.IntegerField(default=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class BlogFact(models.Model):
+    """Запис бази знань блогу: факт, правило, приклад вдалого тексту або заборона."""
+    class Kind(models.TextChoices):
+        FACT = "fact", "Факт"
+        RULE = "rule", "Правило"
+        EXAMPLE = "example", "Приклад"
+        BAN = "ban", "Заборона"
+
+    blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name="facts")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.FACT)
+    title = models.CharField(max_length=200)
+    text = models.TextField(blank=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["kind", "-id"]
+
+
+class Carousel(models.Model):
+    """Карусель 1080×1350: слайди (заголовок, текст, картинка) → PNG у CRM → «Надіслати мені»."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Чернетка"
+        APPROVED = "approved", "Схвалено"
+        REJECTED = "rejected", "Відхилено"
+
+    blog = models.ForeignKey(Blog, null=True, blank=True, on_delete=models.SET_NULL, related_name="carousels")
+    topic = models.CharField(max_length=300, blank=True)
+    title = models.CharField(max_length=200)
+    caption = models.TextField(blank=True)
+    template = models.CharField(max_length=20, default="photo")
+    slides = models.JSONField(default=list, blank=True,
+                              help_text="[{headline, body, image:{kind: library|ai|none, link_id, prompt}, rendered_id}]")
+    facts = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
+    error = models.CharField(max_length=300, blank=True)
+    busy = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]

@@ -54,3 +54,19 @@ urlpatterns += [
     path("api/content-factory/reels/scenes/", views.ReelScenesView.as_view()),
     path("api/content-factory/reels/styles/", views.ReelStylesView.as_view()),
 ]
+urlpatterns += [  # 25.09: блоги, каруселі, ШІ-кадри, вичитка
+    path("api/content-factory/blogs/", views.BlogsView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/", views.BlogView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/accounts/", views.BlogAccountsView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/facts/", views.BlogFactsView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/facts/<int:fid>/", views.BlogFactView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/brief/", views.BlogBriefView.as_view()),
+    path("api/content-factory/carousels/", views.CarouselsView.as_view()),
+    path("api/content-factory/carousels/<int:pk>/", views.CarouselView.as_view()),
+    path("api/content-factory/carousels/<int:pk>/test/", views.CarouselView.as_view(), {"action": "test"}),
+    path("api/content-factory/carousels/<int:pk>/image/", views.CarouselView.as_view(), {"action": "image"}),
+    path("api/content-factory/reels/<int:pk>/frame/", views.ReelView.as_view(), {"action": "frame"}),
+    path("api/content-factory/reels/<int:pk>/advice/", views.ReelView.as_view(), {"action": "advice"}),
+    path("api/content-factory/proofread/", views.ProofreadView.as_view()),
+    path("api/content-factory/telegram/posts/<int:pk>/photo-ai/", views.TelegramPhotoAIView.as_view()),
+]

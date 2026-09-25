@@ -90,6 +90,8 @@ CHECKS = [
     ("Відгуки: фото без підпису закрите", "owner", "/api/reviews/photo/not-a-token/", {404}, []),
     ("Відгуки: тексти, історія, тестовий режим", "owner", "/api/reviews/settings/", {200}, ["text_versions", "test_mode", "allowlist_contacts"]),
     ("Контент-завод: огляд (власник)", "owner", "/api/content-factory/overview/", {200}, ["channels_total", "by_role", "today"]),
+    ("Контент-завод: блоги", "owner", "/api/content-factory/blogs/", {200}, ["blogs", "kinds"]),
+    ("Контент-завод: каруселі", "owner", "/api/content-factory/carousels/", {200}, ["carousels", "templates"]),
     ("Контент-завод: сторінки (власник)", "owner", "/api/content-factory/channels/", {200}, ["results", "platforms"]),
     ("Контент-завод: менеджер без права — закрито", "manager", "/api/content-factory/channels/", {403}, []),
     ("Контент-завод: питання клієнтів + ліміт витрат", "owner", "/api/content-factory/questions/", {200}, ["topics", "settings"]),

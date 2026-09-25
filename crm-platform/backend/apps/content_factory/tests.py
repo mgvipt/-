@@ -539,3 +539,76 @@ class StyleTests(TestCase):
         self.assertEqual((st.font, st.weight, st.size, st.upper, st.origin), ("Montserrat", "Black", 92, True, "reference"))
         with patch("urllib.request.urlopen", return_value=R()), patch.object(styles, "_gemini", return_value={"no_text": True}):
             self.assertIsNone(styles.from_feed_item(item))
+
+
+class BlogCarouselAssistTests(TestCase):
+    """25.09: блоги, каруселі, вичитка й поради. ШІ підмінено."""
+    def setUp(self):
+        from . import blogs as blogsvc
+        self.owner = User.objects.create_user(username="owner-blog", password="x", is_superuser=True, is_staff=True)
+        self.c = APIClient()
+        self.c.force_authenticate(self.owner)
+        blogsvc.ensure_blogs()
+        self.blogsvc = blogsvc
+
+    def test_seed_and_accounts(self):
+        from .models import Blog
+        self.assertEqual(Blog.objects.filter(is_default=True).count(), 1)
+        w = Blog.objects.get(slug="wallcov")
+        self.assertTrue(w.use_crm_kb and w.label_ai and self.blogsvc.is_ready(w))
+        self.assertTrue(ContentChannel.objects.filter(handle="dekor_dlia_stin", blog=w, role="own").exists())
+        oleg = Blog.objects.get(slug="oleg")
+        self.assertFalse(self.blogsvc.is_ready(oleg))  # шаблон з «[заповніть]» не генерує
+        with self.assertRaises(ValueError):
+            self.blogsvc.require_ready(oleg)
+        r = self.c.get("/api/content-factory/blogs/")
+        self.assertEqual(r.status_code, 200)
+        self.assertGreaterEqual(len(r.json()["blogs"]), 9)
+
+    def test_facts_rules_always_included(self):
+        from .models import Blog, BlogFact
+        b = Blog.objects.get(slug="stiny-v-shotsi")
+        BlogFact.objects.create(blog=b, kind="rule", title="Барсик завжди рудий", text="")
+        BlogFact.objects.create(blog=b, kind="fact", title="Олена живе на 5 поверсі", text="квартира")
+        text, titles = self.blogsvc.facts_block(b, "щось зовсім інше")
+        self.assertIn("Барсик завжди рудий", text)
+        self.assertIn("Мета блогу", self.blogsvc.system_for(b, "завдання"))
+
+    def test_carousel_generate_and_render(self):
+        from . import carousels as carsvc
+        from .models import Blog
+        b = Blog.objects.get(slug="stiny-v-shotsi")
+        fake = lambda p: {"title": "Хто рахує банки ✨", "caption": "Підпис", "checks": ["ціна"],
+                          "slides": [{"headline": f"Слайд {i}", "body": "Текст слайда про ремонт", "image_hint": "кіт"} for i in range(5)]}
+        c = carsvc.generate(b, "Скільки банок брати", n=5, template="plaster", images="none", call=fake)
+        self.assertEqual(len(c.slides), 5)
+        self.assertEqual(c.title, "Хто рахує банки")  # емодзі прибрано
+        self.assertTrue(all(s.get("rendered_id") for s in c.slides))
+        png = SharedLink.objects.get(pk=c.slides[0]["rendered_id"])
+        self.assertEqual(bytes(png.data)[:2], b"\xff\xd8")  # JPEG
+        r = self.c.patch(f"/api/content-factory/carousels/{c.id}/",
+                         {"slides": [{"headline": "Новий", "body": "б"}] * 5}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["slides"][0]["headline"], "Новий")
+
+    def test_proofread_keeps_text_when_empty_reply(self):
+        from . import assist
+        r = assist.proofread("Привіт світ", call=lambda p: {})
+        self.assertEqual(r["text"], "Привіт світ")
+        r = assist.proofread("Првіт", call=lambda p: {"text": "Привіт", "changes": [{"was": "Првіт", "now": "Привіт", "why": "орфографія"}]})
+        self.assertEqual((r["text"], len(r["changes"])), ("Привіт", 1))
+
+    def test_advice_filters_actions(self):
+        from . import assist
+        from .models import Blog, ReelDraft
+        w = Blog.objects.get(slug="wallcov")
+        reel = ReelDraft.objects.create(title="t", blog=w, beats=[{"text": "a", "scene_id": 1, "seconds": 2},
+                                                                    {"text": "b", "image_id": 5, "seconds": 2}])
+        fake = lambda p: {"advice": [
+            {"title": "Перехід", "why": "досмотр", "action": {"type": "transition", "beat": 1, "value": "fade"}},
+            {"title": "Погано", "why": "x", "action": {"type": "transition", "beat": 1, "value": "spin"}},
+            {"title": "Перемалювати фактуру", "why": "x", "action": {"type": "regenerate", "beat": 0, "value": "нова стіна"}},
+            {"title": "ШІ-кадр", "why": "x", "action": {"type": "edit_frame", "beat": 1, "value": "додати стрілку"}},
+            {"title": "Поза межами", "why": "x", "action": {"type": "text", "beat": 9, "value": "т"}}]}
+        out = assist.reel_advice(reel, call=fake)
+        self.assertEqual([a["title"] for a in out], ["Перехід", "ШІ-кадр"])

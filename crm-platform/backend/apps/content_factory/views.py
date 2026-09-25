@@ -16,6 +16,7 @@ PATCH/DELETE /api/content-factory/channels/<id>/
 import hmac
 import json
 import os
+import re
 from datetime import timedelta
 
 from django.db.models import Count, Q
@@ -34,7 +35,11 @@ from . import styles as stylesvc
 from . import drive as drivesvc
 from . import sources as srcsvc
 from . import telegram as tgsvc
-from .models import (AnalystReport, AnalystSettings, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
+from . import aiimage as aisvc
+from . import blogs as blogsvc
+from . import carousels as carsvc
+from . import assist as assistsvc
+from .models import (AnalystReport, AnalystSettings, Blog, BlogFact, Carousel, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
                      QuestionMention, QuestionSettings, QuestionTopic, ReelDraft, ReelStyle, SourceAsset, SourceChat,
                      TgPost, TgSettings, VideoScene, parse_channel_link)
 
@@ -727,17 +732,24 @@ def _scene_thumb(request, s):
     return request.build_absolute_uri(f"/api/f/{s.thumb.token}/").replace("http://", "https://", 1)
 
 
+def _link_url(request, link_id):
+    from apps.inbox.models import SharedLink
+    tok = SharedLink.objects.filter(pk=link_id).values_list("token", flat=True).first()
+    return request.build_absolute_uri(f"/api/f/{tok}/").replace("http://", "https://", 1) if tok else ""
+
+
 def _reel(request, r):
     scenes = {s.id: s for s in VideoScene.objects.filter(id__in=[b.get("scene_id") for b in r.beats]).select_related("asset", "thumb")}
     return {
         "id": r.id, "title": r.title, "topic": r.topic, "material": r.material, "caption": r.caption,
         "status": r.status, "status_display": r.get_status_display(), "duration": r.duration, "error": r.error,
-        "facts": r.facts, "created_at": _iso(r.created_at), "style_id": r.style_id,
+        "facts": r.facts, "created_at": _iso(r.created_at), "style_id": r.style_id, "blog_id": r.blog_id, "busy": r.busy,
         "style_name": r.style.name if r.style_id else "Класичний",
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
-        "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else "",
+        "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else (b.get("prompt") or ""),
                        source=scenes[b["scene_id"]].asset.link if b.get("scene_id") in scenes else "",
-                       thumb_url=_scene_thumb(request, scenes.get(b.get("scene_id")))) for b in r.beats],
+                       thumb_url=(_link_url(request, b["image_id"]) if b.get("image_id")
+                                  else _scene_thumb(request, scenes.get(b.get("scene_id"))))) for b in r.beats],
     }
 
 
@@ -749,7 +761,9 @@ class ReelsView(_Base):
         mats = (SourceAsset.objects.filter(kind="video", hidden=False).exclude(material="").values_list("material")
                 .annotate(n=Count("id")).order_by("-n"))
         return Response({
-            "reels": [_reel(request, r) for r in ReelDraft.objects.select_related("file").all()[:20]],
+            "reels": [_reel(request, r) for r in ReelDraft.objects.select_related("file")
+                      .filter(**({"blog_id": request.GET["blog"]} if request.GET.get("blog") else {}))[:20]],
+            "images_spent_month_usd": round(aisvc.spent_month(), 3), "images_cap_usd": aisvc.MONTH_CAP,
             "materials": [{"name": m, "videos": n} for m, n in mats],
             "marked": {m: n for m, n in marked}, "scenes": VideoScene.objects.count(),
             "spent_month_usd": reelsvc.spent_month(),
@@ -762,15 +776,18 @@ class ReelsView(_Base):
             return Response({"error": "Робити рилси (платно) може лише власник."}, status=403)
         topic = str((request.data or {}).get("topic") or "").strip()[:300]
         material = str((request.data or {}).get("material") or "").strip()
-        if not topic or not material:
-            return Response({"error": "Вкажіть тему й матеріал."}, status=400)
+        blog = blogsvc.get_blog((request.data or {}).get("blog_id"))
+        if not topic or (blog.real_footage and not material):
+            return Response({"error": "Вкажіть тему" + (" й матеріал." if blog.real_footage else ".")}, status=400)
+        if not blogsvc.is_ready(blog):
+            return Response({"error": f"Блог «{blog.name}» ще не налаштований — допишіть майстер-промт у «Блогах»."}, status=400)
         style = ReelStyle.objects.filter(pk=(request.data or {}).get("style_id") or 0).first()
 
         def work():
             try:
-                reelsvc.make_reel(topic, material, style=style)
+                reelsvc.make_reel(topic, material, style=style, blog=blog)
             except Exception as e:
-                ReelDraft.objects.create(title=topic[:200], topic=topic, material=material,
+                ReelDraft.objects.create(title=topic[:200], topic=topic, material=material, blog=blog,
                                          status=ReelDraft.Status.REJECTED, error=str(e)[:300])
         _bg(work)
         return Response({"ok": True, "note": "Роблю рилс: розмітка нових відео, сценарій, монтаж — 3–8 хвилин."})
@@ -803,16 +820,33 @@ class ReelView(_Base):
         data = request.data or {}
         if "beats" in data:
             beats = []
-            for b in data["beats"] or []:
-                sc = VideoScene.objects.filter(pk=b.get("scene_id")).first()
-                if not sc:
-                    return Response({"error": "Такої сцени немає."}, status=400)
+            old = {i: dict(x) for i, x in enumerate(r.beats)}
+            for n, b in enumerate(data["beats"] or []):
+                keep = {k: b[k] for k in ("image_id", "ai", "prompt", "orig_scene_id") if b.get(k)}
+                if keep.get("image_id"):  # ШІ-кадр: лише ті картинки, що вже були в цьому ролику
+                    known = {x.get("image_id") for x in old.values()}
+                    if keep["image_id"] not in known:
+                        return Response({"error": "Невідомий ШІ-кадр."}, status=400)
+                    limit, sid = 8.0, None
+                else:
+                    sc = VideoScene.objects.filter(pk=b.get("scene_id")).first()
+                    if not sc:
+                        return Response({"error": "Такої сцени немає."}, status=400)
+                    limit, sid = sc.end - sc.start, sc.id
+                    keep = {k: v for k, v in keep.items() if k == "orig_scene_id"}
                 try:
-                    secs = max(0.8, min(float(b.get("seconds") or 2.5), sc.end - sc.start))
+                    secs = max(0.8, min(float(b.get("seconds") or 2.5), limit))
                 except (TypeError, ValueError):
                     return Response({"error": "Тривалість має бути числом."}, status=400)
-                beats.append({"text": reelsvc.clean_text(str(b.get("text") or ""))[:80], "scene_id": sc.id,
-                              "seconds": round(secs, 2)})
+                row = {"text": reelsvc.clean_text(str(b.get("text") or ""))[:80], "seconds": round(secs, 2), **keep}
+                fx = b.get("fx") or {}
+                fx = {k: v for k, v in (("transition", fx.get("transition")), ("motion", fx.get("motion")))
+                      if (k == "transition" and v in reelsvc.XFADE) or (k == "motion" and v in reelsvc.MOTIONS)}
+                if fx:
+                    row["fx"] = fx
+                if sid:
+                    row["scene_id"] = sid
+                beats.append(row)
             if not 2 <= len(beats) <= 8:
                 return Response({"error": "У ролику має бути від 2 до 8 кадрів."}, status=400)
             r.beats = beats
@@ -839,6 +873,53 @@ class ReelView(_Base):
                     ReelDraft.objects.filter(pk=r.pk).update(error=f"Перемонтаж не вдався: {str(e)[:200]}")
             _bg(work)
             return Response({"ok": True, "note": "Перемонтовую — до хвилини."})
+        if action == "frame":
+            if not request.user.is_superuser:
+                return Response({"error": "ШІ-кадри (платно) — лише власник."}, status=403)
+            r = get_object_or_404(ReelDraft, pk=pk)
+            data = request.data or {}
+            try:
+                idx = int(data.get("index"))
+                assert 0 <= idx < len(r.beats)
+            except (TypeError, ValueError, AssertionError):
+                return Response({"error": "Невідомий кадр."}, status=400)
+            op = data.get("op")
+            if op not in ("improve", "regenerate", "revert", "edit"):
+                return Response({"error": "Невідома дія."}, status=400)
+            if op != "revert" and aisvc.spent_month() >= aisvc.MONTH_CAP:
+                return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
+            if r.busy:
+                return Response({"error": "Цей ролик ще обробляється — зачекайте."}, status=409)
+            ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
+            prompt = str(data.get("prompt") or "")[:800]
+
+            def work():
+                try:
+                    if op == "improve":
+                        reelsvc.improve_frame(r, idx)
+                    elif op == "regenerate":
+                        reelsvc.regenerate_frame(r, idx, prompt)
+                    elif op == "edit":
+                        reelsvc.edit_frame(r, idx, prompt)
+                    else:
+                        reelsvc.revert_frame(r, idx)
+                except Exception as e:
+                    ReelDraft.objects.filter(pk=r.pk).update(error=f"Кадр {idx + 1}: {str(e)[:200]}")
+                finally:
+                    ReelDraft.objects.filter(pk=r.pk).update(busy=False)
+            _bg(work)
+            return Response({"ok": True, "note": {"improve": "Покращую кадр і перемонтовую — до хвилини.",
+                                                  "regenerate": "Малюю новий кадр і перемонтовую — до хвилини.",
+                                                  "edit": "Домальовую в кадр і перемонтовую — до хвилини.",
+                                                  "revert": "Повертаю справжній кадр."}[op]})
+        if action == "advice":
+            if not request.user.is_superuser:
+                return Response({"error": "Лише власник."}, status=403)
+            r = get_object_or_404(ReelDraft, pk=pk)
+            try:
+                return Response({"advice": assistsvc.reel_advice(r)})
+            except ValueError as e:
+                return Response({"error": str(e)}, status=400)
         if action != "test":
             return Response(status=405)
         if not request.user.is_superuser:
@@ -890,3 +971,351 @@ class ReelStylesView(_Base):
         if not st:
             return Response({"error": "На цьому кадрі немає тексту — візьміть інший референс."}, status=400)
         return Response({"id": st.id, "name": st.name}, status=201)
+
+
+
+# ── 25.09: блоги, їхня база знань і майстер-промт ────────────────────────────────────────────────
+
+def _blog(b, full=False):
+    chans = [{"id": c.id, "platform": c.platform, "handle": c.handle, "url": c.url}
+             for c in b.channels.filter(role=ContentChannel.Role.OWN).order_by("platform", "handle")]
+    out = {"id": b.id, "slug": b.slug, "name": b.name, "kind": b.kind, "kind_display": b.get_kind_display(),
+           "about": b.about, "color": b.color, "is_default": b.is_default, "use_crm_kb": b.use_crm_kb,
+           "label_ai": b.label_ai, "real_footage": b.real_footage, "ready": blogsvc.is_ready(b),
+           "accounts": chans, "facts_count": b.facts.filter(active=True).count(),
+           "reels": b.reels.count(), "carousels": b.carousels.count()}
+    if full:
+        out.update({"master_prompt": b.master_prompt, "goal": b.goal, "cta": b.cta, "template": blogsvc.TEMPLATE,
+                    "facts": [{"id": f.id, "kind": f.kind, "kind_display": f.get_kind_display(), "title": f.title,
+                               "text": f.text, "active": f.active} for f in b.facts.all()],
+                    "kinds": BlogFact.Kind.choices})
+    return out
+
+
+class BlogsView(_Base):
+    """GET — усі блоги. POST {name, about?, kind?} — новий блог (лише власник)."""
+    def get(self, request):
+        blogsvc.ensure_blogs()
+        return Response({"blogs": [_blog(b) for b in Blog.objects.all()], "kinds": Blog.Kind.choices})
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        from django.utils.text import slugify
+        from uuid import uuid4
+        name = str((request.data or {}).get("name") or "").strip()[:120]
+        if not name:
+            return Response({"error": "Вкажіть назву блогу."}, status=400)
+        kind = (request.data or {}).get("kind") if (request.data or {}).get("kind") in Blog.Kind.values else Blog.Kind.OTHER
+        b = Blog.objects.create(name=name, slug=(slugify(name, allow_unicode=False) or "blog")[:40] + "-" + uuid4().hex[:6],
+                                kind=kind, about=str((request.data or {}).get("about") or "")[:300],
+                                master_prompt=blogsvc.TEMPLATE, sort=Blog.objects.count() * 10 + 10)
+        return Response(_blog(b, full=True), status=201)
+
+
+class BlogView(_Base):
+    def get(self, request, pk):
+        return Response(_blog(get_object_or_404(Blog, pk=pk), full=True))
+
+    def patch(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        data = request.data or {}
+        for f, n in (("name", 120), ("about", 300), ("master_prompt", 8000), ("goal", 1000), ("cta", 1000)):
+            if f in data:
+                setattr(b, f, str(data[f] or "")[:n])
+        if not b.name.strip():
+            return Response({"error": "Назва не може бути порожньою."}, status=400)
+        for f in ("use_crm_kb", "label_ai", "real_footage"):
+            if f in data:
+                setattr(b, f, bool(data[f]))
+        if data.get("kind") in Blog.Kind.values:
+            b.kind = data["kind"]
+        if "color" in data and re.fullmatch(r"#[0-9a-fA-F]{6}", str(data["color"] or "")):
+            b.color = data["color"]
+        b.save()
+        return Response(_blog(b, full=True))
+
+    def delete(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        if b.is_default:
+            return Response({"error": "Основний блог видалити не можна."}, status=400)
+        b.delete()  # акаунти, рилси й каруселі лишаються (привʼязка стає порожньою)
+        return Response(status=204)
+
+
+class BlogAccountsView(_Base):
+    """POST {link} — привʼязати наш акаунт до блогу. DELETE ?channel= — відвʼязати (сторінка лишається)."""
+    def post(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        try:
+            platform, handle, url = parse_channel_link((request.data or {}).get("link", ""), (request.data or {}).get("platform", ""))
+        except ChannelLinkError as e:
+            return Response({"error": str(e)}, status=400)
+        ch, created = ContentChannel.objects.get_or_create(platform=platform, handle=handle,
+                                                          defaults={"url": url, "role": ContentChannel.Role.OWN, "blog": b})
+        if not created:
+            if ch.role != ContentChannel.Role.OWN:
+                return Response({"error": f"Ця сторінка вже є в списку як «{ch.get_role_display()}»."}, status=409)
+            ch.blog = b
+            ch.save(update_fields=["blog"])
+        return Response(_blog(b, full=True))
+
+    def delete(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        ContentChannel.objects.filter(pk=request.GET.get("channel") or 0, blog=b).update(blog=None)
+        return Response(_blog(b, full=True))
+
+
+class BlogFactsView(_Base):
+    """POST {kind, title, text} — запис бази знань блогу."""
+    def post(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        data = request.data or {}
+        title = str(data.get("title") or "").strip()[:200]
+        if not title:
+            return Response({"error": "Вкажіть заголовок запису."}, status=400)
+        BlogFact.objects.create(blog=b, title=title, text=str(data.get("text") or "")[:4000],
+                                kind=data.get("kind") if data.get("kind") in BlogFact.Kind.values else BlogFact.Kind.FACT)
+        return Response(_blog(b, full=True), status=201)
+
+
+class BlogFactView(_Base):
+    def patch(self, request, pk, fid):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        f = get_object_or_404(BlogFact, pk=fid, blog_id=pk)
+        data = request.data or {}
+        if "title" in data:
+            f.title = str(data["title"] or "").strip()[:200] or f.title
+        if "text" in data:
+            f.text = str(data["text"] or "")[:4000]
+        if data.get("kind") in BlogFact.Kind.values:
+            f.kind = data["kind"]
+        if "active" in data:
+            f.active = bool(data["active"])
+        f.save()
+        return Response(_blog(f.blog, full=True))
+
+    def delete(self, request, pk, fid):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        f = get_object_or_404(BlogFact, pk=fid, blog_id=pk)
+        b = f.blog
+        f.delete()
+        return Response(_blog(b, full=True))
+
+
+class BlogBriefView(_Base):
+    """POST {brief} — чернетка майстер-промту з опису Олега (Haiku ≈$0.003). Не зберігає."""
+    def post(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        brief = str((request.data or {}).get("brief") or "").strip()[:3000]
+        if len(brief) < 20:
+            return Response({"error": "Опишіть блог хоча б двома-трьома реченнями."}, status=400)
+        return Response(blogsvc.master_from_brief(b, brief))
+
+
+# ── 25.09: каруселі ───────────────────────────────────────────────────────────────────────────────
+
+def _carousel(request, c):
+    return {
+        "id": c.id, "blog_id": c.blog_id, "topic": c.topic, "title": c.title, "caption": c.caption, "template": c.template,
+        "status": c.status, "status_display": c.get_status_display(), "busy": c.busy, "error": c.error,
+        "facts": c.facts, "created_at": _iso(c.created_at),
+        "slides": [{"headline": s.get("headline", ""), "body": s.get("body", ""), "hint": s.get("hint", ""),
+                    "image_kind": (s.get("image") or {}).get("kind", "none"),
+                    "image_prompt": (s.get("image") or {}).get("prompt", ""),
+                    "png_url": _link_url(request, s["rendered_id"]) if s.get("rendered_id") else ""} for s in c.slides],
+    }
+
+
+class CarouselsView(_Base):
+    """GET ?blog= — каруселі блогу. POST {blog_id, topic, slides, template, images, material} — зробити (у фоні)."""
+    def get(self, request):
+        qs = Carousel.objects.all()
+        if request.GET.get("blog"):
+            qs = qs.filter(blog_id=request.GET["blog"])
+        from .telegram import real_materials
+        return Response({"carousels": [_carousel(request, c) for c in qs[:20]], "templates": list(carsvc.TEMPLATES.items()),
+                         "materials": sorted(set(real_materials())), "spent_month_usd": round(carsvc.spent_month(), 3),
+                         "images_spent_month_usd": round(aisvc.spent_month(), 3), "images_cap_usd": aisvc.MONTH_CAP})
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Робити каруселі (платно) може лише власник."}, status=403)
+        data = request.data or {}
+        blog = blogsvc.get_blog(data.get("blog_id"))
+        topic = str(data.get("topic") or "").strip()[:300]
+        if not topic:
+            return Response({"error": "Вкажіть тему."}, status=400)
+        if not blogsvc.is_ready(blog):
+            return Response({"error": f"Блог «{blog.name}» ще не налаштований — допишіть майстер-промт у «Блогах»."}, status=400)
+        images = data.get("images") if data.get("images") in ("auto", "library", "ai", "none") else "auto"
+        if images == "ai" and aisvc.spent_month() >= aisvc.MONTH_CAP:
+            return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
+        tpl = data.get("template") if data.get("template") in carsvc.TEMPLATES else "photo"
+        c = Carousel.objects.create(blog=blog, topic=topic, title=topic[:200], template=tpl, busy=True)
+        n, material = data.get("slides") or 6, str(data.get("material") or "")[:80]
+
+        def work():
+            try:
+                carsvc.generate(blog, topic, n=n, template=tpl, images=images, material=material, into=c)
+            except Exception as e:
+                Carousel.objects.filter(pk=c.pk).update(error=str(e)[:300], status=Carousel.Status.REJECTED)
+            finally:
+                Carousel.objects.filter(pk=c.pk).update(busy=False)
+        _bg(work)
+        return Response({"ok": True, "id": c.id, "note": "Пишу слайди й малюю — 1–2 хвилини (з ШІ-картинками довше)."})
+
+
+class CarouselView(_Base):
+    def patch(self, request, pk):
+        c = get_object_or_404(Carousel, pk=pk)
+        if c.busy:
+            return Response({"error": "Карусель ще готується — зачекайте."}, status=409)
+        data = request.data or {}
+        redraw = False
+        if isinstance(data.get("slides"), list):
+            if len(data["slides"]) != len(c.slides):
+                return Response({"error": "Кількість слайдів змінювати тут не можна."}, status=400)
+            for s, new in zip(c.slides, data["slides"]):
+                s["headline"] = reelsvc.clean_text(str(new.get("headline") or ""))[:90]
+                s["body"] = reelsvc.clean_text(str(new.get("body") or ""))[:300]
+            redraw = True
+        if data.get("template") in carsvc.TEMPLATES:
+            c.template, redraw = data["template"], True
+        if "caption" in data:
+            c.caption = str(data["caption"] or "")[:2200]
+        if data.get("status") in Carousel.Status.values:
+            c.status = data["status"]
+        c.save()
+        if redraw:
+            carsvc.render(c)
+        return Response(_carousel(request, c))
+
+    def delete(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        from apps.inbox.models import SharedLink
+        c = get_object_or_404(Carousel, pk=pk)
+        SharedLink.objects.filter(id__in=[s.get("rendered_id") for s in c.slides if s.get("rendered_id")]).delete()
+        c.delete()
+        return Response(status=204)
+
+    def post(self, request, pk, action=None):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        c = get_object_or_404(Carousel, pk=pk)
+        if action == "test":
+            try:
+                carsvc.send_test(c)
+            except tgsvc.PublishError as e:
+                return Response({"error": str(e)}, status=400)
+            return Response({"ok": True, "note": "Надіслано вам у Telegram альбомом."})
+        if action != "image":
+            return Response(status=405)
+        data = request.data or {}
+        try:
+            idx = int(data.get("index"))
+            assert 0 <= idx < len(c.slides)
+        except (TypeError, ValueError, AssertionError):
+            return Response({"error": "Невідомий слайд."}, status=400)
+        op = data.get("op")
+        if op == "none":
+            c.slides[idx]["image"] = {"kind": "none"}
+            carsvc.render(c)
+            return Response(_carousel(request, c))
+        if op == "library":
+            from apps.inbox.models import MediaLibraryItem
+            if not MediaLibraryItem.objects.filter(pk=data.get("lib_id") or 0, kind="image").exists():
+                return Response({"error": "Такого фото в бібліотеці немає."}, status=400)
+            carsvc.set_library_image(c, idx, data["lib_id"])
+            return Response(_carousel(request, c))
+        if op not in ("ai", "improve"):
+            return Response({"error": "Невідома дія."}, status=400)
+        if aisvc.spent_month() >= aisvc.MONTH_CAP:
+            return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
+        if c.busy:
+            return Response({"error": "Карусель ще обробляється — зачекайте."}, status=409)
+        Carousel.objects.filter(pk=c.pk).update(busy=True, error="")
+        prompt = str(data.get("prompt") or "").strip()[:800] or c.slides[idx].get("hint") or c.slides[idx].get("headline") or c.title
+
+        def work():
+            try:
+                cc = Carousel.objects.get(pk=c.pk)
+                if op == "ai":
+                    carsvc.set_ai_image(cc, idx, prompt)
+                else:
+                    carsvc.improve_image(cc, idx)
+            except Exception as e:
+                Carousel.objects.filter(pk=c.pk).update(error=f"Слайд {idx + 1}: {str(e)[:200]}")
+            finally:
+                Carousel.objects.filter(pk=c.pk).update(busy=False)
+        _bg(work)
+        return Response({"ok": True, "note": "Малюю картинку й перемальовую слайд — до хвилини."})
+
+
+
+# ── 25.09: вичитка тексту ШІ й ШІ-обробка фото в постах ──────────────────────────────────────────
+
+class ProofreadView(_Base):
+    """POST {text, blog_id?} — орфографія й формулювання (Haiku ≈$0.001–0.003). Повертає виправлений текст і зміни."""
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        text = str((request.data or {}).get("text") or "")
+        if not text.strip():
+            return Response({"error": "Немає тексту для перевірки."}, status=400)
+        blog = Blog.objects.filter(pk=(request.data or {}).get("blog_id") or 0).first()
+        return Response(assistsvc.proofread(text, blog))
+
+
+class TelegramPhotoAIView(_Base):
+    """POST {photo_id, op: improve|edit, prompt?} — ШІ-копія фото поста (оригінал у бібліотеці не змінюється).
+    Копія — неактивний запис бібліотеки з міткою «ШІ-обробка» (агенти продажу її не бачать); у пості міняється id."""
+    def post(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        from apps.inbox.models import MediaLibraryItem
+        post = get_object_or_404(TgPost, pk=pk)
+        data = request.data or {}
+        try:
+            pid = int(data.get("photo_id"))
+        except (TypeError, ValueError):
+            return Response({"error": "Невідоме фото."}, status=400)
+        if pid not in (post.photo_ids or []):
+            return Response({"error": "Цього фото немає в пості."}, status=400)
+        m = MediaLibraryItem.objects.filter(pk=pid).select_related("file").first()
+        if not m or not m.file_id or not m.file.data:
+            return Response({"error": "Файл фото недоступний."}, status=400)
+        op, prompt = data.get("op"), str(data.get("prompt") or "").strip()[:800]
+        blog = blogsvc.default_blog()
+        try:
+            if op == "improve":
+                out, mime = aisvc.improve(bytes(m.file.data), m.file.content_type, blog, aspect="4:5")
+            elif op == "edit" and prompt:
+                keep = " Фактуру, колір і малюнок декоративного покриття НЕ змінюй." if blog.label_ai else ""
+                out, mime = aisvc.generate(f"Відредагуй це фото: {prompt}. Усе інше залиш як є.{keep} Без тексту.",
+                                           aspect="4:5", ref=(bytes(m.file.data), m.file.content_type))
+            else:
+                return Response({"error": "Невідома дія або порожнє завдання."}, status=400)
+        except aisvc.ImageError as e:
+            return Response({"error": str(e)}, status=402)
+        link = aisvc.save(out, mime, f"tg-{post.id}-{pid}-ai")
+        copy = MediaLibraryItem.objects.create(title=f"{m.title} · ШІ-обробка"[:160], kind="image", section=m.section,
+                                               material=m.material, tags="ШІ-обробка", file=link, is_active=False)
+        post.photo_ids = [copy.id if i == pid else i for i in post.photo_ids]
+        post.save(update_fields=["photo_ids"])
+        return Response(_post(request, post))
