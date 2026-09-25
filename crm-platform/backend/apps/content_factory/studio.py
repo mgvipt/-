@@ -39,7 +39,8 @@ IDEA_TASK = """Ти продюсер-стратег коротких верти�
 REF_PROMPT = """Це ролик-референс з соцмережі. Розбери, ЧОМУ він чіпляє, щоб повторити будову (не текст і не кадри) у своєму ролику.
 Відповідай ЛИШЕ JSON: {"summary":"про що ролик, 1 речення","hook":"що відбувається в перші 3 с і чому зупиняє",
 "beats":[{"seconds":2.0,"purpose":"гачок|проблема|доказ|показ|заклик","what":"що в кадрі"}],"text_style":"як виглядає текст на екрані",
-"why_works":"1–2 речення","total_seconds":15}"""
+"why_works":"1–2 речення","total_seconds":15}
+У beats.what опиши кадр так, щоб художник намалював НОВИЙ схожий за задумом: дія, крупність, ракурс, рух камери — без імен, логотипів і впізнаваних деталей."""
 
 REVIEW_TASK = """Ти — команда перевірки рилса перед публікацією. Три ролі дивляться ролик кожна зі свого боку:
 - smm (SMM-редактор): чи зупиняє перший кадр за 1–3 с; одна дія в кінці й вона веде до мети блогу; підпис і перший рядок з ключовими
@@ -112,7 +113,7 @@ def youtube_id(url):
     return m.group(1) if m else ""
 
 
-def analyze_ref(url="", feed_item=None):
+def analyze_ref(url="", feed_item=None, thumb="", title=""):
     """Розбір референсу: YouTube — Gemini дивиться сам за посиланням (≈$0.01–0.04); інше — лише підпис/опис сторінки."""
     if feed_item is not None:
         url = url or feed_item.url
@@ -126,10 +127,33 @@ def analyze_ref(url="", feed_item=None):
         except ReelError as e:
             note = f"Gemini не зміг переглянути ({str(e)[:80]}) — беру лише опис."
     else:
-        note = "Відео цієї мережі ШІ не переглядає за посиланням — беру підпис і показники."
+        try:
+            r = _watch_download(url)
+            r["url"], r["watched"] = url, True
+            return r
+        except Exception as e:
+            note = f"Відео не віддали ({str(e)[:60]})."
+            if thumb:  # хоча б обкладинка: композиція, фон, предмети
+                try:
+                    req = urllib.request.Request(thumb, headers={"User-Agent": UA})
+                    with urllib.request.urlopen(req, timeout=15) as rr:
+                        img, mime = rr.read(), rr.headers.get_content_type() or "image/jpeg"
+                    import base64
+                    r = _gemini([{"inlineData": {"mimeType": mime, "data": base64.b64encode(img).decode()}},
+                                 {"text": REF_PROMPT + "\nЦе лише обкладинка ролика — опиши, що можна зрозуміти з неї; beats — за здогадом про будову."}], max_tokens=1500)
+                    r = r if isinstance(r, dict) else {}
+                    r.update({"url": url, "watched": False, "note": note + " ШІ подивився обкладинку."})
+                    if title:
+                        r["summary"] = f"{r.get('summary', '')} Підпис: {title[:200]}".strip()
+                    return r
+                except Exception:
+                    pass
+            note += " Беру лише підпис."
     text = ""
     if feed_item is not None:
         text = f"Підпис: {feed_item.caption[:600]}\nПереглядів: {feed_item.views}, лайків: {feed_item.likes}, коментарів: {feed_item.comments}"
+    elif title:
+        text = title
     elif url:
         try:
             from .learn import text_from_url
@@ -139,7 +163,34 @@ def analyze_ref(url="", feed_item=None):
     return {"url": url, "watched": False, "summary": text[:600], "note": note}
 
 
-def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None):
+def _watch_download(url, max_mb=80, max_sec=240):
+    """Завантажити ролик Instagram/TikTok/Pinterest/Facebook (yt-dlp) і дати Gemini переглянути (≈$0.01–0.03). Файл — лише тимчасово."""
+    import base64
+    import os
+    import shutil
+    import tempfile
+    from .reels import WORK, _light_copy
+    import yt_dlp
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        opts = {"outtmpl": os.path.join(folder, "ref.%(ext)s"), "format": "mp4/best[ext=mp4]/best", "quiet": True, "no_warnings": True, "noprogress": True,
+                "noplaylist": True, "max_filesize": max_mb * 1024 * 1024, "socket_timeout": 30,
+                "match_filter": yt_dlp.utils.match_filter_func(f"duration < {max_sec}")}
+        with yt_dlp.YoutubeDL(opts) as y:
+            y.download([url])
+        files = [f for f in os.listdir(folder) if f.startswith("ref.")]
+        if not files:
+            raise ReelError("мережа не віддала відео")
+        with open(_light_copy(os.path.join(folder, files[0]), folder), "rb") as f:
+            part = {"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(f.read()).decode()}}
+        r = _gemini([part, {"text": REF_PROMPT}], max_tokens=2500)
+        return r if isinstance(r, dict) else {}
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None, urls=None, remake=False):
     """5 ідей під мету блогу з вибраного джерела. Повертає {"ideas": [...], "refs": [...]}."""
     from .models import FeedItem
     blogs.require_ready(blog)
@@ -163,10 +214,15 @@ def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None):
     elif source == "ref":
         items = list(FeedItem.objects.filter(id__in=feed_ids or [])[:3])
         refs = [analyze_ref(feed_item=i) for i in items]
-        if url:
-            refs.append(analyze_ref(url=url))
+        for u in ([{"url": url}] if url else []) + [u if isinstance(u, dict) else {"url": u} for u in (urls or [])]:
+            if len(refs) >= 3 or not u.get("url") or any(r.get("url") == u["url"] for r in refs):
+                continue
+            refs.append(analyze_ref(url=u["url"], thumb=u.get("thumb", ""), title=u.get("title", "")))
         if not refs:
             raise ValueError("Виберіть ролик зі стрічки або вставте посилання.")
+        if remake:
+            ctx.append("РЕЖИМ РЕМЕЙКУ: кожна ідея — новий ролик за будовою референсів, де ВСЕ в кадрі інше (приміщення, фон, руки, предмети, "
+                       "світло, ракурси) і показано НАШ продукт/тему блогу. Нічого впізнаваного з оригіналу; fit=ai.")
         ctx.append("Референси (повтори будову й прийом гачка, але НАША тема, наші факти, свої слова):\n"
                    + json.dumps(refs, ensure_ascii=False)[:5000])
         ctx.append(_footage_block(blog, 20))
@@ -191,12 +247,12 @@ def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None):
     return {"ideas": out, "refs": refs}
 
 
-def search_youtube(q, limit=12):
+def search_youtube(q, limit=20, lang="uk"):
     """Пошук Shorts на YouTube без ключа API: сторінка результатів → назва, посилання, перегляди. Безкоштовно."""
     q = (q or "").strip()
     if len(q) < 2:
         raise ValueError("Введіть слово для пошуку.")
-    url = "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": q + " #shorts", "hl": "uk"})
+    url = "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": q + " #shorts", "hl": lang})
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
                                                              "(KHTML, like Gecko) Chrome/126 Safari/537.36", "Accept-Language": "uk,ru;q=0.8"})
     with urllib.request.urlopen(req, timeout=20) as r:
@@ -256,11 +312,14 @@ def build_script(reel, material="", asset_ids=None):
     from . import reels as R
     blog, brief = reel.blog, reel.brief or {}
     structure = brief.get("structure") or None
-    if blog is not None and not blog.real_footage and not asset_ids:
+    if blog is not None and (brief.get("all_ai") or not blog.real_footage) and not asset_ids:
         blogs.require_ready(blog)
         facts_text, titles = blogs.facts_block(blog, brief.get("title", ""))
         call = _call(blogs.system_for(blog, R.AI_PLAN_TASK), max_tokens=1400)
         prompt = f"Тема: {topic_of(brief)}\n\nБаза знань:\n{facts_text or '(немає)'}\n\n" + blogs.memory_block(blog)
+        if brief.get("all_ai"):
+            prompt += ("\n\nЦе РЕМЕЙК за референсом: повтори будову, темп і прийоми, але кожен кадр — НОВА сцена: інше приміщення, фон, "
+                       "руки, предмети, світло й ракурс; нічого впізнаваного з оригіналу." + (f" Покриття в кадрі — {material}." if material else ""))
         if structure:
             prompt += "\n\nПовтори БУДОВУ й ТЕМП референсу (не текст):\n" + json.dumps(structure, ensure_ascii=False)[:3000]
         r = call(prompt)
@@ -276,6 +335,8 @@ def build_script(reel, material="", asset_ids=None):
             beats.append({"text": clean_text(str(b.get("text") or ""))[:80], "seconds": round(secs, 2), "prompt": ip[:600]})
         if len(beats) < 3:
             raise ReelError("Сценарист не склав кадри — спробуйте іншу ідею.")
+        if material:
+            reel.material = material
         reel.title = clean_text(str(r.get("title") or brief.get("title") or ""))[:200] or reel.title
         reel.caption = _clean_caption(str(r.get("caption") or ""))
         reel.facts = titles + [f"Перевірити: {clean_text(str(c))}" for c in (r.get("checks") or [])][:10]
@@ -393,14 +454,33 @@ def auto_fx(beats):
     return out
 
 
+def _texture(reel):
+    """Для блогу з правилом «фактура справжня»: найкраще реальне фото матеріалу ролика (bytes, mime) і назва матеріалу."""
+    if not (reel.blog and reel.blog.label_ai):
+        return None, ""
+    from apps.inbox.models import MediaLibraryItem
+    from .carousels import best_photos
+    from .material_specs import find_material
+    material = find_material(f"{reel.material} {reel.title}") or reel.material
+    for lib in best_photos(material, limit=1) if material else []:
+        m = MediaLibraryItem.objects.filter(pk=lib).select_related("file").first()
+        if m and m.file_id:
+            return (bytes(m.file.data), m.file.content_type), material
+    return None, material
+
+
 def fill_missing(reel, limit=6):
     """Намалювати всі відсутні кадри (≈$0.04 за кадр) — лише для кадрів з описом, без монтажу."""
     from . import aiimage
     beats = list(reel.beats)
     done = 0
+    texture, material = _texture(reel)
     for i in missing(reel)[:limit]:
         b = dict(beats[i])
-        data, mime = aiimage.regenerate(b.get("prompt") or b.get("text") or reel.title, reel.blog)
+        if texture:  # Wallcov: стіну малюємо лише за реальним фото фактури
+            data, mime = aiimage.regenerate(b.get("prompt") or b.get("text") or reel.title, reel.blog, texture=texture, material=material)
+        else:
+            data, mime = aiimage.regenerate(b.get("prompt") or b.get("text") or reel.title, reel.blog)
         link = aiimage.save(data, mime, f"reel-{reel.id}-{i}")
         b.update({"image_id": link.id, "ai": "generated"})
         beats[i] = b
@@ -512,21 +592,38 @@ def _platform(url):
     return "other"
 
 
-def _web_api(q, limit=10):
-    """Пошукове API з ключем (стабільно): SERPER_API_KEY (Google, 2 500 запитів безкоштовно) або BRAVE_API_KEY (2 000/міс)."""
+LANGS = {"uk": ("ua", "uk"), "ru": ("ua", "ru"), "en": ("us", "en")}
+
+
+def translate_query(q, langs):
+    """Той самий запит різними мовами (Haiku, ≈$0.0005): {"uk": "...", "ru": "...", "en": "..."}; кеш на тиждень."""
+    import hashlib
+    from django.core.cache import cache
+    langs = [l for l in langs if l in LANGS]
+    key = "cf-tr:" + hashlib.md5(f"{q.lower()}|{','.join(sorted(langs))}".encode()).hexdigest()
+    hit = cache.get(key)
+    if hit:
+        return hit
+    out = {l: q for l in langs}
+    if len(langs) > 1 or langs != ["uk"]:
+        try:
+            from apps.crm.ai import claude_json
+            r = claude_json(f"Запит для пошуку коротких відео: «{q}». Переклади природно, як шукали б люди, мовами: {', '.join(langs)}. "
+                            'Відповідай ЛИШЕ JSON: {"uk":"...","ru":"...","en":"..."} (лише потрібні мови).',
+                            model="claude-haiku-4-5", max_tokens=200, source=SOURCE) or {}
+            out.update({l: clean_text(str(r[l]))[:120] for l in langs if r.get(l)})
+        except Exception:
+            pass
+    cache.set(key, out, 7 * 24 * 3600)
+    return out
+
+
+def _serper(ep, body):
     import os
-    if os.environ.get("SERPER_API_KEY"):
-        req = urllib.request.Request("https://google.serper.dev/search", data=json.dumps({"q": q, "gl": "ua", "hl": "uk", "num": limit}).encode(),
-                                     headers={"X-API-KEY": os.environ["SERPER_API_KEY"], "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", "")} for x in json.load(r).get("organic") or []]
-    if os.environ.get("BRAVE_API_KEY"):
-        req = urllib.request.Request("https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode({"q": q, "count": limit}),
-                                     headers={"X-Subscription-Token": os.environ["BRAVE_API_KEY"], "Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return [{"url": x.get("url", ""), "title": x.get("title", ""), "why": re.sub(r"<[^>]+>", "", x.get("description", ""))}
-                    for x in (json.load(r).get("web") or {}).get("results") or []]
-    return None
+    req = urllib.request.Request(f"https://google.serper.dev/{ep}", data=json.dumps(body).encode(),
+                                 headers={"X-API-KEY": os.environ["SERPER_API_KEY"], "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)
 
 
 class SearchBlocked(Exception):
@@ -547,55 +644,75 @@ def search_ddg(q, limit=10):
         m = re.search(r"uddg=([^&]+)", href)
         url = urllib.parse.unquote(m.group(1)) if m else href
         strip = lambda t: clean_text(re.sub(r"<[^>]+>", "", _html.unescape(t)))
-        out.append({"url": url, "title": strip(title), "why": strip(snippet)})
+        out.append({"url": url, "title": strip(title), "why": strip(snippet), "thumb": ""})
         if len(out) >= limit:
             break
     return out
 
 
-def search_site(q, site):
-    """Один пошук по мережі: кеш на добу (щоб не смикати пошуковик повторно), спершу API з ключем, інакше DuckDuckGo."""
-    from django.core.cache import cache
+def search_site(q, site, lang="uk", page=1):
+    """Один пошук по мережі однією мовою: кеш на добу; Serper (розділ «Відео» — з превʼю, далі звичайний), інакше DuckDuckGo."""
     import hashlib
-    key = "cf-web:" + hashlib.md5(f"{q.lower()}|{site}".encode()).hexdigest()
+    import os
+    from django.core.cache import cache
+    key = "cf-web2:" + hashlib.md5(f"{q.lower()}|{site}|{lang}|{page}".encode()).hexdigest()
     hit = cache.get(key)
     if hit is not None:
         return hit
-    query = f"site:{site} {q}"
-    rows = _web_api(query)
-    if rows is None:
-        rows = search_ddg(query)
-    rows = [{"url": x["url"], "title": clean_text(x["title"])[:160], "why": clean_text(x["why"])[:240]} for x in rows if x.get("url", "").startswith("http")]
+    gl, hl = LANGS.get(lang, LANGS["uk"])
+    if os.environ.get("SERPER_API_KEY"):
+        body = {"q": f"{q} site:{site}", "gl": gl, "hl": hl, "page": page}
+        rows = [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", ""), "thumb": x.get("imageUrl", ""),
+                 "date": x.get("date", "")} for x in _serper("videos", body).get("videos") or []]
+        if len(rows) < 5:
+            rows += [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", ""), "thumb": x.get("imageUrl", ""),
+                      "date": x.get("date", "")} for x in _serper("search", dict(body, q=f"site:{site} {q}")).get("organic") or []]
+    elif page == 1:
+        rows = search_ddg(f"site:{site} {q}")
+    else:
+        rows = []
+    rows = [{**x, "title": clean_text(x["title"])[:160], "why": clean_text(x["why"])[:240]} for x in rows if x.get("url", "").startswith("http")]
     cache.set(key, rows, 24 * 3600)
     return rows
 
 
-def search_all(q, where="web", platforms=None):
-    """Пошук референсів: where=web — Instagram, TikTok, Pinterest, Telegram, Facebook + YouTube Shorts; where=youtube — лише YouTube.
-    Лише публікації (ролик/пост), не профілі. Повертає {"items": [...], "note": "..."}."""
+def search_all(q, where="web", langs=None, nets=None, page=1):
+    """Пошук референсів по мережах і мовах. langs — uk/ru/en (запит перекладається); nets — instagram, tiktok, youtube,
+    pinterest, telegram, facebook; page — «показати ще». Повертає {"items": [...], "note": "...", "queries": N}."""
     import time
     q = (q or "").strip()
     if len(q) < 2:
         raise ValueError("Введіть слово для пошуку.")
-    out, blocked, failed = [], False, []
-    try:
-        out += [dict(x, platform="youtube", why=x.get("author") or "") for x in search_youtube(q, limit=12)]
-    except Exception:
-        failed.append("YouTube")
-    if where != "youtube":
-        for n, k in enumerate(k for k in (platforms or WEB_SITES) if k in WEB_SITES):
-            if blocked:
-                break
+    langs = [l for l in (langs or ["uk", "ru"]) if l in LANGS] or ["uk"]
+    nets = [n for n in (nets or ["youtube", *WEB_SITES]) if n == "youtube" or n in WEB_SITES]
+    if where == "youtube":
+        nets = ["youtube"]
+    words = translate_query(q, langs)
+    out, blocked, failed, queries = [], False, [], 0
+    for lang in langs:
+        word = words.get(lang) or q
+        if "youtube" in nets and page <= 2:
             try:
-                rows = search_site(q, WEB_SITES[k])
+                yt = search_youtube(word, limit=20, lang=lang)
+                yt = yt[:10] if page == 1 else yt[10:20]
+                out += [dict(x, platform="youtube", why=x.get("author") or "", lang=lang) for x in yt]
+            except Exception:
+                failed.append("YouTube")
+        for n in nets:
+            if n == "youtube" or blocked:
+                continue
+            try:
+                rows = search_site(word, WEB_SITES[n], lang=lang, page=page)
+                queries += 1
             except SearchBlocked:
                 blocked = True
-                break
-            except Exception:
-                failed.append(k)
                 continue
-            out += [dict(x, platform=k, thumb="", views="", author="") for x in rows if re.search(POST_RX[k], x["url"])]
-            time.sleep(0.8)  # пошуковик без ключа не любить запити підряд
+            except Exception:
+                failed.append(n)
+                continue
+            out += [dict(x, platform=n, views="", author="", lang=lang) for x in rows if re.search(POST_RX[n], x["url"])]
+            if not __import__("os").environ.get("SERPER_API_KEY"):
+                time.sleep(0.8)  # пошуковик без ключа не любить запити підряд
     seen, by = set(), {}
     for x in out:
         k = youtube_id(x["url"]) or x["url"].split("?")[0].rstrip("/")
@@ -609,8 +726,7 @@ def search_all(q, where="web", platforms=None):
                 mixed.append(by[k].pop(0))
     note = ""
     if blocked:
-        note = ("Instagram, TikTok, Pinterest, Telegram і Facebook зараз не шукаються: пошуковик без ключа блокує сервер. "
-                "Показую YouTube. Щоб шукати в усіх мережах, потрібен ключ пошуку Serper.")
+        note = "Instagram, TikTok, Pinterest, Telegram і Facebook зараз не шукаються: пошуковик без ключа блокує сервер. Показую YouTube."
     elif failed:
-        note = "Не відповіли: " + ", ".join(failed) + "."
-    return {"items": mixed[:30], "note": note}
+        note = "Не відповіли: " + ", ".join(sorted(set(failed))) + "."
+    return {"items": mixed[:120], "note": note, "queries": queries, "words": words}

@@ -863,7 +863,10 @@ class StudioView(_Base):
         if action != "search":
             return Response(status=405)
         try:
-            return Response(studiosvc.search_all(request.GET.get("q", ""), request.GET.get("where", "web")))
+            langs = [x for x in (request.GET.get("langs") or "uk,ru").split(",") if x][:3]
+            nets = [x for x in (request.GET.get("nets") or "").split(",") if x] or None
+            page = max(1, min(5, int(request.GET.get("page") or 1)))
+            return Response(studiosvc.search_all(request.GET.get("q", ""), request.GET.get("where", "web"), langs, nets, page))
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
         except Exception as e:
@@ -877,18 +880,22 @@ class StudioView(_Base):
         if action == "ideas":
             try:
                 feed_ids = [int(x) for x in (data.get("feed_ids") or []) if str(x).isdigit()][:3]
+                urls = [{"url": str(u.get("url"))[:500], "thumb": str(u.get("thumb") or "")[:2000], "title": str(u.get("title") or "")[:300]}
+                        if isinstance(u, dict) else {"url": str(u)[:500]} for u in (data.get("urls") or [])]
+                urls = [u for u in urls if u["url"].startswith("http")][:3]
                 return Response(studiosvc.ideas(blog, str(data.get("source") or "ai"), str(data.get("text") or "")[:1500],
-                                                str(data.get("url") or "")[:500], feed_ids))
+                                                str(data.get("url") or "")[:500], feed_ids, urls=urls, remake=bool(data.get("remake"))))
             except (ValueError, reelsvc.ReelError) as e:
                 return Response({"error": str(e)}, status=400)
         brief = data.get("brief") if isinstance(data.get("brief"), dict) else {}
         brief = {k: reelsvc.clean_text(str(brief.get(k) or ""))[:400] for k in ("title", "hook", "goal", "why", "shots", "fit", "source")} | (
-            {"structure": brief["structure"]} if isinstance(brief.get("structure"), (dict, list)) else {})
+            {"structure": brief["structure"]} if isinstance(brief.get("structure"), (dict, list)) else {}) | (
+            {"all_ai": True} if data.get("all_ai") else {})
         if not brief.get("title"):
             return Response({"error": "Виберіть або впишіть ідею."}, status=400)
         material = str(data.get("material") or "").strip()[:80]
         asset_ids = [int(x) for x in (data.get("asset_ids") or []) if str(x).isdigit()][:6]
-        if blog.real_footage and not material and not asset_ids:
+        if blog.real_footage and not material and not asset_ids and not data.get("all_ai"):
             return Response({"error": "Виберіть матеріал або відео, з яких монтувати."}, status=400)
         if not blogsvc.is_ready(blog):
             return Response({"error": f"Блог «{blog.name}» ще не налаштований — допишіть майстер-промт у «Блогах»."}, status=400)

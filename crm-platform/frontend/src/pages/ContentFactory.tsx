@@ -789,6 +789,26 @@ const CSS = `
 .cf-ref-grid button.on{border-color:var(--cf-gold)}
 .cf-ref-grid img{width:100%;height:100%;object-fit:cover;display:block}
 .cf-ref-grid em{position:absolute;left:4px;right:4px;bottom:4px;font-style:normal;font-size:10.5px;color:#fff;background:rgba(0,0,0,.6);border-radius:4px;padding:1px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-web{display:grid;gap:10px}
+.cf-web-filters{display:flex;flex-wrap:wrap;gap:6px 14px}
+.cf-web-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.cf-web-card{display:grid;gap:5px;min-width:0}
+.cf-web-card .pic{all:unset;cursor:pointer;position:relative;aspect-ratio:9/14;border-radius:10px;overflow:hidden;background:var(--cf-panel2);border:2px solid transparent;display:block}
+.cf-web-card.on .pic{border-color:var(--cf-gold)}
+.cf-web-card .pic:focus-visible{outline:2px solid var(--cf-gold)}
+.cf-web-card img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-web-card .ph{display:grid;place-items:center;height:100%;color:var(--cf-ink3);font-size:12px}
+.cf-web-card .chk{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:grid;place-items:center;font-style:normal;font-size:12px;color:#1b1608}
+.cf-web-card.on .chk{background:var(--cf-gold);border-color:var(--cf-gold)}
+.cf-web-card em{position:absolute;left:6px;bottom:6px;right:6px;font-style:normal;font-size:10.5px;color:#fff;background:rgba(0,0,0,.6);padding:1px 5px;border-radius:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-web-card a{font-size:12.5px;color:var(--cf-ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cf-web-bar{position:sticky;bottom:8px;z-index:4;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-radius:12px;background:var(--cf-panel);border:1px solid var(--cf-gold);box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.cf-web-bar span{font-weight:600;margin-right:auto}
+.cf-ref-chosen{display:grid;gap:6px}
+.cf-ref-chosen span{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12.5px}
+.cf-ref-chosen img{width:40px;height:56px;object-fit:cover;border-radius:6px}
+.cf-ref-chosen a{color:var(--cf-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-ref-chosen button{all:unset;cursor:pointer;color:var(--cf-ink3);padding:4px}
 .cf-web-res{display:grid;gap:6px}
 .cf-web-item{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border:1px solid var(--cf-line);border-radius:10px}
 .cf-web-item.on{border-color:var(--cf-gold)}
@@ -903,6 +923,8 @@ const CSS = `
   .cf-steps-tabs{position:sticky;top:-14px;z-index:3;background:var(--cf-panel)}
   .cf-studio{padding:10px}
   .cf-fx-table .row{grid-template-columns:1fr}
+  .cf-web-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cf-web-bar .cf-btn{flex:1 1 auto}
   .cf-web-item{grid-template-columns:56px minmax(0,1fr)}
   .cf-web-item img,.cf-web-item .ph{width:56px;height:44px}
   .cf-web-item .cf-btn{grid-column:1/3}
@@ -2053,17 +2075,7 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
   const [data, setData] = useState<{ items: FeedT[]; total: number; tracked: number; last_sync_at: string | null; last_note: string;
     blog_pages: { id: number; handle: string; platform: string; role: string; in_virale: boolean }[]; authors: string[] } | null>(null);
   const [msg, setMsg] = useState("");
-  const [web, setWeb] = useState<{ items: YtItem[]; note: string; q: string } | null>(null);
-  const [webBusy, setWebBusy] = useState(false);
-  const webSearch = async (word = typed.trim()) => {
-    if (word.length < 3 || web?.q === word) return;
-    setWebBusy(true); setMsg("");
-    try { const x = await api.get<{ items: YtItem[]; note: string }>(`/api/content-factory/studio/search/?q=${encodeURIComponent(word)}`); setWeb({ ...x, q: word }); }
-    catch (e: any) { setMsg(e?.data?.error || "Пошук в інтернеті не вдався."); } finally { setWebBusy(false); }
-  };
-  // Слово в пошуку → одразу шукаємо й в інтернеті (після паузи в наборі), не лише серед наших сторінок
-  useEffect(() => { const w = typed.trim(); if (w.length < 3) { setWeb(null); return; } const t = setTimeout(() => webSearch(w), 1100); return () => clearTimeout(t); }, [typed]); // eslint-disable-line react-hooks/exhaustive-deps
-  const toReel = (url: string) => { try { sessionStorage.setItem(REF_KEY, url); } catch { /* без сховища — просто відкриємо рилси */ } go("reels"); };
+  const toReel = (refs: RefPick[], remake: boolean) => { handRefs(refs, remake); go("reels"); };
   const load = useCallback(async () => {
     try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}${blog ? `&blog=${blog.id}` : ""}${q.text ? `&q=${encodeURIComponent(q.text)}` : ""}${q.author ? `&author=${encodeURIComponent(q.author)}` : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
   }, [q, blog]);
@@ -2079,11 +2091,10 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
       </div>
       <div className="cf-set">
         <div className="cf-feed-search">
-          <input className="cf-in" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") webSearch(); }}
+          <input className="cf-in" value={typed} onChange={(e) => setTyped(e.target.value)}
             placeholder="Пошук в інтернеті й у стрічці: «ремонт», «кіт», «до і після»…" aria-label="Пошук у стрічці та в інтернеті" />
-          {typed && <button type="button" aria-label="Очистити" onClick={() => { setTyped(""); setWeb(null); }}>✕</button>}
+          {typed && <button type="button" aria-label="Очистити" onClick={() => setTyped("")}>✕</button>}
         </div>
-        {webBusy && <span className="cf-kv"><span className="cf-spin" aria-hidden="true" /> шукаю в інтернеті…</span>}
         <Pick small label="Сторінка" value={q.author} onChange={(v) => setQ({ ...q, author: v })}
           opts={[{ v: "", l: "Усі сторінки" }, ...(data?.authors || []).map((a) => ({ v: a, l: "@" + a }))]} />
         <div className="cf-chips">{[7, 30, 90, 365].map((d) => <button key={d} type="button" className={"cf-chip" + (q.days === d ? " on" : "")} onClick={() => setQ({ ...q, days: d })}>{d === 365 ? "рік" : `${d} днів`}</button>)}</div>
@@ -2099,15 +2110,8 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
         <span className="cf-kv">{data ? `${data.total} роликів у базі${data.last_sync_at ? " · оновлено " + new Date(data.last_sync_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : " · ще не оновлювалась"}` : ""}</span>
       </div>
       {msg && <div className="cf-msg ok">{msg}</div>}
-      {web && (
-        <div className="cf-card">
-          <div className="cf-role-h"><h3>В інтернеті: «{web.q}»</h3><span>{web.items.length} знайдено</span>
-            <button type="button" className="cf-btn ghost" style={{ marginLeft: "auto" }} onClick={() => setWeb(null)}>Сховати</button></div>
-          {web.note && <p className="cf-quiet">{web.note}</p>}
-          {web.items.length === 0 ? <div className="cf-empty">Нічого не знайшлося — спробуйте інші слова.</div>
-            : <WebResults items={web.items} onPick={toReel} action="Зробити рилс за цим" />}
-        </div>)}
-      {web && data && <h3 className="cf-h3">У стрічці ваших сторінок: {data.items.length}</h3>}
+      <WebSearch q={typed} onGo={toReel} />
+      {typed.trim().length >= 3 && data && <h3 className="cf-h3">У стрічці ваших сторінок: {data.items.length}</h3>}
       {data && !q.all && data.tracked === 0 && (
         <div className="cf-empty">У блогу «{blog?.name}» ще немає конкурентів і сторінок-натхнення. Додайте їх у «Сторінках» (вибраний блог підставиться сам) і натисніть «У стрічку».
           {" "}<button type="button" className="cf-link" onClick={() => go("channels")}>До сторінок →</button></div>)}
@@ -3117,18 +3121,76 @@ const IDEA_SRC: Opt[] = [{ v: "ai", l: "ШІ запропонує" }, { v: "ours
   { v: "mine", l: "Моя ідея" }, { v: "ref", l: "Референс" }, { v: "search", l: "Пошук в інтернеті" }];
 const stepIdx = (k: string) => Math.max(0, STUDIO_STEPS.findIndex((s) => s.k === k));
 
-function WebResults({ items, picked, onPick, action = "Вибрати" }: { items: YtItem[]; picked?: string; onPick: (url: string) => void; action?: string }) {
+type RefPick = { url: string; thumb?: string; title?: string };
+const LANG_L: Opt[] = [{ v: "uk", l: "Українська" }, { v: "ru", l: "Русский" }, { v: "en", l: "English" }];
+const NETS = ["youtube", "instagram", "tiktok", "pinterest", "facebook", "telegram"];
+const handRefs = (refs: RefPick[], remake: boolean) => { try { sessionStorage.setItem(REF_KEY, JSON.stringify({ refs, remake })); } catch { /* без сховища */ } };
+const takeRefs = (): { refs: RefPick[]; remake: boolean } | null => {
+  try {
+    const v = sessionStorage.getItem(REF_KEY); if (!v) return null; sessionStorage.removeItem(REF_KEY);
+    if (v.startsWith("{")) return JSON.parse(v);
+    return { refs: [{ url: v }], remake: false };
+  } catch { return null; }
+};
+
+// Пошук референсів у мережах: мови, мережі, «показати ще», вибір до 3 роликів → рилс або ШІ-ремейк
+function WebSearch({ q, onGo, compact }: { q: string; onGo: (refs: RefPick[], remake: boolean) => void; compact?: boolean }) {
+  const [langs, setLangs] = useState<string[]>(["uk", "ru"]);
+  const [nets, setNets] = useState<string[]>(NETS);
+  const [items, setItems] = useState<YtItem[] | null>(null);
+  const [note, setNote] = useState("");
+  const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState<RefPick[]>([]);
+  const [netF, setNetF] = useState("");
+  const load = async (p: number) => {
+    const word = q.trim(); if (word.length < 3) return;
+    setBusy(true);
+    try {
+      const x = await api.get<{ items: YtItem[]; note: string }>(`/api/content-factory/studio/search/?q=${encodeURIComponent(word)}&langs=${langs.join(",")}&nets=${nets.join(",")}&page=${p}`);
+      setItems((old) => (p === 1 ? x.items : [...(old || []), ...x.items.filter((n) => !(old || []).some((o) => o.url === n.url))]));
+      setNote(x.note); setPage(p);
+    } catch (e: any) { setNote(e?.data?.error || "Пошук в інтернеті не вдався."); } finally { setBusy(false); }
+  };
+  useEffect(() => { if (q.trim().length < 3) { setItems(null); return; } const t = setTimeout(() => load(1), 1000); return () => clearTimeout(t); }, [q, langs.join(), nets.join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = <T,>(xs: T[], x: T) => (xs.includes(x) ? (xs.length > 1 ? xs.filter((y) => y !== x) : xs) : [...xs, x]);
+  const isSel = (u: string) => sel.some((x) => x.url === u);
+  const pickOne = (v: YtItem) => setSel(isSel(v.url) ? sel.filter((x) => x.url !== v.url) : sel.length < 3 ? [...sel, { url: v.url, thumb: v.thumb, title: v.title }] : sel);
+  const shown = (items || []).filter((v) => !netF || v.platform === netF);
+  const counts = (items || []).reduce<Record<string, number>>((a, v) => ({ ...a, [v.platform]: (a[v.platform] || 0) + 1 }), {});
+  if (q.trim().length < 3) return compact ? <span className="cf-quiet">Введіть щонайменше 3 літери.</span> : null;
   return (
-    <div className="cf-web-res">{items.map((v) => (
-      <div key={v.url} className={"cf-web-item" + (picked === v.url ? " on" : "")}>
-        {v.thumb ? <img src={v.thumb} alt="" loading="lazy" /> : <span className={"ph net-" + v.platform}>{NET_L[v.platform] || v.platform}</span>}
-        <div className="body">
-          <span className="net">{NET_L[v.platform] || v.platform}{v.views ? ` · ${v.views}` : ""}</span>
-          <a href={v.url} target="_blank" rel="noreferrer">{v.title || v.url}</a>
-          {v.why && <small>{v.why}</small>}
-        </div>
-        <button type="button" className={"cf-btn " + (picked === v.url ? "gold" : "ghost")} onClick={() => onPick(v.url)}>{picked === v.url ? "Вибрано" : action}</button>
-      </div>))}</div>
+    <div className="cf-card cf-web">
+      <div className="cf-role-h"><h3>В інтернеті: «{q.trim()}»</h3><span>{busy ? "шукаю…" : `${items?.length ?? 0} знайдено`}</span></div>
+      <div className="cf-web-filters">
+        <div className="cf-chips" aria-label="Мови пошуку">{LANG_L.map((l) => <button key={l.v} type="button" className={"cf-chip" + (langs.includes(l.v) ? " on" : "")} onClick={() => setLangs(toggle(langs, l.v))}>{l.l}</button>)}</div>
+        <div className="cf-chips" aria-label="Мережі">{NETS.map((n) => <button key={n} type="button" className={"cf-chip" + (nets.includes(n) ? " on" : "")} onClick={() => setNets(toggle(nets, n))}>{NET_L[n]}</button>)}</div>
+      </div>
+      {note && <p className="cf-quiet">{note}</p>}
+      {items && items.length > 0 && (
+        <div className="cf-chips" aria-label="Показати мережу">
+          <button type="button" className={"cf-chip" + (!netF ? " on" : "")} onClick={() => setNetF("")}>Усі · {items.length}</button>
+          {NETS.filter((n) => counts[n]).map((n) => <button key={n} type="button" className={"cf-chip" + (netF === n ? " on" : "")} onClick={() => setNetF(n)}>{NET_L[n]} · {counts[n]}</button>)}
+        </div>)}
+      {items && (shown.length === 0 ? <div className="cf-empty">{busy ? "Шукаю…" : "Нічого не знайшлося — спробуйте інші слова або мови."}</div> : (
+        <div className="cf-web-grid">{shown.map((v) => (
+          <div key={v.url} className={"cf-web-card" + (isSel(v.url) ? " on" : "")}>
+            <button type="button" className="pic" onClick={() => pickOne(v)} aria-pressed={isSel(v.url)} aria-label={`Вибрати: ${v.title}`}>
+              {v.thumb ? <img src={v.thumb} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="ph">{NET_L[v.platform] || v.platform}</span>}
+              <i className="chk" aria-hidden="true">{isSel(v.url) ? "✓" : ""}</i>
+              <em>{NET_L[v.platform] || v.platform}{v.views ? ` · ${v.views}` : ""}</em>
+            </button>
+            <a href={v.url} target="_blank" rel="noreferrer" title={v.why}>{v.title || v.url}</a>
+          </div>))}</div>))}
+      {items && items.length > 0 && <button type="button" className="cf-btn ghost" disabled={busy || page >= 5} onClick={() => load(page + 1)}>{busy ? "Шукаю…" : "Показати ще"}</button>}
+      {sel.length > 0 && (
+        <div className="cf-web-bar">
+          <span>Вибрано {sel.length} з 3</span>
+          <button type="button" className="cf-btn ghost" onClick={() => setSel([])}>Зняти</button>
+          <button type="button" className="cf-btn ghost" onClick={() => onGo(sel, false)}>Рилс за референсом</button>
+          <button type="button" className="cf-btn gold" onClick={() => onGo(sel, true)}>ШІ-ремейк: усе нове</button>
+        </div>)}
+    </div>
   );
 }
 
@@ -3148,18 +3210,18 @@ function StudioBar({ stage, view, onView }: { stage: string; view: string; onVie
 }
 
 function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { name: string; videos: number }[]; onCreated: (id: number) => void }) {
-  const handed = (() => { try { const v = sessionStorage.getItem(REF_KEY); if (v) sessionStorage.removeItem(REF_KEY); return v || ""; } catch { return ""; } })();
+  const [handed] = useState(takeRefs);
   const [src, setSrc] = useState(handed ? "ref" : "ai");
   const [text, setText] = useState("");
-  const [url, setUrl] = useState(handed);
-  const [ytNote, setYtNote] = useState("");
+  const [url, setUrl] = useState("");
+  const [refs, setRefs] = useState<RefPick[]>(handed?.refs || []);
+  const [remake, setRemake] = useState(!!handed?.remake);
   const [feed, setFeed] = useState<FeedT[] | null>(null);
   const [feedSel, setFeedSel] = useState<number[]>([]);
   const [q, setQ] = useState("");
-  const [yt, setYt] = useState<YtItem[] | null>(null);
   const [res, setRes] = useState<{ ideas: StudioIdea[]; refs: StudioRef[] } | null>(null);
   const [pick, setPick] = useState<StudioIdea | null>(null);
-  const [mode, setMode] = useState("material");
+  const [mode, setMode] = useState(handed?.remake ? "all_ai" : "material");
   const [material, setMaterial] = useState(materials[0]?.name || "");
   const [vids, setVids] = useState<SrcItem[] | null>(null);
   const [chosen, setChosen] = useState<number[]>([]);
@@ -3174,19 +3236,18 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
   };
   const suggest = () => run("ideas", async () => {
     const s = src === "search" ? "ref" : src;
-    const x = await api.post<{ ideas: StudioIdea[]; refs: StudioRef[] }>("/api/content-factory/studio/ideas/", { blog_id: blog.id, source: s, text, url, feed_ids: feedSel });
+    const x = await api.post<{ ideas: StudioIdea[]; refs: StudioRef[] }>("/api/content-factory/studio/ideas/", { blog_id: blog.id, source: s, text, url, urls: refs, feed_ids: feedSel, remake });
     setRes(x); setPick(null);
   });
-  const search = () => run("search", async () => { const x = await api.get<{ items: YtItem[]; note: string }>(`/api/content-factory/studio/search/?q=${encodeURIComponent(q)}`); setYt(x.items); setYtNote(x.note); });
   const create = () => run("create", async () => {
     if (!pick) return;
     const refs = res?.refs || [];
     const x = await api.post<{ id: number; note: string }>("/api/content-factory/studio/", {
       blog_id: blog.id, brief: { ...pick, source: src, structure: refs.length ? refs.map(({ summary, hook, beats, why_works }) => ({ summary, hook, beats, why_works })) : undefined },
-      material: footage && mode === "material" ? material : "", asset_ids: mode === "videos" ? chosen : [] });
+      material: footage && (mode === "material" || mode === "all_ai") ? material : "", asset_ids: mode === "videos" ? chosen : [], all_ai: mode === "all_ai" });
     onCreated(x.id);
   });
-  const needInput = (src === "mine" && text.trim().length < 5) || (src === "ref" && !url.trim() && feedSel.length === 0) || (src === "search" && !url);
+  const needInput = (src === "mine" && text.trim().length < 5) || ((src === "ref" || src === "search") && !url.trim() && feedSel.length === 0 && refs.length === 0);
   return (
     <div className="cf-card cf-studio-step">
       <h3>Звідки взяти ідею</h3>
@@ -3195,7 +3256,12 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
       {(src === "ai" || src === "ours" || src === "base") && <input className="cf-in" value={text} onChange={(e) => setText(e.target.value)} placeholder="Побажання (необовʼязково): тема, сезон, матеріал, акція…" aria-label="Побажання" />}
       {src === "ref" && (
         <div className="cf-picker">
-          <input className="cf-in" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Посилання на ролик: YouTube, Instagram, TikTok, Pinterest, Telegram…" aria-label="Посилання на референс" />
+          {refs.length > 0 && <div className="cf-ref-chosen">{refs.map((r) => (
+            <span key={r.url}>{r.thumb ? <img src={r.thumb} alt="" referrerPolicy="no-referrer" /> : null}<a href={r.url} target="_blank" rel="noreferrer">{r.title || r.url}</a>
+              <button type="button" aria-label="Прибрати" onClick={() => setRefs(refs.filter((x) => x.url !== r.url))}>✕</button></span>))}</div>}
+          <Toggle on={remake} onChange={(v) => { setRemake(v); setMode(v ? "all_ai" : "material"); }} label="ШІ-ремейк: усе в кадрі нове"
+            hint="Беремо будову, темп і прийоми референсу, а кадри ШІ малює заново: інше приміщення, фон, руки, предмети, наша фактура. Впізнати оригінал не можна." />
+          <input className="cf-in" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Ще посилання на ролик: YouTube, Instagram, TikTok, Pinterest, Telegram…" aria-label="Посилання на референс" />
           <span className="cf-quiet">YouTube ШІ переглядає повністю; для інших мереж бере підпис і показники. Або виберіть до 3 роликів, що вистрілили у вашій стрічці:</span>
           <div className="cf-ref-grid">{!feed ? <span className="cf-kv">Завантажую…</span> : feed.length === 0 ? <span className="cf-kv">У стрічці цього блогу поки порожньо — додайте сторінки в «Сторінках».</span>
             : feed.map((f) => (
@@ -3206,14 +3272,8 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
         </div>)}
       {src === "search" && (
         <div className="cf-picker">
-          <div className="cf-set">
-            <input className="cf-in" style={{ flex: 1, minWidth: 200 }} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && q.trim()) search(); }}
-              placeholder="Що шукати: «декоративна штукатурка», «ремонт до і після», «cartoon wall»…" aria-label="Пошук в інтернеті" />
-            <button type="button" className="cf-btn ghost" disabled={!q.trim() || !!busy} onClick={search}>{busy === "search" ? "Шукаю…" : "Знайти"}</button>
-          </div>
-          <span className="cf-quiet">Шукаємо ролики й пости в YouTube, Instagram, TikTok, Pinterest, Telegram і Facebook. Виберіть один — продюсер розбере, чому він чіпляє.</span>
-          {ytNote && <span className="cf-quiet">{ytNote}</span>}
-          {yt && (yt.length === 0 ? <span className="cf-kv">Нічого не знайшлося.</span> : <WebResults items={yt} picked={url} onPick={(u) => setUrl(url === u ? "" : u)} />)}
+          <input className="cf-in" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Що шукати: «декоративна штукатурка», «ремонт до і після», «cartoon wall»…" aria-label="Пошук в інтернеті" />
+          <WebSearch q={q} compact onGo={(r, rm) => { setRefs(r); setRemake(rm); setMode(rm ? "all_ai" : "material"); setSrc("ref"); setRes(null); }} />
         </div>)}
       <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
         <button type="button" className="cf-btn gold" disabled={!!busy || needInput} onClick={suggest}>{busy === "ideas" ? "Продюсер думає…" : "Запропонувати ідеї · ≈$0.02"}</button>
@@ -3241,8 +3301,10 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
           <input id="cf-st-hook" className="cf-in" value={pick.hook} onChange={(e) => setPick({ ...pick, hook: e.target.value })} />
           <Seg label="Мета ролика" value={pick.goal} onChange={(v) => setPick({ ...pick, goal: v })} opts={Object.entries(GOAL_L).map(([v, l]) => ({ v, l }))} />
           <h3 style={{ marginTop: 6 }}>З чого монтувати</h3>
-          <Seg label="З чого монтувати" value={mode} onChange={setMode} opts={[{ v: "material", l: footage ? "З відео матеріалу" : "Кадри малює ШІ" }, { v: "videos", l: "З вибраних відео" }]} />
-          {footage && mode === "material" && <Pick label="Матеріал" value={material} onChange={setMaterial} width={280}
+          <Seg label="З чого монтувати" value={mode} onChange={setMode} opts={[{ v: "material", l: footage ? "З відео матеріалу" : "Кадри малює ШІ" }, { v: "videos", l: "З вибраних відео" },
+            ...(footage ? [{ v: "all_ai", l: "ШІ-ремейк: усі кадри нові" }] : [])]} />
+          {mode === "all_ai" && <p className="cf-quiet">Художник намалює кожен кадр заново (≈$0.04 за кадр){blog.label_ai ? " — стіну лише за реальним фото фактури вибраного матеріалу, з написом «ШІ-візуалізація»" : ""}.</p>}
+          {footage && (mode === "material" || mode === "all_ai") && <Pick label="Матеріал" value={material} onChange={setMaterial} width={280}
             opts={materials.map((m) => ({ v: m.name, l: m.name, hint: `${m.videos} відео` }))} />}
           {mode === "videos" && (
             <div className="cf-picker">
