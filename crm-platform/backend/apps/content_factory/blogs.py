@@ -9,6 +9,7 @@ import re
 from .models import Blog, BlogFact, ContentChannel
 
 TODO = "[заповніть]"
+SHARED_SLUG = "marketing"  # «Маркетинг · спільна база»: знання з книг і курсів для всіх блогів
 TEMPLATE = (f"Про що блог: {TODO}\nДля кого: {TODO}\nТон і мова: {TODO}\n"
             f"Формати: рилси, каруселі\nЩо заборонено: вигадувати факти й цифри; шаблонні ШІ-фрази; емодзі-прикраси\n"
             f"Заклик у кінці: {TODO}")
@@ -131,6 +132,13 @@ def facts_block(blog, query, limit=8, max_chars=3500):
     for f in always + ranked[:limit]:
         rows.append(f"[{f.get_kind_display()}] {f.title}: {f.text}".strip())
         titles.append(f.title)
+    shared = Blog.objects.filter(slug=SHARED_SLUG).first()  # спільна маркетингова база (книги, курси) — для всіх блогів
+    if shared and shared.id != blog.id:
+        pool = list(BlogFact.objects.filter(blog=shared, active=True))
+        best = sorted(pool, key=lambda f: -len(q & _words(f.title + " " + f.text)))[:5]
+        for f in best:
+            if q & _words(f.title + " " + f.text):
+                rows.append(f"[Маркетинг] {f.title}: {f.text[:400]}")
     text = "\n".join(rows)
     if blog.use_crm_kb:
         from .telegram import kb_facts

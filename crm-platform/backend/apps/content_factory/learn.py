@@ -196,3 +196,40 @@ def extract_docs(blog, ids, call=None):
             seen.add(it["title"].lower())
             uniq.append(it)
     return {"items": uniq, "master_add": "\n".join(master)[:4000], "chunks": len(ids), "chars": chars, "truncated": trunc}
+
+
+BOOK_TASK = """Це частина книги або уроку курсу з маркетингу/продажів. Виділи ПРИНЦИПИ, які можна застосувати в контенті, воронках
+і продажах малого виробничого бізнесу (декор для стін, особистий бренд, найм). Не переказуй — дистилюй:
+- rule — принцип або метод (як робити), з умовами застосування;
+- example — формула/шаблон (заголовка, оффера, листа, воронки) дослівно, якщо коротко;
+- fact — важливий факт/цифра з джерела (з поміткою, що це дані автора);
+- ban — типова помилка, чого не робити.
+До 8 найцінніших записів на частину; title до 12 слів з назвою методу; text 1–4 речення. Вода, історії автора й реклама курсів — пропускай.
+Відповідай ЛИШЕ JSON: {"items":[{"kind":"rule|fact|example|ban","title":"...","text":"..."}]}"""
+
+
+def distill_book(blog, text, source, call=None, part=9000, limit=None):
+    """Книга/курс цілком → принципи в базу блогу (зберігає одразу). Повертає кількість записів."""
+    from .models import BlogFact
+    text = _norm(text)
+    parts = [text[i:i + part] for i in range(0, len(text), part)]
+    if limit:
+        parts = parts[:limit]
+    system = blogs.system_for(blog, BOOK_TASK, platform=False)
+    if call is None:
+        from apps.crm.ai import claude_json
+        call = lambda p: claude_json(p, model="claude-sonnet-4-6", max_tokens=2000, system=system, source=SOURCE)
+    made, seen = 0, set(blog.facts.values_list("title", flat=True))
+    for n, ch in enumerate(parts):
+        try:
+            r = call(f"Джерело: {source}. Частина {n + 1} з {len(parts)}:\n\n{ch}") or {}
+        except TimeoutError:
+            continue
+        for it in (r.get("items") or [])[:8] if isinstance(r.get("items"), list) else []:
+            if not isinstance(it, dict) or not it.get("title") or it["title"] in seen:
+                continue
+            seen.add(it["title"])
+            BlogFact.objects.create(blog=blog, kind=it.get("kind") if it.get("kind") in ("rule", "fact", "example", "ban") else "rule",
+                                    title=clean_text(str(it["title"]))[:200], text=(str(it.get("text") or "")[:1500] + f"\n(джерело: {source})"))
+            made += 1
+    return made
