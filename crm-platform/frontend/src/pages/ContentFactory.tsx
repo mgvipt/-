@@ -365,6 +365,12 @@ const CSS = `
 .cf-writer{display:grid;gap:8px;flex-basis:100%;padding:10px;border-radius:10px;border:1px dashed var(--cf-line)}
 .cf-writer-out{margin:0;white-space:pre-wrap;font:inherit;font-size:13px;color:var(--cf-ink)}
 .cf-writer-hooks{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--cf-ink3)}
+.cf-feed-search{position:relative;flex:1 1 320px;min-width:220px}
+.cf-feed-search .cf-in{padding-right:34px}
+.cf-feed-search button{all:unset;cursor:pointer;position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--cf-ink3)}
+.cf-only{display:grid;gap:8px}
+.cf-only b{color:var(--cf-ink);font-size:15px}
+.cf-only p{margin:0}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 /* ── Редизайн 24.09: конвеєр, «Сьогодні», власні елементи керування ── */
 .cf-logo{display:inline-block;width:18px;height:18px;border-radius:5px;margin-right:8px;vertical-align:-3px;
@@ -962,6 +968,7 @@ function Rail({ tab, setTab, today, ctx }: { tab: string; setTab: (t: string) =>
   } : {};
   let lastGroup = "";
   let step = 0;
+  const onlyW = ["questions", "telegram"];
   return (
     <nav className="cf-rail" aria-label="Розділи контент-заводу">
       <div className="cf-brand"><span className="cf-logo" aria-hidden="true" />Контент-завод<small>лише власник</small></div>
@@ -976,7 +983,8 @@ function Rail({ tab, setTab, today, ctx }: { tab: string; setTab: (t: string) =>
             <button type="button" className={"cf-nav" + (tab === s.id ? " on" : "") + (s.live ? "" : " later")} onClick={() => setTab(s.id)}
               aria-current={tab === s.id ? "page" : undefined}>
               <span>{s.label}</span>
-              {b ? <em className={b.hot ? "hot" : ""}>{b.n}</em> : !s.live ? <em className="soon">скоро</em> : null}
+              {onlyW.includes(s.id) && ctx.blogs.find((x) => x.id === ctx.blogId)?.slug !== "wallcov" ? <em className="soon">Wallcov</em>
+                : b ? <em className={b.hot ? "hot" : ""}>{b.n}</em> : !s.live ? <em className="soon">скоро</em> : null}
             </button>
           </div>
         );
@@ -1383,9 +1391,18 @@ function TopicRow({ t, statuses, onChanged }: { t: Topic; statuses: [string, str
   );
 }
 
-function OnlyWallcov({ blog, what }: { blog: BlogT | undefined; what: string }) {
-  if (!blog || blog.slug === "wallcov") return null;
-  return <div className="cf-note">Цей розділ — лише для Wallcov: {what}. Для блогу «{blog.name}» він показує дані Wallcov.</div>;
+function OnlyWallcov({ blog, what, go }: { blog: BlogT | undefined; what: string; go: (t: string) => void }) {
+  return (
+    <div className="cf-empty cf-only">
+      <b>Цей розділ — лише для Wallcov</b>
+      <p>{what}. У блогу «{blog?.name}» такого джерела немає, тому тут порожньо — дані Wallcov сюди не підмішуються.</p>
+      <p>Для «{blog?.name}» ідеї беріть тут:</p>
+      <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+        <button type="button" className="cf-btn ghost" onClick={() => go("feed")}>Стрічка рекомендацій блогу</button>
+        <button type="button" className="cf-btn ghost" onClick={() => go("analyst")}>Аналітик блогу</button>
+        <button type="button" className="cf-btn ghost" onClick={() => go("blogs")}>Памʼять і база знань блогу</button>
+      </div>
+    </div>);
 }
 
 function Questions() {
@@ -1948,12 +1965,14 @@ function Sources({ blog, blogs }: { blog: BlogT | undefined; blogs: BlogT[] }) {
 const fmtN = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + " млн" : n >= 1e3 ? Math.round(n / 1e3) + " тис" : String(n);
 
 function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }) {
-  const [q, setQ] = useState({ days: 7, sort: "outlier", status: "", all: false });
+  const [q, setQ] = useState({ days: 7, sort: "outlier", status: "", all: false, text: "", author: "" });
+  const [typed, setTyped] = useState("");
+  useEffect(() => { const t = setTimeout(() => setQ((x) => ({ ...x, text: typed.trim() })), 450); return () => clearTimeout(t); }, [typed]);
   const [data, setData] = useState<{ items: FeedT[]; total: number; tracked: number; last_sync_at: string | null; last_note: string;
-    blog_pages: { id: number; handle: string; platform: string; role: string; in_virale: boolean }[] } | null>(null);
+    blog_pages: { id: number; handle: string; platform: string; role: string; in_virale: boolean }[]; authors: string[] } | null>(null);
   const [msg, setMsg] = useState("");
   const load = useCallback(async () => {
-    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}${blog ? `&blog=${blog.id}` : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
+    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}${blog ? `&blog=${blog.id}` : ""}${q.text ? `&q=${encodeURIComponent(q.text)}` : ""}${q.author ? `&author=${encodeURIComponent(q.author)}` : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
   }, [q, blog]);
   useEffect(() => { load(); }, [load]);
   const sync = async () => { try { const r: any = await api.post("/api/content-factory/feed/"); setMsg(r.note); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } };
@@ -1966,14 +1985,20 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
           переглядів, ніж зазвичай у цього автора: це і є те, що «вистрілило». Зберігайте в ідеї — з них робитимемо рилси з ваших нарізок.</p>
       </div>
       <div className="cf-set">
-        <div className="cf-chips">{[7, 30, 90].map((d) => <button key={d} type="button" className={"cf-chip" + (q.days === d ? " on" : "")} onClick={() => setQ({ ...q, days: d })}>{d} днів</button>)}</div>
+        <div className="cf-feed-search">
+          <input className="cf-in" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Пошук: слово чи фраза в підписі або назва сторінки — «ремонт», «кіт», «до і після»…" aria-label="Пошук у стрічці" />
+          {typed && <button type="button" aria-label="Очистити" onClick={() => setTyped("")}>✕</button>}
+        </div>
+        <Pick small label="Сторінка" value={q.author} onChange={(v) => setQ({ ...q, author: v })}
+          opts={[{ v: "", l: "Усі сторінки" }, ...(data?.authors || []).map((a) => ({ v: a, l: "@" + a }))]} />
+        <div className="cf-chips">{[7, 30, 90, 365].map((d) => <button key={d} type="button" className={"cf-chip" + (q.days === d ? " on" : "")} onClick={() => setQ({ ...q, days: d })}>{d === 365 ? "рік" : `${d} днів`}</button>)}</div>
         <Seg label="Сортування" value={q.sort} onChange={(v) => setQ({ ...q, sort: v })}
           opts={[{ v: "outlier", l: "Вистрілило ×" }, { v: "views", l: "Перегляди" }, { v: "er", l: "Залученість" }, { v: "date", l: "Нові" }]} />
         <Seg label="Статус" value={q.status} onChange={(v) => setQ({ ...q, status: v })}
           opts={[{ v: "", l: "Усі" }, { v: "saved", l: "В ідеях" }, { v: "used", l: "Зроблено" }, { v: "hidden", l: "Сховані" }]} />
         <div className="cf-chips">
           <button type="button" className={"cf-chip" + (!q.all ? " on" : "")} onClick={() => setQ({ ...q, all: false })}>Сторінки блогу{data ? ` · ${data.tracked}` : ""}</button>
-          <button type="button" className={"cf-chip" + (q.all ? " on" : "")} onClick={() => setQ({ ...q, all: true })}>Усі з Virale</button>
+          <button type="button" className={"cf-chip" + (q.all ? " on" : "")} onClick={() => setQ({ ...q, all: true, author: "" })}>Усі з Virale</button>
         </div>
         <button type="button" className="cf-btn ghost" onClick={sync}>Оновити з Virale</button>
         <span className="cf-kv">{data ? `${data.total} роликів у базі${data.last_sync_at ? " · оновлено " + new Date(data.last_sync_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : " · ще не оновлювалась"}` : ""}</span>
@@ -3111,8 +3136,8 @@ export default function ContentFactory() {
         <Masthead s={section} />
         {section.id === "studio" ? <Studio ov={ov} go={go} />
           : section.id === "channels" ? <Channels data={list} reload={load} blogs={blogs} blog={blog} />
-          : section.id === "questions" ? <><OnlyWallcov blog={blog} what="питання клієнтів із переписок CRM" /><Questions /></>
-          : section.id === "telegram" ? <><OnlyWallcov blog={blog} what="канал @wallcovpro" /><Telegram /></>
+          : section.id === "questions" ? (blog && blog.slug !== "wallcov" ? <OnlyWallcov blog={blog} what="Питання клієнтів беруться з переписок CRM Wallcov" go={go} /> : <Questions />)
+          : section.id === "telegram" ? (blog && blog.slug !== "wallcov" ? <OnlyWallcov blog={blog} what="Автопілот публікує в канал Wallcov @wallcovpro" go={go} /> : <Telegram />)
           : section.id === "sources" ? <Sources key={blog?.id} blog={blog} blogs={blogs} />
           : section.id === "feed" ? <Feed key={blog?.id} blog={blog} go={go} />
           : section.id === "analyst" ? <Analyst key={blog?.id} blog={blog} />

@@ -685,7 +685,8 @@ class FeedView(_Base):
             days = 7
         blog = Blog.objects.filter(pk=request.GET.get("blog") or 0).first()
         rows = ansvc.feed(days=days, sort=request.GET.get("sort", "outlier"), status=request.GET.get("status", ""),
-                          include_own=request.GET.get("own") == "1", only_tracked=request.GET.get("all") != "1", blog=blog)
+                          include_own=request.GET.get("own") == "1", only_tracked=request.GET.get("all") != "1", blog=blog,
+                          q=request.GET.get("q", "")[:120], author=request.GET.get("author", "")[:100])
         s = AnalystSettings.get()
         return Response({
             "items": [{"id": i.id, "username": i.username, "platform": i.platform, "url": i.url,
@@ -695,6 +696,8 @@ class FeedView(_Base):
                        "published_at": _iso(i.published_at)} for i, x in rows],
             "total": FeedItem.objects.count(), "last_sync_at": _iso(s.last_feed_sync_at), "last_note": s.last_feed_note,
             "tracked": len(ansvc.tracked_handles(blog)),
+            "authors": sorted(ansvc.tracked_handles(blog)) if request.GET.get("all") != "1"
+                       else list(FeedItem.objects.values_list("username", flat=True).distinct().order_by("username")[:200]),
             "blog_pages": [{"id": c.id, "handle": c.handle, "platform": c.platform, "role": c.role, "in_virale": c.in_virale}
                            for c in ContentChannel.objects.filter(blog=blog).exclude(role=ContentChannel.Role.OWN)] if blog else [],
         })

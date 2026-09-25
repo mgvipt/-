@@ -103,9 +103,13 @@ def tracked_handles(blog=None):
     return set(qs.values_list("handle", flat=True))
 
 
-def feed(days=7, sort="outlier", status="", include_own=False, limit=60, only_tracked=True, blog=None):
+def feed(days=7, sort="outlier", status="", include_own=False, limit=60, only_tracked=True, blog=None, q="", author=""):
     since = timezone.now() - timedelta(days=days)
     qs = FeedItem.objects.filter(published_at__gte=since)
+    for word in (q or "").lower().split()[:6]:  # усі слова мають бути в підписі або в імені сторінки
+        qs = qs.filter(Q(caption__icontains=word) | Q(username__icontains=word))
+    if author:
+        qs = qs.filter(username__iexact=author.lstrip("@"))
     handles = tracked_handles(blog) if only_tracked else set()
     if handles:
         qs = qs.filter(username__in=handles)
