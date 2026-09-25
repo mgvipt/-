@@ -2055,11 +2055,14 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
   const [msg, setMsg] = useState("");
   const [web, setWeb] = useState<{ items: YtItem[]; note: string; q: string } | null>(null);
   const [webBusy, setWebBusy] = useState(false);
-  const webSearch = async () => {
+  const webSearch = async (word = typed.trim()) => {
+    if (word.length < 3 || web?.q === word) return;
     setWebBusy(true); setMsg("");
-    try { const x = await api.get<{ items: YtItem[]; note: string }>(`/api/content-factory/studio/search/?q=${encodeURIComponent(typed.trim())}`); setWeb({ ...x, q: typed.trim() }); }
-    catch (e: any) { setMsg(e?.data?.error || "Пошук не вдався."); } finally { setWebBusy(false); }
+    try { const x = await api.get<{ items: YtItem[]; note: string }>(`/api/content-factory/studio/search/?q=${encodeURIComponent(word)}`); setWeb({ ...x, q: word }); }
+    catch (e: any) { setMsg(e?.data?.error || "Пошук в інтернеті не вдався."); } finally { setWebBusy(false); }
   };
+  // Слово в пошуку → одразу шукаємо й в інтернеті (після паузи в наборі), не лише серед наших сторінок
+  useEffect(() => { const w = typed.trim(); if (w.length < 3) { setWeb(null); return; } const t = setTimeout(() => webSearch(w), 1100); return () => clearTimeout(t); }, [typed]); // eslint-disable-line react-hooks/exhaustive-deps
   const toReel = (url: string) => { try { sessionStorage.setItem(REF_KEY, url); } catch { /* без сховища — просто відкриємо рилси */ } go("reels"); };
   const load = useCallback(async () => {
     try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}${blog ? `&blog=${blog.id}` : ""}${q.text ? `&q=${encodeURIComponent(q.text)}` : ""}${q.author ? `&author=${encodeURIComponent(q.author)}` : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
@@ -2076,11 +2079,11 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
       </div>
       <div className="cf-set">
         <div className="cf-feed-search">
-          <input className="cf-in" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && typed.trim().length > 1) webSearch(); }}
-            placeholder="Пошук: слово чи фраза — «ремонт», «кіт», «до і після»…" aria-label="Пошук у стрічці та в інтернеті" />
+          <input className="cf-in" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") webSearch(); }}
+            placeholder="Пошук в інтернеті й у стрічці: «ремонт», «кіт», «до і після»…" aria-label="Пошук у стрічці та в інтернеті" />
           {typed && <button type="button" aria-label="Очистити" onClick={() => { setTyped(""); setWeb(null); }}>✕</button>}
         </div>
-        <button type="button" className="cf-btn gold" disabled={typed.trim().length < 2 || webBusy} onClick={webSearch}>{webBusy ? "Шукаю в інтернеті…" : "Шукати в усьому інтернеті"}</button>
+        {webBusy && <span className="cf-kv"><span className="cf-spin" aria-hidden="true" /> шукаю в інтернеті…</span>}
         <Pick small label="Сторінка" value={q.author} onChange={(v) => setQ({ ...q, author: v })}
           opts={[{ v: "", l: "Усі сторінки" }, ...(data?.authors || []).map((a) => ({ v: a, l: "@" + a }))]} />
         <div className="cf-chips">{[7, 30, 90, 365].map((d) => <button key={d} type="button" className={"cf-chip" + (q.days === d ? " on" : "")} onClick={() => setQ({ ...q, days: d })}>{d === 365 ? "рік" : `${d} днів`}</button>)}</div>
@@ -2098,13 +2101,13 @@ function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }
       {msg && <div className="cf-msg ok">{msg}</div>}
       {web && (
         <div className="cf-card">
-          <div className="cf-role-h"><h3>В інтернеті: «{web.q}»</h3><span>{web.items.length} знайдено · YouTube, Instagram, TikTok, Pinterest, Telegram, Facebook</span>
+          <div className="cf-role-h"><h3>В інтернеті: «{web.q}»</h3><span>{web.items.length} знайдено</span>
             <button type="button" className="cf-btn ghost" style={{ marginLeft: "auto" }} onClick={() => setWeb(null)}>Сховати</button></div>
           {web.note && <p className="cf-quiet">{web.note}</p>}
           {web.items.length === 0 ? <div className="cf-empty">Нічого не знайшлося — спробуйте інші слова.</div>
             : <WebResults items={web.items} onPick={toReel} action="Зробити рилс за цим" />}
-          <h3 style={{ marginTop: 8 }}>У стрічці ваших сторінок</h3>
         </div>)}
+      {web && data && <h3 className="cf-h3">У стрічці ваших сторінок: {data.items.length}</h3>}
       {data && !q.all && data.tracked === 0 && (
         <div className="cf-empty">У блогу «{blog?.name}» ще немає конкурентів і сторінок-натхнення. Додайте їх у «Сторінках» (вибраний блог підставиться сам) і натисніть «У стрічку».
           {" "}<button type="button" className="cf-link" onClick={() => go("channels")}>До сторінок →</button></div>)}

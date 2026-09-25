@@ -221,12 +221,17 @@ def search_youtube(q, limit=12):
                             "author": "".join(t.get("text", "") for t in (v.get("ownerText") or {}).get("runs", []))[:80],
                             "thumb": f"https://i.ytimg.com/vi/{v['videoId']}/hqdefault.jpg"})
             elif s:
-                vid = (re.search(r'"videoId":"([\w-]{11})"', json.dumps(s)) or [None, None])[1]
+                ent = str(s.get("entityId") or "")
+                vid = ent.rsplit("-", 1)[-1] if ent.startswith("shorts-shelf-item-") else ""
+                if not re.fullmatch(r"[\w-]{11}", vid or ""):
+                    vid = (re.search(r'"videoId":\s*"([\w-]{11})"', json.dumps(s)) or [None, None])[1]
                 if vid and vid not in seen:
                     seen.add(vid)
-                    title = (s.get("accessibilityText") or (s.get("headline") or {}).get("simpleText") or "")[:160]
-                    out.append({"url": f"https://www.youtube.com/shorts/{vid}", "title": title, "views": "", "author": "",
-                                "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"})
+                    acc = str(s.get("accessibilityText") or "")
+                    title, _, rest = acc.partition(", ")
+                    views = rest.split(" – ")[0] if "перегляд" in rest or "view" in rest else ""
+                    out.append({"url": f"https://www.youtube.com/shorts/{vid}", "title": (title or acc)[:160], "views": views[:40],
+                                "author": "", "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"})
             for val in x.values():
                 walk(val)
         elif isinstance(x, list):
@@ -574,7 +579,7 @@ def search_all(q, where="web", platforms=None):
         raise ValueError("Введіть слово для пошуку.")
     out, blocked, failed = [], False, []
     try:
-        out += [dict(x, platform="youtube", why=x.get("author") or "") for x in search_youtube(q, limit=8)]
+        out += [dict(x, platform="youtube", why=x.get("author") or "") for x in search_youtube(q, limit=12)]
     except Exception:
         failed.append("YouTube")
     if where != "youtube":
@@ -604,8 +609,8 @@ def search_all(q, where="web", platforms=None):
                 mixed.append(by[k].pop(0))
     note = ""
     if blocked:
-        note = ("Пошуковик тимчасово обмежив запити з сервера — показую, що встиг знайти. Для стабільного пошуку по всіх мережах "
-                "потрібен безкоштовний ключ пошуку (Serper або Brave) — див. «Налаштування пошуку».")
+        note = ("Instagram, TikTok, Pinterest, Telegram і Facebook зараз не шукаються: пошуковик без ключа блокує сервер. "
+                "Показую YouTube. Щоб шукати в усіх мережах, потрібен ключ пошуку Serper.")
     elif failed:
         note = "Не відповіли: " + ", ".join(failed) + "."
     return {"items": mixed[:30], "note": note}
