@@ -1,6 +1,6 @@
 """ШІ-зображення для контент-заводу (25.09.2026): генерація й покращення кадрів/слайдів через Gemini.
 
-Модель gemini-3.1-flash-image (та сама, що в локальному конекторі Олега). Кожна картинка платна (≈$0.04 — ОЦІНКА),
+Модель gemini-3.1-flash-image (та сама, що в локальному конекторі Олега). Кожна картинка платна (≈$0.067 за 1K — офіційна ціна 25.09),
 облік у AiUsage (source=content_factory.images), місячна стеля MONTH_CAP. Результат — файл у CRM (SharedLink).
 Для блогів з label_ai (Wallcov) кадр позначається «ШІ-візуалізація» під час монтажу/рендеру.
 """
@@ -13,7 +13,7 @@ from secrets import token_urlsafe
 
 MODEL = "gemini-3.1-flash-image"
 SOURCE = "content_factory.images"
-PRICE = (0.50, 30.0)  # $/1M токенів вхід/вихід — ОЦІНКА (≈1290 токенів на картинку ≈ $0.04)
+PRICE = (0.50, 60.0)  # $/1M вхід/вихід — офіційно 25.09: картинка 1K ≈ $0.067 (ai.google.dev/gemini-api/docs/pricing)
 MONTH_CAP = 10.0
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -79,16 +79,29 @@ def improve(data, mime, blog, aspect="9:16"):
 
 def texture_prompt(prompt, material, aspect="4:5"):
     """Кадр із декоративною стіною ЗА РЕАЛЬНИМ ЗРАЗКОМ: перше зображення — фото фактури, його не можна «спрощувати»."""
-    from .material_specs import spec_for
-    spec = spec_for(material)
+    from .material_specs import apply_rules, spec_for
+    spec = spec_for(material) + apply_rules(prompt, material)
     return (f"{prompt.strip()}. The decorative wall MUST reproduce the wall finish from the first reference photo exactly: "
             f"same pattern, trowel marks, relief, sparkle/sheen and colour at true scale — do NOT render a plain painted or smooth wall. "
             f"{spec} Photorealistic, real camera, no text, no letters, no logos.")
 
 
-def regenerate(prompt, blog, aspect="9:16", texture=None, material=""):
-    """Новий кадр з опису. texture=(bytes, mime) — реальне фото фактури: для Wallcov стіна малюється лише за ним."""
+COMPOSITION = (" The LAST reference image is a shot from someone else's video: copy ONLY its camera angle, shot size/crop, subject placement "
+               "and the action/pose timing. Everything else must be new and unrecognizable: different room, walls, furniture, props, hands, "
+               "clothes, lighting and colours. Never copy faces, logos, text or watermarks from it.")
+
+
+def _part(img):
+    return {"inlineData": {"mimeType": img[1], "data": base64.b64encode(img[0]).decode()}}
+
+
+def regenerate(prompt, blog, aspect="9:16", texture=None, material="", composition=None):
+    """Новий кадр з опису. texture=(bytes, mime) — реальне фото фактури: для Wallcov стіна малюється лише за ним.
+    composition=(bytes, mime) — кадр референсу (ремейк): беремо лише ракурс, крупність і дію, решта — нове."""
     if texture is not None:
+        if composition is not None:  # порядок: фактура (перша) → кадр референсу (остання)
+            return generate(texture_prompt(prompt, material, aspect) + COMPOSITION, aspect=aspect,
+                            extra_parts=[_part(texture), _part(composition)])
         return generate(texture_prompt(prompt, material, aspect), aspect=aspect, ref=texture)
     """Для інших блогів — стиль і персонажі з візуального зразка блогу."""
     rules = ""
@@ -107,4 +120,7 @@ def regenerate(prompt, blog, aspect="9:16", texture=None, material=""):
         refs = ref_parts(blog)
         if refs:
             style += " Перші зображення — референси: повтори їхній стиль малювання і тих самих персонажів, але нову сцену."
+    if composition is not None:
+        refs = list(refs) + [_part(composition)]
+        style += COMPOSITION
     return generate(f"{prompt.strip()}.{rules}{style} Без тексту, літер і логотипів у кадрі.", aspect=aspect, extra_parts=refs)

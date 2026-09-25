@@ -26,15 +26,20 @@ GOALS = {"save": "зберегти", "share": "переслати", "comment": "
 FITS = ("ours", "ai", "shoot")
 
 IDEA_TASK = """Ти продюсер-стратег коротких вертикальних роликів цього блогу. Запропонуй 5 ідей рилсів, які наближають до МЕТИ блогу.
+ГОЛОВНЕ ПРАВИЛО: ролик відповідає на РЕАЛЬНИЙ біль, страх або запит людини з цільової аудиторії — так, як вона сама це
+формулює в Direct чи коментарях («чи видно шви», «скільки піде на 20 м²», «боюсь, що не впораюсь сама», «як не прогадати з кольором»).
+Назва матеріалу чи процес («Вельвет Луна: від відра до стіни») — НЕ гачок: це абстрактно й не чіпляє. Продукт — лише відповідь на біль.
 Кожна ідея:
-- title — тема до 10 слів;
-- hook — текст першого кадру до 7 слів: конкретика або неочікуваний факт, без штампів і риторичних питань-пустушок;
+- pain — біль/запит клієнта його словами, 1 речення (з блоку питань клієнтів, коли він є);
+- title — тема до 10 слів, сформульована через цей біль;
+- hook — текст першого кадру до 7 слів: біль або результат для людини («Шви не видно навіть збоку»), без назви продукту,
+  без штампів і риторичних питань-пустушок;
 - goal — одна дія глядача: save|share|comment|dm|follow;
 - why — 1 речення: чому спрацює для цієї аудиторії й мети, з опорою на дані нижче (що вистрілило, питання, памʼять);
 - shots — які кадри потрібні, коротко через «;»;
 - fit — "ours" (є в наших кадрах з каталогу), "ai" (малює ШІ), "shoot" (треба доснімати).
 Не повторюй теми з памʼяті блогу. Факти й цифри — лише з бази знань. Без емодзі.
-Відповідай ЛИШЕ JSON: {"ideas":[{"title":"...","hook":"...","goal":"save","why":"...","shots":"...","fit":"ours"}]}"""
+Відповідай ЛИШЕ JSON: {"ideas":[{"pain":"...","title":"...","hook":"...","goal":"save","why":"...","shots":"...","fit":"ours"}]}"""
 
 REF_PROMPT = """Це ролик-референс з соцмережі. Розбери, ЧОМУ він чіпляє, щоб повторити будову (не текст і не кадри) у своєму ролику.
 Відповідай ЛИШЕ JSON: {"summary":"про що ролик, 1 речення","hook":"що відбувається в перші 3 с і чому зупиняє",
@@ -43,7 +48,8 @@ REF_PROMPT = """Це ролик-референс з соцмережі. Розб
 У beats.what опиши кадр так, щоб художник намалював НОВИЙ схожий за задумом: дія, крупність, ракурс, рух камери — без імен, логотипів і впізнаваних деталей."""
 
 REVIEW_TASK = """Ти — команда перевірки рилса перед публікацією. Три ролі дивляться ролик кожна зі свого боку:
-- smm (SMM-редактор): чи зупиняє перший кадр за 1–3 с; одна дія в кінці й вона веде до мети блогу; підпис і перший рядок з ключовими
+- smm (SMM-редактор): чи гачок називає біль/запит клієнта ЦА (а не назву продукту чи процес); чи зупиняє перший кадр за 1–3 с;
+  одна дія в кінці й вона веде до мети блогу; підпис і перший рядок з ключовими
   словами; правила Instagram (оригінальність, до 5 хештегів, без накрутки); ШІ-штампи й емодзі;
 - editor (Монтажер): ритм (кадр 1,5–3,5 с, гачок ≤2,5 с), загальна тривалість під мету, переходи, рух камери, повтори кадрів;
 - brand (Контролер бренду): відповідність майстер-промту й тону блогу, факти лише з бази знань, для блогу з правилом
@@ -113,7 +119,68 @@ def youtube_id(url):
     return m.group(1) if m else ""
 
 
-def analyze_ref(url="", feed_item=None, thumb="", title=""):
+def _ref_frames(video_path, beats, limit=8):
+    """Кадри з референсу в середині кожного плану → SharedLink id (для ремейку: ракурс і крупність)."""
+    import os
+    from .reels import _run
+    from . import aiimage
+    ids, t = [], 0.0
+    folder = os.path.dirname(video_path)
+    for n, b in enumerate((beats or [])[:limit]):
+        try:
+            sec = float(b.get("seconds") or 2)
+        except (TypeError, ValueError):
+            sec = 2.0
+        out = os.path.join(folder, f"rf{n}.jpg")
+        try:
+            _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t + sec / 2:.2f}", "-i", video_path, "-frames:v", "1",
+                  "-vf", "scale=720:-2", "-q:v", "3", out])
+            with open(out, "rb") as f:
+                ids.append(aiimage.save(f.read(), "image/jpeg", "ref-frame").id)
+        except Exception:
+            ids.append(None)
+        t += sec
+    return ids
+
+
+def _watch_bytes(data):
+    import base64
+    import os
+    import shutil
+    import tempfile
+    from .reels import WORK, _light_copy
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        src = os.path.join(folder, "ref.mp4")
+        with open(src, "wb") as f:
+            f.write(data)
+        with open(_light_copy(src, folder), "rb") as f:
+            part = {"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(f.read()).decode()}}
+        r = _gemini([part, {"text": REF_PROMPT}], max_tokens=2500)
+        r = r if isinstance(r, dict) else {}
+        r["frames"] = _ref_frames(src, r.get("beats"))
+        return r
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _watch_instagram(url, username):
+    """Офіційно: Business Discovery нашого IG-акаунта → пряме посилання на відео бізнес/автор-акаунта → Gemini."""
+    from . import freeai
+    m = freeai.ig_media(url, username)
+    if not m or not m.get("media_url") or m.get("media_type") not in ("VIDEO", "REELS"):
+        return None
+    with urllib.request.urlopen(urllib.request.Request(m["media_url"], headers={"User-Agent": UA}), timeout=60) as r:
+        data = r.read(80 * 1024 * 1024)
+    out = _watch_bytes(data)
+    if m.get("caption"):
+        out["caption"] = m["caption"][:500]
+    out["likes"] = m.get("like_count")
+    return out
+
+
+def analyze_ref(url="", feed_item=None, thumb="", title="", author=""):
     """Розбір референсу: YouTube — Gemini дивиться сам за посиланням (≈$0.01–0.04); інше — лише підпис/опис сторінки."""
     if feed_item is not None:
         url = url or feed_item.url
@@ -123,10 +190,23 @@ def analyze_ref(url="", feed_item=None, thumb="", title=""):
             r = _gemini([{"fileData": {"fileUri": f"https://www.youtube.com/watch?v={yid}"}}, {"text": REF_PROMPT}], max_tokens=2500)
             r = r if isinstance(r, dict) else {}
             r["url"], r["watched"] = url, True
+            try:  # кадри для ремейку (ракурси) — з завантаженого відео
+                r["frames"] = _download_frames(url, r.get("beats"))
+            except Exception:
+                pass
             return r
         except ReelError as e:
             note = f"Gemini не зміг переглянути ({str(e)[:80]}) — беру лише опис."
     else:
+        ig_user = author or (feed_item.username if feed_item is not None and "instagram.com" in (url or "") else "")
+        if "instagram.com" in (url or "") and ig_user:
+            try:
+                r = _watch_instagram(url, ig_user.lstrip("@"))
+                if r:
+                    r["url"], r["watched"] = url, True
+                    return r
+            except Exception:
+                pass
         try:
             r = _watch_download(url)
             r["url"], r["watched"] = url, True
@@ -163,6 +243,24 @@ def analyze_ref(url="", feed_item=None, thumb="", title=""):
     return {"url": url, "watched": False, "summary": text[:600], "note": note}
 
 
+def _download_frames(url, beats):
+    import os
+    import shutil
+    import tempfile
+    import yt_dlp
+    from .reels import WORK
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        with yt_dlp.YoutubeDL({"outtmpl": os.path.join(folder, "ref.%(ext)s"), "format": "mp4/best", "quiet": True, "no_warnings": True,
+                               "noprogress": True, "noplaylist": True, "max_filesize": 80 * 1024 * 1024}) as y:
+            y.download([url])
+        files = [f for f in os.listdir(folder) if f.startswith("ref.")]
+        return _ref_frames(os.path.join(folder, files[0]), beats) if files else []
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def _watch_download(url, max_mb=80, max_sec=240):
     """Завантажити ролик Instagram/TikTok/Pinterest/Facebook (yt-dlp) і дати Gemini переглянути (≈$0.01–0.03). Файл — лише тимчасово."""
     import base64
@@ -185,7 +283,9 @@ def _watch_download(url, max_mb=80, max_sec=240):
         with open(_light_copy(os.path.join(folder, files[0]), folder), "rb") as f:
             part = {"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(f.read()).decode()}}
         r = _gemini([part, {"text": REF_PROMPT}], max_tokens=2500)
-        return r if isinstance(r, dict) else {}
+        r = r if isinstance(r, dict) else {}
+        r["frames"] = _ref_frames(os.path.join(folder, files[0]), r.get("beats"))
+        return r
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
@@ -217,7 +317,7 @@ def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None, urls=Non
         for u in ([{"url": url}] if url else []) + [u if isinstance(u, dict) else {"url": u} for u in (urls or [])]:
             if len(refs) >= 3 or not u.get("url") or any(r.get("url") == u["url"] for r in refs):
                 continue
-            refs.append(analyze_ref(url=u["url"], thumb=u.get("thumb", ""), title=u.get("title", "")))
+            refs.append(analyze_ref(url=u["url"], thumb=u.get("thumb", ""), title=u.get("title", ""), author=u.get("ig_user", "")))
         if not refs:
             raise ValueError("Виберіть ролик зі стрічки або вставте посилання.")
         if remake:
@@ -239,6 +339,7 @@ def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None, urls=Non
         if not isinstance(i, dict) or not i.get("title"):
             continue
         out.append({"title": clean_text(str(i["title"]))[:120], "hook": clean_text(str(i.get("hook") or ""))[:80],
+                    "pain": clean_text(str(i.get("pain") or ""))[:200],
                     "goal": i.get("goal") if i.get("goal") in GOALS else "save",
                     "why": clean_text(str(i.get("why") or ""))[:300], "shots": clean_text(str(i.get("shots") or ""))[:300],
                     "fit": i.get("fit") if i.get("fit") in FITS else ("ours" if blog.real_footage else "ai")})
@@ -248,10 +349,14 @@ def ideas(blog, source="ai", text="", url="", feed_ids=None, call=None, urls=Non
 
 
 def search_youtube(q, limit=20, lang="uk"):
-    """Пошук Shorts на YouTube без ключа API: сторінка результатів → назва, посилання, перегляди. Безкоштовно."""
+    """Пошук Shorts: офіційний YouTube Data API (YOUTUBE_API_KEY, ≈100 пошуків/добу), інакше сторінка результатів. Безкоштовно."""
     q = (q or "").strip()
     if len(q) < 2:
         raise ValueError("Введіть слово для пошуку.")
+    from . import freeai
+    api = freeai.youtube_search(q, lang=lang, limit=limit)
+    if api:
+        return api
     url = "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": q + " #shorts", "hl": lang})
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
                                                              "(KHTML, like Gecko) Chrome/126 Safari/537.36", "Accept-Language": "uk,ru;q=0.8"})
@@ -301,7 +406,8 @@ def search_youtube(q, limit=20, lang="uk"):
 
 def topic_of(brief):
     goal = GOALS.get(brief.get("goal") or "", "")
-    return (f"{brief.get('title', '')}. Перший кадр (гачок): «{brief.get('hook', '')}»."
+    return ((f"Біль/запит клієнта: {brief['pain']}. " if brief.get("pain") else "")
+            + f"{brief.get('title', '')}. Перший кадр (гачок): «{brief.get('hook', '')}»."
             + (f" Мета ролика — щоб глядач захотів {goal}." if goal else "")
             + (f" Потрібні кадри: {brief['shots']}." if brief.get("shots") else ""))[:900]
 
@@ -317,9 +423,24 @@ def build_script(reel, material="", asset_ids=None):
         facts_text, titles = blogs.facts_block(blog, brief.get("title", ""))
         call = _call(blogs.system_for(blog, R.AI_PLAN_TASK), max_tokens=1400)
         prompt = f"Тема: {topic_of(brief)}\n\nБаза знань:\n{facts_text or '(немає)'}\n\n" + blogs.memory_block(blog)
+        ref_beats = []
+        for ref in (structure or []) if isinstance(structure, list) else []:
+            for k, rb in enumerate(ref.get("beats") or []):
+                fr = (ref.get("frames") or [None] * 99)[k] if k < len(ref.get("frames") or []) else None
+                ref_beats.append({"seconds": rb.get("seconds"), "purpose": rb.get("purpose"), "what": rb.get("what"), "frame": fr})
+            break  # ремейк — за першим референсом
+        if material:
+            from .material_specs import apply_stages_text
+            st = apply_stages_text(material)
+            if st:
+                prompt += "\n\n" + st + "\nУ image_prompt кадру з роботою вкажи етап словами (напр. «другий шар, свіжий, мокрий»)."
         if brief.get("all_ai"):
-            prompt += ("\n\nЦе РЕМЕЙК за референсом: повтори будову, темп і прийоми, але кожен кадр — НОВА сцена: інше приміщення, фон, "
-                       "руки, предмети, світло й ракурс; нічого впізнаваного з оригіналу." + (f" Покриття в кадрі — {material}." if material else ""))
+            prompt += ("\n\nЦе РЕМЕЙК за референсом: кадрів стільки ж, скільки в референсі (до 6), КАДР ЗА КАДРОМ у тому ж порядку, "
+                       "з тією ж тривалістю, ракурсом, крупністю й дією (у beats додай \"ref\": номер кадру референсу з 0). "
+                       "Але все в кадрі нове: інше приміщення, фон, руки, предмети, світло; нічого впізнаваного з оригіналу."
+                       + (f" Покриття в кадрі — {material}." if material else "")
+                       + ("\nКадри референсу:\n" + "\n".join(f"[{k}] {rb['seconds']} с · {rb['purpose']} · {rb['what']}" for k, rb in enumerate(ref_beats[:6]))
+                          if ref_beats else ""))
         if structure:
             prompt += "\n\nПовтори БУДОВУ й ТЕМП референсу (не текст):\n" + json.dumps(structure, ensure_ascii=False)[:3000]
         r = call(prompt)
@@ -332,7 +453,14 @@ def build_script(reel, material="", asset_ids=None):
                 secs = max(1.5, min(float(b.get("seconds") or 3), 5.0))
             except (TypeError, ValueError):
                 secs = 3.0
-            beats.append({"text": clean_text(str(b.get("text") or ""))[:80], "seconds": round(secs, 2), "prompt": ip[:600]})
+            row = {"text": clean_text(str(b.get("text") or ""))[:80], "seconds": round(secs, 2), "prompt": ip[:600]}
+            try:
+                k = int(b.get("ref")) if b.get("ref") is not None else len(beats)
+            except (TypeError, ValueError):
+                k = len(beats)
+            if brief.get("all_ai") and 0 <= k < len(ref_beats) and ref_beats[k].get("frame"):
+                row["ref_frame"] = ref_beats[k]["frame"]  # кадр референсу → ракурс і крупність для художника
+            beats.append(row)
         if len(beats) < 3:
             raise ReelError("Сценарист не склав кадри — спробуйте іншу ідею.")
         if material:
@@ -454,6 +582,14 @@ def auto_fx(beats):
     return out
 
 
+def _link_bytes(link_id):
+    if not link_id:
+        return None
+    from apps.inbox.models import SharedLink
+    link = SharedLink.objects.filter(pk=link_id).first()
+    return (bytes(link.data), link.content_type or "image/jpeg") if link else None
+
+
 def _texture(reel):
     """Для блогу з правилом «фактура справжня»: найкраще реальне фото матеріалу ролика (bytes, mime) і назва матеріалу."""
     if not (reel.blog and reel.blog.label_ai):
@@ -469,20 +605,25 @@ def _texture(reel):
     return None, material
 
 
-def fill_missing(reel, limit=6):
+def fill_missing(reel, limit=6, draft=False):
     """Намалювати всі відсутні кадри (≈$0.04 за кадр) — лише для кадрів з описом, без монтажу."""
-    from . import aiimage
+    from . import aiimage, freeai
     beats = list(reel.beats)
     done = 0
     texture, material = _texture(reel)
     for i in missing(reel)[:limit]:
         b = dict(beats[i])
-        if texture:  # Wallcov: стіну малюємо лише за реальним фото фактури
-            data, mime = aiimage.regenerate(b.get("prompt") or b.get("text") or reel.title, reel.blog, texture=texture, material=material)
+        prompt = b.get("prompt") or b.get("text") or reel.title
+        comp = _link_bytes(b.get("ref_frame"))
+        free = freeai.cf_image(prompt, "9:16") if draft and not texture else None  # чернетка: FLUX безкоштовно (не фактура Wallcov)
+        if free:
+            data, mime = free
+        elif texture:  # Wallcov: стіну малюємо лише за реальним фото фактури
+            data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture, material=material, composition=comp)
         else:
-            data, mime = aiimage.regenerate(b.get("prompt") or b.get("text") or reel.title, reel.blog)
+            data, mime = aiimage.regenerate(prompt, reel.blog, composition=comp)
         link = aiimage.save(data, mime, f"reel-{reel.id}-{i}")
-        b.update({"image_id": link.id, "ai": "generated"})
+        b.update({"image_id": link.id, "ai": "draft" if free else "generated"})
         beats[i] = b
         done += 1
         reel.beats = beats
@@ -660,17 +801,25 @@ def search_site(q, site, lang="uk", page=1):
     if hit is not None:
         return hit
     gl, hl = LANGS.get(lang, LANGS["uk"])
+    from . import freeai
+    rows = None
     if os.environ.get("SERPER_API_KEY"):
-        body = {"q": f"{q} site:{site}", "gl": gl, "hl": hl, "page": page}
-        rows = [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", ""), "thumb": x.get("imageUrl", ""),
-                 "date": x.get("date", "")} for x in _serper("videos", body).get("videos") or []]
-        if len(rows) < 5:
-            rows += [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", ""), "thumb": x.get("imageUrl", ""),
-                      "date": x.get("date", "")} for x in _serper("search", dict(body, q=f"site:{site} {q}")).get("organic") or []]
-    elif page == 1:
-        rows = search_ddg(f"site:{site} {q}")
-    else:
-        rows = []
+        try:
+            body = {"q": f"{q} site:{site}", "gl": gl, "hl": hl, "page": page}
+            rows = [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", ""), "thumb": x.get("imageUrl", ""),
+                     "date": x.get("date", ""), "author": x.get("channel", "")} for x in _serper("videos", body).get("videos") or []]
+            if len(rows) < 5:
+                rows += [{"url": x.get("link", ""), "title": x.get("title", ""), "why": x.get("snippet", ""), "thumb": x.get("imageUrl", ""),
+                          "date": x.get("date", "")} for x in _serper("search", dict(body, q=f"site:{site} {q}")).get("organic") or []]
+        except Exception:
+            rows = None  # ліміт Serper вичерпано / збій — нижче Tavily
+    if rows is None and page == 1:
+        rows = freeai.tavily_search(f"{q} site:{site}") or None
+    if rows is None:
+        rows = search_ddg(f"site:{site} {q}") if page == 1 else []
+    for x in rows:  # Instagram: нік автора з опису («… comments - nick on …») — для офіційного Business Discovery
+        if "instagram.com" in x.get("url", ""):
+            x["ig_user"] = freeai.ig_username_from_snippet(x.get("why", ""))
     rows = [{**x, "title": clean_text(x["title"])[:160], "why": clean_text(x["why"])[:240]} for x in rows if x.get("url", "").startswith("http")]
     cache.set(key, rows, 24 * 3600)
     return rows
@@ -710,7 +859,7 @@ def search_all(q, where="web", langs=None, nets=None, page=1):
             except Exception:
                 failed.append(n)
                 continue
-            out += [dict(x, platform=n, views="", author="", lang=lang) for x in rows if re.search(POST_RX[n], x["url"])]
+            out += [dict(x, platform=n, views="", author=x.get("author", ""), lang=lang) for x in rows if re.search(POST_RX[n], x["url"])]
             if not __import__("os").environ.get("SERPER_API_KEY"):
                 time.sleep(0.8)  # пошуковик без ключа не любить запити підряд
     seen, by = set(), {}
@@ -730,3 +879,36 @@ def search_all(q, where="web", langs=None, nets=None, page=1):
     elif failed:
         note = "Не відповіли: " + ", ".join(sorted(set(failed))) + "."
     return {"items": mixed[:120], "note": note, "queries": queries, "words": words}
+
+
+
+# ── Озвучка: виправити наголос/вимову словами (безкоштовно, Groq) ──────────────────────────────────
+
+SPEECH_FIX = """Ти готуєш текст для синтезу мовлення ElevenLabs (українська). Тобі дають репліку і вказівку власника, що звучить неправильно
+(наголос, вимова, пауза, темп). Перепиши ЛИШЕ так, щоб синтезатор вимовив правильно:
+- наголос позначай знаком наголосу (комбінований гострий акцент U+0301) одразу ПІСЛЯ наголошеної голосної, напр. «шо́вк», «фарбува́ти»;
+- якщо слово все одно читається неправильно — перепиши його фонетично (як чується), без зміни сенсу;
+- паузу — комою або «...»;
+- не змінюй інших слів, не додавай пояснень. Поверни ЛИШЕ готовий текст репліки."""
+
+
+def fix_speech(reel, idx, instruction):
+    """Власник пише, що виправити у вимові → Groq переписує текст для синтезу (say_tts); екранний текст не змінюється.
+    Перезвучується лише ця репліка (символи ElevenLabs), перемонтаж без ШІ-картинок."""
+    from . import freeai
+    b = dict(reel.beats[idx])
+    base = (b.get("say_tts") or b.get("say") or b.get("text") or "").strip()
+    instruction = (instruction or "").strip()
+    if not base or len(instruction) < 3:
+        raise ValueError("Напишіть, що саме звучить неправильно.")
+    out = freeai.groq_chat(SPEECH_FIX, f"Репліка: {base}\nЩо виправити: {instruction}")
+    if not out:
+        raise ValueError("Безкоштовний ШІ зараз не відповів — спробуйте ще раз за хвилину.")
+    out = out.strip().strip("«»\"'")[:400]
+    b["say_tts"] = out
+    b.setdefault("fixes", []).append(instruction[:200])
+    beats = list(reel.beats)
+    beats[idx] = b
+    reel.beats = beats
+    reel.save(update_fields=["beats"])
+    return out

@@ -55,7 +55,10 @@ urlpatterns += [
     path("api/content-factory/studio/", views.StudioView.as_view()),
     path("api/content-factory/studio/ideas/", views.StudioView.as_view(), {"action": "ideas"}),
     path("api/content-factory/studio/search/", views.StudioView.as_view(), {"action": "search"}),
+    path("api/content-factory/studio/voices/", views.StudioView.as_view(), {"action": "voices"}),
     path("api/content-factory/reels/<int:pk>/studio/", views.ReelView.as_view(), {"action": "studio"}),
+    path("api/content-factory/reels/<int:pk>/publish/", views.ReelView.as_view(), {"action": "publish"}),
+    path("api/content-factory/carousels/<int:pk>/publish/", views.CarouselView.as_view(), {"action": "publish"}),
     path("api/content-factory/reels/styles/", views.ReelStylesView.as_view()),
 ]
 urlpatterns += [  # 25.09: блоги, каруселі, ШІ-кадри, вичитка
@@ -68,6 +71,7 @@ urlpatterns += [  # 25.09: блоги, каруселі, ШІ-кадри, вич
     path("api/content-factory/carousels/", views.CarouselsView.as_view()),
     path("api/content-factory/carousels/<int:pk>/", views.CarouselView.as_view()),
     path("api/content-factory/carousels/<int:pk>/test/", views.CarouselView.as_view(), {"action": "test"}),
+    path("api/content-factory/carousels/<int:pk>/tiktok/", views.CarouselView.as_view(), {"action": "tiktok"}),
     path("api/content-factory/carousels/<int:pk>/image/", views.CarouselView.as_view(), {"action": "image"}),
     path("api/content-factory/reels/<int:pk>/frame/", views.ReelView.as_view(), {"action": "frame"}),
     path("api/content-factory/reels/<int:pk>/advice/", views.ReelView.as_view(), {"action": "advice"}),

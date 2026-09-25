@@ -39,6 +39,7 @@ from . import aiimage as aisvc
 from . import blogs as blogsvc
 from . import carousels as carsvc
 from . import studio as studiosvc
+from . import publish as pubsvc
 from . import assist as assistsvc
 from . import learn as learnsvc
 from . import visual as visualsvc
@@ -806,10 +807,13 @@ def _reel(request, r):
         "stage": r.stage, "brief": {k: v for k, v in (r.brief or {}).items() if k not in ("prev_texts", "prev_caption")},
         "can_undo_texts": bool((r.brief or {}).get("prev_texts")), "review": r.review or {},
         "notes": studiosvc.editor_notes(r) if r.stage in ("script", "material", "style") else [],
+        "published": r.published or {}, "can_publish": pubsvc.can_publish(r.blog), "voice_id": (r.brief or {}).get("voice_id", ""),
         "variants": {k: _link_url(request, v) for k, v in (r.variants or {}).items()},
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
         "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else (b.get("prompt") or ""),
                        source=scenes[b["scene_id"]].asset.link if b.get("scene_id") in scenes else "",
+                       ref_url=_link_url(request, b["ref_frame"]) if b.get("ref_frame") else "",
+                       vo_url=_link_url(request, b["vo_id"]) if b.get("vo_id") else "",
                        thumb_url=(_link_url(request, b["image_id"]) if b.get("image_id")
                                   else _scene_thumb(request, scenes.get(b.get("scene_id"))))) for b in r.beats],
     }
@@ -860,6 +864,9 @@ class StudioView(_Base):
     """Майстер рилса: POST /studio/ideas/ — 5 ідей; GET /studio/search/?q= — пошук Shorts на YouTube;
     POST /studio/ {brief, blog_id, material, asset_ids, style_id} — створити рилс і скласти сценарій (у фоні)."""
     def get(self, request, action=None):
+        if action == "voices":
+            from . import freeai
+            return Response({"voices": freeai.eleven_voices()})
         if action != "search":
             return Response(status=405)
         try:
@@ -888,9 +895,10 @@ class StudioView(_Base):
             except (ValueError, reelsvc.ReelError) as e:
                 return Response({"error": str(e)}, status=400)
         brief = data.get("brief") if isinstance(data.get("brief"), dict) else {}
-        brief = {k: reelsvc.clean_text(str(brief.get(k) or ""))[:400] for k in ("title", "hook", "goal", "why", "shots", "fit", "source")} | (
+        brief = {k: reelsvc.clean_text(str(brief.get(k) or ""))[:400] for k in ("title", "hook", "goal", "why", "shots", "fit", "source", "pain")} | (
             {"structure": brief["structure"]} if isinstance(brief.get("structure"), (dict, list)) else {}) | (
-            {"all_ai": True} if data.get("all_ai") else {})
+            {"all_ai": True} if data.get("all_ai") else {}) | (
+            {"voice_id": str(data["voice_id"])[:64]} if data.get("voice_id") else {})
         if not brief.get("title"):
             return Response({"error": "Виберіть або впишіть ідею."}, status=400)
         material = str(data.get("material") or "").strip()[:80]
@@ -941,7 +949,13 @@ class ReelView(_Base):
             beats = []
             old = {i: dict(x) for i, x in enumerate(r.beats)}
             for n, b in enumerate(data["beats"] or []):
-                keep = {k: b[k] for k in ("image_id", "ai", "prompt", "orig_scene_id") if b.get(k)}
+                keep = {k: b[k] for k in ("image_id", "ai", "prompt", "orig_scene_id", "ok") if b.get(k)}
+                old_b = old.get(n) or {}
+                voice_keep = {k: old_b[k] for k in ("vo_id", "vo_key", "ref_frame", "say_tts", "fixes") if old_b.get(k)}
+                if b.get("say") is not None and b.get("say") != old_b.get("say"):
+                    voice_keep.pop("say_tts", None)  # нова репліка — старі виправлення вимови не застосовуємо  # озвучка й кадр референсу не губляться
+                if b.get("say") is not None:
+                    voice_keep["say"] = reelsvc.clean_text(str(b.get("say") or ""))[:300]
                 if keep.get("image_id"):  # ШІ-кадр: лише ті картинки, що вже були в цьому ролику
                     known = {x.get("image_id") for x in old.values()}
                     if keep["image_id"] not in known:
@@ -955,12 +969,12 @@ class ReelView(_Base):
                     if not sc:
                         return Response({"error": "Такої сцени немає."}, status=400)
                     limit, sid = sc.end - sc.start, sc.id
-                    keep = {k: v for k, v in keep.items() if k == "orig_scene_id"}
+                    keep = {k: v for k, v in keep.items() if k in ("orig_scene_id", "ok")}
                 try:
                     secs = max(0.8, min(float(b.get("seconds") or 2.5), limit))
                 except (TypeError, ValueError):
                     return Response({"error": "Тривалість має бути числом."}, status=400)
-                row = {"text": reelsvc.clean_text(str(b.get("text") or ""))[:80], "seconds": round(secs, 2), **keep}
+                row = {"text": reelsvc.clean_text(str(b.get("text") or ""))[:80], "seconds": round(secs, 2), **keep, **voice_keep}
                 fx = b.get("fx") or {}
                 fx = {k: v for k, v in (("transition", fx.get("transition")), ("motion", fx.get("motion")))
                       if (k == "transition" and v in reelsvc.XFADE) or (k == "motion" and v in reelsvc.MOTIONS)}
@@ -980,6 +994,8 @@ class ReelView(_Base):
             r.caption = str(data["caption"] or "")[:2200]
         if "style_id" in data:
             r.style = ReelStyle.objects.filter(pk=data["style_id"] or 0).first()
+        if "voice_id" in data:  # озвучка ElevenLabs: "" — без голосу
+            r.brief = dict(r.brief or {}, voice_id=str(data["voice_id"] or "")[:64])
         if "stage" in data:
             if data["stage"] not in studiosvc.STAGES:
                 return Response({"error": "Невідомий крок."}, status=400)
@@ -988,6 +1004,29 @@ class ReelView(_Base):
                 r.status = ReelDraft.Status.APPROVED
         r.save()
         return Response(_reel(request, r))
+
+    def _publish(self, request, pk):
+        """POST /reels/<id>/publish/ {platform: instagram|tiktok, confirm: true} — публікація (незворотно, лише власник)."""
+        if not request.user.is_superuser:
+            return Response({"error": "Публікувати може лише власник."}, status=403)
+        data = request.data or {}
+        if data.get("confirm") is not True:
+            return Response({"error": "Потрібне підтвердження публікації."}, status=400)
+        r = get_object_or_404(ReelDraft, pk=pk)
+        platform = data.get("platform")
+        if r.busy:
+            return Response({"error": "Ролик ще обробляється."}, status=409)
+        ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
+
+        def work():
+            try:
+                pubsvc.publish_reel(ReelDraft.objects.get(pk=r.pk), platform)
+            except Exception as e:
+                ReelDraft.objects.filter(pk=r.pk).update(error=f"Публікація не вдалася: {str(e)[:250]}")
+            finally:
+                ReelDraft.objects.filter(pk=r.pk).update(busy=False)
+        _bg(work)
+        return Response({"ok": True, "note": "Публікую — Instagram обробляє відео до кількох хвилин. Посилання зʼявиться тут."})
 
     def _studio(self, request, pk):
         """POST /reels/<id>/studio/ {op}: script — скласти сценарій заново; texts / undo_texts — переписати тексти / повернути;
@@ -1003,12 +1042,31 @@ class ReelView(_Base):
                 studiosvc.rewrite_texts(r)
             elif op == "undo_texts":
                 studiosvc.undo_texts(r)
+            elif op == "fix_voice":
+                d = request.data or {}
+                try:
+                    idx = int(d.get("index"))
+                    assert 0 <= idx < len(r.beats)
+                except (TypeError, ValueError, AssertionError):
+                    return Response({"error": "Невідомий кадр."}, status=400)
+                studiosvc.fix_speech(r, idx, str(d.get("instruction") or "")[:300])
+                ReelDraft.objects.filter(pk=r.pk).update(busy=True)
+
+                def work():
+                    try:
+                        reelsvc.rerender(ReelDraft.objects.get(pk=r.pk))
+                    except Exception as e:
+                        ReelDraft.objects.filter(pk=r.pk).update(error=f"Перезвучка не вдалася: {str(e)[:200]}")
+                    finally:
+                        ReelDraft.objects.filter(pk=r.pk).update(busy=False)
+                _bg(work)
+                return Response({"ok": True, "note": "Виправив вимову й перезвучую цю репліку — до хвилини."})
             elif op == "autofx":
                 r.beats = studiosvc.auto_fx(r.beats)
                 r.save(update_fields=["beats"])
             elif op == "review":
                 studiosvc.team_review(r)
-            elif op in ("script", "fill"):
+            elif op in ("script", "fill", "fill_draft"):
                 if op == "fill" and aisvc.spent_month() >= aisvc.MONTH_CAP:
                     return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
                 ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
@@ -1019,7 +1077,7 @@ class ReelView(_Base):
                         if op == "script":
                             studiosvc.build_script(x, material=x.material)
                         else:
-                            studiosvc.fill_missing(x)
+                            studiosvc.fill_missing(x, draft=(op == "fill_draft"))
                     except Exception as e:
                         ReelDraft.objects.filter(pk=r.pk).update(error=str(e)[:300])
                     finally:
@@ -1056,6 +1114,8 @@ class ReelView(_Base):
             return Response({"ok": True, "note": "Монтую — до хвилини."})
         if action == "studio":
             return self._studio(request, pk)
+        if action == "publish":
+            return self._publish(request, pk)
         if action == "frame":
             if not request.user.is_superuser:
                 return Response({"error": "ШІ-кадри (платно) — лише власник."}, status=403)
@@ -1067,9 +1127,9 @@ class ReelView(_Base):
             except (TypeError, ValueError, AssertionError):
                 return Response({"error": "Невідомий кадр."}, status=400)
             op = data.get("op")
-            if op not in ("improve", "regenerate", "revert", "edit"):
+            if op not in ("improve", "regenerate", "revert", "edit", "draft"):
                 return Response({"error": "Невідома дія."}, status=400)
-            if op != "revert" and aisvc.spent_month() >= aisvc.MONTH_CAP:
+            if op not in ("revert", "draft") and aisvc.spent_month() >= aisvc.MONTH_CAP:
                 return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
             if r.busy:
                 return Response({"error": "Цей ролик ще обробляється — зачекайте."}, status=409)
@@ -1080,8 +1140,8 @@ class ReelView(_Base):
                 try:
                     if op == "improve":
                         reelsvc.improve_frame(r, idx)
-                    elif op == "regenerate":
-                        reelsvc.regenerate_frame(r, idx, prompt)
+                    elif op in ("regenerate", "draft"):
+                        reelsvc.regenerate_frame(r, idx, prompt, draft=(op == "draft"))
                     elif op == "edit":
                         reelsvc.edit_frame(r, idx, prompt)
                     else:
@@ -1093,6 +1153,7 @@ class ReelView(_Base):
             _bg(work)
             return Response({"ok": True, "note": {"improve": "Покращую кадр і перемонтовую — до хвилини.",
                                                   "regenerate": "Малюю новий кадр і перемонтовую — до хвилини.",
+                                                  "draft": "Малюю чернетку безкоштовно — до хвилини.",
                                                   "edit": "Домальовую в кадр і перемонтовую — до хвилини.",
                                                   "revert": "Повертаю справжній кадр."}[op]})
         if action in ("versions", "adapt"):
@@ -1160,7 +1221,17 @@ class ReelStylesView(_Base):
             return Response({"error": "Лише власник."}, status=403)
         src, pk = (request.data or {}).get("source"), (request.data or {}).get("id")
         try:
-            if src == "feed":
+            if src == "url":
+                st = stylesvc.from_url(str((request.data or {}).get("url") or ""))
+            elif src == "file":
+                f = request.FILES.get("file")
+                if not f or f.size > 80 * 1024 * 1024:
+                    return Response({"error": "Файл до 80 МБ: картинка або відео."}, status=400)
+                mime = f.content_type or "application/octet-stream"
+                if not (mime.startswith("image/") or mime.startswith("video/")):
+                    return Response({"error": "Потрібна картинка або відео."}, status=400)
+                st = stylesvc.from_bytes(f.read(), mime, f"Референс: {f.name[:60]}")
+            elif src == "feed":
                 st = stylesvc.from_feed_item(get_object_or_404(FeedItem, pk=pk))
             elif src == "asset":
                 st = stylesvc.from_video_asset(get_object_or_404(SourceAsset, pk=pk, kind="video"))
@@ -1336,14 +1407,15 @@ class BlogBriefView(_Base):
 def _carousel(request, c):
     return {
         "id": c.id, "blog_id": c.blog_id, "topic": c.topic, "title": c.title, "caption": c.caption, "template": c.template,
-        "kind": c.kind, "funnel": c.funnel,
+        "kind": c.kind, "funnel": c.funnel, "published": c.published or {}, "can_publish": pubsvc.can_publish(c.blog),
         "status": c.status, "status_display": c.get_status_display(), "busy": c.busy, "error": c.error,
         "facts": c.facts, "created_at": _iso(c.created_at),
         "slides": [{"headline": s.get("headline", ""), "body": s.get("body", ""), "hint": s.get("hint", ""),
                     "image_kind": (s.get("image") or {}).get("kind", "none"),
                     "image_prompt": (s.get("image") or {}).get("prompt", ""), "pos": s.get("pos") or "auto", "has_prev": bool(s.get("prev")),
                     "has_image_prev": bool(s.get("image_prev")),
-                    "png_url": _link_url(request, s["rendered_id"]) if s.get("rendered_id") else ""} for s in c.slides],
+                    "png_url": _link_url(request, s["rendered_id"]) if s.get("rendered_id") else "",
+                    "tiktok_url": _link_url(request, s["tiktok_id"]) if s.get("tiktok_id") else ""} for s in c.slides],
     }
 
 
@@ -1422,7 +1494,7 @@ class CarouselView(_Base):
             return Response({"error": "Лише власник."}, status=403)
         from apps.inbox.models import SharedLink
         c = get_object_or_404(Carousel, pk=pk)
-        SharedLink.objects.filter(id__in=[s.get("rendered_id") for s in c.slides if s.get("rendered_id")]).delete()
+        SharedLink.objects.filter(id__in=[x for s in c.slides for x in (s.get("rendered_id"), s.get("tiktok_id")) if x]).delete()
         c.delete()
         return Response(status=204)
 
@@ -1436,6 +1508,26 @@ class CarouselView(_Base):
             except tgsvc.PublishError as e:
                 return Response({"error": str(e)}, status=400)
             return Response({"ok": True, "note": "Надіслано вам у Telegram альбомом."})
+        if action == "publish":  # незворотно — лише з підтвердженням
+            if (request.data or {}).get("confirm") is not True:
+                return Response({"error": "Потрібне підтвердження публікації."}, status=400)
+            if c.busy:
+                return Response({"error": "Карусель ще обробляється."}, status=409)
+            Carousel.objects.filter(pk=c.pk).update(busy=True, error="")
+
+            def work():
+                try:
+                    pubsvc.publish_carousel(Carousel.objects.get(pk=c.pk))
+                except Exception as e:
+                    Carousel.objects.filter(pk=c.pk).update(error=f"Публікація не вдалася: {str(e)[:250]}")
+                finally:
+                    Carousel.objects.filter(pk=c.pk).update(busy=False)
+            _bg(work)
+            return Response({"ok": True, "note": "Публікую в Instagram — до хвилини. Посилання зʼявиться тут."})
+        if action == "tiktok":  # версія 9:16 для TikTok — без ШІ, лише перемальовка
+            carsvc.render_tiktok(c)
+            c.refresh_from_db()
+            return Response({"ok": True, "note": "Версія 9:16 для TikTok готова — завантажуйте слайди нижче.", "carousel": _carousel(request, c)})
         if action == "text":  # лише текст: один слайд або всі; картинки лишаються
             data = request.data or {}
             if c.busy:

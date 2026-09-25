@@ -164,7 +164,8 @@ def candidates(material, limit=15, max_mb=60):
 
 PLAN_SYSTEM = """Ти монтажер коротких вертикальних роликів Wallcov (декоративні штукатурки, Україна). Аудиторія — жінки, які роблять ремонт самі.
 Зроби рилс 12–16 секунд на задану тему з ГОТОВИХ сцен (каталог нижче: id, секунди, що в кадрі, якість).
-Структура: 1) гачок ≤2,5 с — найкрасивіший кадр фактури + текст-питання; 2) 3–4 кадри з відповіддю; 3) останній кадр — заклик.
+Структура: 1) гачок ≤2,5 с — найкрасивіший кадр фактури + текст про БІЛЬ/ЗАПИТ клієнта його словами (не назва продукту);
+2) 3–4 кадри з відповіддю на цей біль; 3) останній кадр — заклик.
 Текст на екрані — українською, до 7 слів на кадр, просто, без жаргону. Пиши прямо й по-людськи, як говорить власник: факт → що робити. ЗАБОРОНЕНО шаблони на кшталт «Плануєш ремонт і не знаєш…», «Хочеш …, але боїшся/не знаєш…», «Мрієш про…», «А ти знала…», риторичні питання-пустушки й будь-які емодзі та смайли. Факти (цифри витрати, ціни, властивості) — ЛИШЕ з блоку
 «База знань»; якщо точної цифри немає — не пиши її, а запропонуй написати в Direct. Бери сцени з quality ≥3, не повторюй одну сцену.
 seconds кожного кадру не довше за довжину сцени. caption — підпис до рилса 2–4 речення без емодзі: конкретика про матеріал + заклик написати кодове слово в Direct.
@@ -212,13 +213,14 @@ def plan(topic, material, scenes, call=None, structure=None, blog=None):
 
 
 PLAN_TASK_BLOG = """Ти монтажер коротких вертикальних роликів. Зроби рилс 12–25 секунд на задану тему з ГОТОВИХ сцен (каталог нижче).
-Структура: гачок ≤2,5 с → 3–4 кадри по суті → фінал із закликом блогу. Текст на екрані до 7 слів на кадр.
+Структура: гачок ≤2,5 с (біль або запит глядача його словами, не назва продукту) → 3–4 кадри з відповіддю → фінал із закликом блогу.
+Текст на екрані до 7 слів на кадр.
 seconds кожного кадру не довше за довжину сцени; бери сцени з quality ≥3, не повторюй.
 checks — лише факти з тексту, які людина має звірити.
 Відповідай ЛИШЕ JSON: {"title":"...","caption":"...","beats":[{"text":"...","scene_id":123,"seconds":2.5}],"checks":["..."]}"""
 
 AI_PLAN_TASK = """Ти сценарист коротких вертикальних роликів. Власних відео немає — кожен кадр згенерує ШІ-художник за твоїм описом.
-Зроби ролик 12–25 секунд на задану тему: 4–6 кадрів. Кадр 1 — гачок ≤2,5 с; останній — заклик блогу.
+Зроби ролик 12–25 секунд на задану тему: 4–6 кадрів. Кадр 1 — гачок ≤2,5 с про біль/запит глядача (не назва продукту); останній — заклик блогу.
 text — текст на екрані до 7 слів. seconds — 2–5. image_prompt — опис кадру для художника до 300 символів (хто/що в кадрі, дія,
 ракурс, світло, стиль блогу; ті самі персонажі від кадру до кадру описуй однаково). Без тексту й літер у кадрі.
 caption — підпис 2–4 речення + заклик блогу. checks — факти, які людина має звірити.
@@ -332,8 +334,26 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
             f.write("".join(f"file '{s}'\n" for s in segs))
         _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", joined])
     final = os.path.join(folder, "reel.mp4")
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", joined, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-          "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", final])
+    vo = [(n, b["vo_id"]) for n, b in enumerate(p["beats"]) if b.get("vo_id")]
+    if vo:  # озвучка: кожна репліка стартує з початку свого кадру
+        starts, acc = [], 0.0
+        for n, b in enumerate(p["beats"]):
+            starts.append(acc)
+            acc += float(b["seconds"]) - (XFADE_SEC if n + 1 < len(p["beats"]) and trans[n + 1] else 0)
+        args, fc = ["ffmpeg", "-y", "-loglevel", "error", "-i", joined], []
+        for k, (n, link_id) in enumerate(vo):
+            path = os.path.join(folder, f"vo{n}.mp3")
+            with open(path, "wb") as f:
+                f.write(bytes(SharedLink.objects.get(pk=link_id).data))
+            args += ["-i", path]
+            ms = int(starts[n] * 1000) + 150
+            fc.append(f"[{k + 1}:a]adelay={ms}|{ms},aresample=44100[a{k}]")
+        fc.append("".join(f"[a{k}]" for k in range(len(vo))) + f"amix=inputs={len(vo)}:normalize=0,apad[aout]")
+        _run(args + ["-filter_complex", ";".join(fc), "-map", "0:v", "-map", "[aout]", "-shortest", "-c:v", "copy",
+                     "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", final])
+    else:
+        _run(["ffmpeg", "-y", "-loglevel", "error", "-i", joined, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+              "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", final])
     dur = float(_run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", final]).stdout.strip())
     with open(final, "rb") as f:
         return f.read(), dur
@@ -459,6 +479,7 @@ def _set_frame(reel, idx, data, mime, kind, prompt=""):
     if not b.get("orig_scene_id") and b.get("scene_id"):
         b["orig_scene_id"] = b["scene_id"]  # щоб можна було повернути справжній кадр
     b.update({"image_id": link.id, "ai": kind, "prompt": prompt[:600]})
+    b.pop("ok", None)  # новий кадр — треба затвердити знову
     beats = list(reel.beats)
     beats[idx] = b
     reel.beats = beats
@@ -475,15 +496,24 @@ def improve_frame(reel, idx):
     return _set_frame(reel, idx, out, omime, "improved", "покращено ШІ")
 
 
-def regenerate_frame(reel, idx, prompt):
+def regenerate_frame(reel, idx, prompt, draft=False):
     from . import aiimage
     prompt = (prompt or "").strip() or (reel.beats[idx].get("prompt") or reel.beats[idx].get("text") or reel.title)
-    if reel.blog and reel.blog.label_ai:  # Wallcov: нова сцена, але фактура — з поточного справжнього кадру
+    if draft and not (reel.blog and reel.blog.label_ai):  # чернетка безкоштовно (Cloudflare FLUX); якісно — Gemini
+        from . import freeai
+        free = freeai.cf_image(prompt, "9:16")
+        if free:
+            return _set_frame(reel, idx, free[0], free[1], "draft", prompt)
+    from .studio import _link_bytes, _texture
+    comp = _link_bytes(reel.beats[idx].get("ref_frame"))  # ремейк: ракурс із кадру референсу
+    if reel.blog and reel.blog.label_ai:  # Wallcov: нова сцена, але фактура — зі справжнього кадру або найкращого фото матеріалу
         from .material_specs import find_material
-        data, mime = aiimage.regenerate(prompt, reel.blog, texture=frame_bytes(reel, idx),
-                                        material=find_material(f"{reel.material} {reel.title}"))
+        b = reel.beats[idx]
+        texture = frame_bytes(reel, idx) if (b.get("scene_id") or b.get("image_id")) else _texture(reel)[0]
+        data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture,
+                                        material=find_material(f"{reel.material} {reel.title}"), composition=comp)
     else:
-        data, mime = aiimage.regenerate(prompt, reel.blog)
+        data, mime = aiimage.regenerate(prompt, reel.blog, composition=comp)
     return _set_frame(reel, idx, data, mime, "generated", prompt)
 
 
@@ -539,10 +569,35 @@ def backfill_thumbs(material, limit=200):
     return done
 
 
+def prepare_voice(reel):
+    """Озвучка голосом з brief.voice_id: репліка кадру = beat.say або текст на екрані. Перегенеровуємо лише змінені репліки."""
+    from . import aiimage, freeai
+    voice = (reel.brief or {}).get("voice_id")
+    beats, changed = [], False
+    for b in reel.beats:
+        b = dict(b)
+        say = (b.get("say_tts") or b.get("say") or b.get("text") or "").strip()  # say_tts — текст із виправленою вимовою
+        if not voice or not say:
+            if b.pop("vo_id", None):
+                changed = True
+            b.pop("vo_key", None)
+        elif b.get("vo_key") != f"{voice}|{say}":
+            mp3 = freeai.eleven_tts(say, voice)
+            if mp3:
+                b["vo_id"] = aiimage.save(mp3, "audio/mpeg", f"reel-{reel.id}-vo").id
+                b["vo_key"] = f"{voice}|{say}"
+                changed = True
+        beats.append(b)
+    if changed:
+        reel.beats = beats
+        reel.save(update_fields=["beats"])
+
+
 def rerender(reel):
-    """Перемонтувати рилс за відредагованими кадрами (без нових викликів ШІ)."""
+    """Перемонтувати рилс за відредагованими кадрами (без нових викликів ШІ; озвучка — лише змінені репліки)."""
     from secrets import token_urlsafe
     from apps.inbox.models import SharedLink
+    prepare_voice(reel)
     os.makedirs(WORK, exist_ok=True)
     folder = tempfile.mkdtemp(dir=WORK)
     try:

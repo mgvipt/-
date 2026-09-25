@@ -404,6 +404,7 @@ class ReelDraft(models.Model):
     stage = models.CharField(max_length=10, default="done", help_text="Крок майстра: idea/script/material/style/draft/review/done")
     brief = models.JSONField(default=dict, blank=True, help_text="Задум: title, hook, goal, why, shots, fit, source, structure референсу")
     review = models.JSONField(default=dict, blank=True, help_text="Висновки перевірки командою (SMM, монтажер, бренд)")
+    published = models.JSONField(default=dict, blank=True, help_text="{instagram: {id, permalink, at}, tiktok: {share_id, at}} — публікації з CRM")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -514,6 +515,7 @@ class Carousel(models.Model):
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
     error = models.CharField(max_length=300, blank=True)
     busy = models.BooleanField(default=False)
+    published = models.JSONField(default=dict, blank=True, help_text="{instagram: {id, permalink, at}} — публікація з CRM")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,0 +1,904 @@
+{
+ "мокрий шовк": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування та колірована фонова підкладка",
+     "tool": "Малярський валик із середнім ворсом",
+     "motion": "Вертикальні та W-подібні рухи валиком зверху вниз з легким натиском",
+     "coverage": "70% стіни вкриті вологим фоном, 30% — суха матова біла шпаклівка",
+     "wet_look": "Темніший вологий напівматовий шар фонової фарби під колір шовку з легким блиском від валикового рифлення",
+     "dry_look": "Рівна, абсолютно матова поверхня однакового відтінку без блиску та плям",
+     "prompt_en": "A close-up vertical 9:16 portrait photo of a painter using a paint roller to apply a wet, tinted background primer onto a dry white plastered wall, showing a sharp boundary between wet dark paint and dry wall."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення 1-го суцільного підкладкового шару шовку",
+     "tool": "Металева кельма з нержавіючої сталі або малярський валик",
+     "motion": "Тонкошарове протягування матеріалу «на здир» по всій площі",
+     "coverage": "80% стіни перекрито першим шаром шовку, видно вихоплювання з-під нього сухішого фону",
+     "wet_look": "Волога рівна перламутрова плівка із суцільним м'яким сатиновим відблиском під джерелом світла",
+     "dry_look": "Тонке гладке напівматове покриття з легким шовковистим відпливом",
+     "prompt_en": "A realistic vertical photo showing a craftsman applying the first thin layer of pearlescent wet silk paint with a stainless steel trowel over a smooth tinted wall."
+    },
+    {
+     "n": 3,
+     "stage": "Нанесення 2-го шару та формування візерунка «вісімка»",
+     "tool": "Пластикова або металева венеціанська кельма під кутом 10–15°",
+     "motion": "Легкі колові рухи та вісімки з мінімальним натиском по підв'яленому матеріалу",
+     "coverage": "Активна робоча зона 50-70% вологого шару, поруч видно висохлий 1-й шар",
+     "wet_look": "Об'ємні вологі перламутрові розводи з яскравим рідким відблиском, що змінюють напрямок світла",
+     "dry_look": "М'який сатиновий візерунок з ефектом переливу тканини та глибоким світлотіньовим ефектом",
+     "prompt_en": "Macro 9:16 photo of a plastic trowel held at a low 15-degree angle creating circular velvet-like wet silk patterns on a glossy wet decorative plaster wall under bright studio lighting."
+    }
+   ],
+   "physics": [
+    "Свіжий вологий шар декоративної фарби завжди темніший, має глянцевий/рідкий відблиск під світлом та виражений рельєф від інструменту.",
+    "Перламутровий ефект переливу та шовковий малюнок проявляються ЛИШЕ після формування орієнтації частинок кельмою/пензлем по вологому шару.",
+    "На межі нанесеної ділянки завжди видно контраст: суха матова підкладка проти вологого блискучого штукатурного шару.",
+    "Формування візерунка виконується інструментом, притиснутим під гострим кутом (10–20°) до поверхні."
+   ],
+   "never": [
+    "Малювати сухий фінішний шовковий візерунок безпосередньо під інструментом без вологого глянцевого блиску.",
+    "Зображувати нанесення прозорого шовку на сиру незаґрунтовану шпаклівку чи бетон без фонової кольорової підкладки.",
+    "Тримати кельму під перпендикулярним кутом 90° під час формування хаотичного чи колового малюнка.",
+    "Показувати використання будівельного шпателя чи зубчастого шпателя замість гладкої венеціанської кельми або пластикової терки."
+   ],
+   "finish": "Безшовна декоративна поверхня з м'яким сатиновим сяйвом та вишуканим перламутровим переливом, що імітує натягнутий мокрий шовк або оксамит і змінює відтінок залежно від кута зору.",
+   "summary_uk": "Майстер-промт базується на триетапній технології нанесення декоративного покриття «мокрий шовк» з обов'язковим колірованим фоном. AI-генерація гарантує фотореалізм за рахунок суворого дотримання фізики відбиття світла від вологого перламутру та правильного кута утримання спеціалізованого інструменту."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/msEMaIqWVo8",
+    "title": "Китайський шовк IRCOM DECOR найпопулярніші техніки нанесення"
+   },
+   {
+    "video": "https://youtu.be/CKTReDp4uyo",
+    "title": "Найкраща техніка нанесення китайського шовку. Китайський шовк. Декоративна фарба."
+   },
+   {
+    "video": "https://youtu.be/R6yqHRwpZhg",
+    "title": "Штукатурка мокрий шовк • техніка нанесення"
+   }
+  ]
+ },
+ "мермі шовк": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Етап 1: Підкладка (базовий колір). Інструмент: малярний валик і пензель для кутів. Рух: вертикальні та перехресні рухи без сильного натиску. Покриття: 100% площі стіни. Мокре: вологий матовий шар кольорової фарби. Сухе: рівна матова зафарбована поверхня. Поруч видно білу шпакльовану основу.",
+     "prompt_en": "A vertical 9:16 photorealistic image of a painter using a paint roller to apply an even matte tinted wall primer coat over a smooth white plastered wall."
+    },
+    {
+     "n": 2,
+     "stage": "Етап 2: Перший базовий шар шовку. Інструмент: валик з коротким ворсом або металева гладилка. Рух: суцільні або хаотичні розтяжки матеріалу. Покриття: поступове заповнення всієї стіни. Мокре: вологий напівглянцевий шар із легким перламутровим відблиском. Сухе: тонке тонке сатинове покриття, що злегка просвічує кольорову підкладку.",
+     "prompt_en": "A 9:16 close-up photorealistic shot of a small roller applying a thin semi-gloss iridescent liquid silk layer onto a dry matte tinted background wall."
+    },
+    {
+     "n": 3,
+     "stage": "Етап 3: Другий шар та формування малюнка «мокрий шовк». Інструмент: венеціанська кельма з нержавіючої сталі під кутом 10–15 градусів. Рух: короткі вісімкоподібні та кругові прогладжування. Покриття: ділянками по 1–2 кв.м. Мокре: густий блискучий шар із вираженим візерунком жатого шовку. Сухе (поруч): оксамитова текстура з глибоким перламутровим переливом.",
+     "prompt_en": "A close-up 9:16 action shot of a stainless steel Venetian trowel sliding at a low angle over wet metallic silk plaster, creating crushed silk textures under directional side lighting."
+    }
+   ],
+   "physics": [
+    "Свіжий вологий шар матеріалу завжди темніший і має виражений блиск порівняно з підсохлою або сухою ділянкою.",
+    "Межа нанесеної вологої ділянки чітко помітна на тлі сухого попереднього шару.",
+    "Інструмент (кельма) під час роботи завжди знаходиться у контакті з сирим перламутровим матеріалом.",
+    "Перламутровий рельєф і переливи світла формуються лише при фізичному зсуві мокрого штукатурного шару кельмою під боковим світлом."
+   ],
+   "never": [
+    "Ізображення малювання шовкового візерунка пензлем замість протяжок металевою кельмою.",
+    "Нанесення декоративного шовку безпосередньо на неокрашену білу шпаклівку без кольорової підкладки.",
+    "Формування рельєфу або притискання кельмою по повністю сухому шару штукатурки без додавання свіжого матеріалу."
+   ],
+   "finish": "Рівна оксамитова поверхня з делікатним сатиновим сяйвом та ефектом переливаючого мокрого шовку, яка змінює глибину відтінку залежно від кута огляду та освітлення.",
+   "summary_uk": "Технологія нанесення «мокрого шовку» складається з підготовки матової кольорової бази, створення перламутрового підкладкового шару та формування фінішного візерунка. Ключовий декоративний ефект жатої тканини утворюється рухом венеціанської кельми виключно по сирому другому шару. Готове покриття має оксамитову структуру із сатиновим переливом світла."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/H-VM9wkWlsE",
+    "title": "Как Наносить ШЁЛК на Стену"
+   }
+  ]
+ },
+ "галатея": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування основи (Wallcov Primer Deep)",
+     "prompt_en": "Vertical 9:16 frame, close-up of a hand rolling deep-penetrating primer with a medium-nap roller from bottom to top on a dry light gray puttied wall, wet glossy streaks merging with smooth matte background, direct light beam highlighting texture."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення фонової фарби (Підкладка)",
+     "prompt_en": "Vertical 9:16 shot, medium view of a decorator applying rich colored latex paint with a roller in vertical passes, 60% of the primed wall covered, clear boundary between wet shiny painted area and dry matte gray wall."
+    },
+    {
+     "n": 3,
+     "stage": "Перше перламутрове нанесення «Галатея»",
+     "prompt_en": "Vertical 9:16 macro shot, hand holding a broad block brush at a 45-degree angle, applying thick pearlescent Galateya material in short criss-cross strokes, thick wet gel-like texture with visible bristle marks over a fully dried colored background paint."
+    },
+    {
+     "n": 4,
+     "stage": "Розрівнювання та створення візерунку «Мокрий шовк»",
+     "prompt_en": "Vertical 9:16 extreme close-up, semi-dry broad brush gently spreading pearlescent glass microspheres in circular chaotic motions, wet glossy swirl highlights forming a soft silk fabric pattern alongside partially dried satin areas."
+    },
+    {
+     "n": 5,
+     "stage": "Фінішне безвагоме прасування",
+     "prompt_en": "Vertical 9:16 shot, lightweight dry brush lightly touching the setting pearlescent layer under grazing side light, revealing a refined velvet-silk shimmer with delicate light reflections across the entire wall section."
+    }
+   ],
+   "physics": [
+    "Свіжопокрита ділянка завжди темніша та має виражений мокрий/глянцевий блиск, а висихаючи стає світлішою і набуває м'якого сатинового сяйва.",
+    "Межа між нанесеним матеріалом та висохлою фоновою фарбою чітко помітна за фактурою і відблиском.",
+    "Інструмент в руці завжди контактує з поверхнею під кутом (30–45° для пензля, вертикально для валика), ворс пензля деформується від натиску.",
+    "Ґрунтування виконується знизу вгору для запобігання потьокам."
+   ],
+   "never": [
+    "Малювати нанесення «Галатея» металевою кельмою чи шпателем замість широкої макловиці/пензля.",
+    "Показувати нанесення декоративного шару прямо по голій сірій бетонній стіні без кольорової фонової фарби.",
+    "Зображувати потьоки або краплі густого желеподібного матеріалу.",
+    "Створювати шовковий візерунок сухим пензлем на повністю висихлій поверхні без вологої фази.",
+    "Тримати інструмент за робочу частину (ворс/циліндр) замість рукоятки."
+   ],
+   "finish": "Ідеально рівна декоративна поверхня з ефектом «мокрий шовк», яка має м'яке сатинове сяйво, хаотичний оксамитовий малюнок та глибину кольору, що витончено змінює відтінок залежно від кута освітлення.",
+   "summary_uk": "Майстер-промт побудований на суворому дотриманні технологічного ланцюжка: від проґрунтованої основи до фінішного прасування макловицею. Фізика кадрів вимагає обов'язкового відображення вологого блиску, правильного хвату інструменту та шаруватості (видимість кольорового фону). Заборони повністю виключають нетехнологічні інструменти та відсутність підготовчих шарів."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/9OqEGiyCftg",
+    "title": "Декоративна штукатурка яку може зробити кожен. Найпростіший в нанесенні матеріал MAZANKA Spark Shine"
+   },
+   {
+    "video": "https://youtu.be/oYLrzdajycI",
+    "title": "Неповторимый узор в технике Сахара. Декорирование комнаты. Декоративная краска Feida, Sand Farba."
+   },
+   {
+    "video": "https://youtu.be/ZDw5fgSJass",
+    "title": "Декоративная КРАСКА с ПЕСКОМ 5 простых ТЕХНИК нанесения. Декоративная штукатурка. Мастер Стен. DIY"
+   }
+  ]
+ },
+ "вельвет люкс": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування кварц-ґрунтом Quartz Primer 2",
+     "prompt_en": "Vertical 9:16 ultra-realistic photo of a craftsman using a medium-nap roller to apply white Quartz Primer 2 onto a clean grey spackled wall, leaving a damp wet-glistening coverage while 30 percent of raw grey wall is still visible."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення першого базового шару Velvet Lux (суцільне укриття)",
+     "prompt_en": "Close-up 9:16 realistic photo of a stainless steel Venetian trowel spreading a thin continuous layer of dark pearlescent Velvet Lux plaster over a dry white primed wall, showing wet glossy material at 15 degree trowel angle."
+    },
+    {
+     "n": 3,
+     "stage": "Формування фактурного оксамитового малюнка (другий шар)",
+     "prompt_en": "Macro 9:16 shot of a Venetian trowel creating figure-eight cross strokes on wet pearlescent Velvet Lux plaster, highlighting dramatic sheen transitions and soft velvet metallic texture under side illumination."
+    }
+   ],
+   "physics": [
+    "Свіжонанесений або перетиснутий кельмою шар завжди має вологий глянець і темніший відтінок, ніж висохлий.",
+    "Перламутровий перелив створюється орієнтацією мікрочастинок під тиском площини кельми, а не малюванням пензлем.",
+    "Межа між сирим покриттям і висохлим базовим шаром чітко помітна за блиском та насиченістю кольору.",
+    "Неможливо сформувати оксамитовий візерунок по сухій поверхні без додавання нового вологого шару."
+   ],
+   "never": [
+    "Малювати оксамитову фактуру пензлем або поролоновим валиком.",
+    "Показувати абсолютно матову суху поверхню в момент торкання кельмою.",
+    "Наносити матеріали на незашпакльовану, непідготовлену сіру цеглу чи бетон без ґрунту.",
+    "Залишати грубі товсті гребені та напливи штукатурки замість витонченої фактури."
+   ],
+   "finish": "Безшовне розкішне декоративне покриття з фактурним оксамитово-мармуровим ефектом, що м'яко переливається перламутром і змінює колірні відтінки при зміні кута огляду та освітлення.",
+   "summary_uk": "Майстер-промт описує покроковий технологічний процес нанесення матеріалу Velvet Lux для генерації фотореалістичних вертикальних кадрів 9:16. Головний акцент зроблено на правильному інструменті (кельма), фізиці світла на сирому перламутрі та послідовному перекритті шарів. Промт повністю виключає типові помилки ШІ, такі як малювання візерунка пензлем чи миттєве висихання штукатурки."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/cbDhchMQUnY",
+    "title": "Мастер класс по нанесению декоративной краски «Velvet Dekor» от Назара Мельника"
+   },
+   {
+    "video": "https://youtu.be/ouaKzyatlZo",
+    "title": "Шелковая краска Вельвет декор тип - &quot;Отточенто&quot;, тенника нанесения &quot;сфумато&quot;"
+   },
+   {
+    "video": "https://youtu.be/7kh1QzUoNDc",
+    "title": "Декоративная краска шелк от DESSA DECOR - инструкция по нанесению"
+   }
+  ]
+ },
+ "вельвет луна": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування та створення фону грунтом Fondo Decoro",
+     "prompt_en": "A realistic vertical 9:16 photo of a painter using a short-pile roller to apply smooth colored Fondo Decoro base coat onto a wall, showing the wet glossy painted area contrasting with the dry matte primed surface."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення першого фонового шару Velvet Luna на сдир",
+     "prompt_en": "Close-up 9:16 shot of a stainless steel venetian trowel holding thin tinted Velvet Luna plaster at a 15-degree angle, scraping a super-thin wet metallic layer flat onto the dry Fondo Decoro base."
+    },
+    {
+     "n": 3,
+     "stage": "Нанесення другого шару та формування малюнка «вісімками»",
+     "prompt_en": "Macro 9:16 image of a hand moving a plastic trowel in figure-eight patterns over fresh wet Velvet Luna plaster, creating glossy pearl swirls and metallic light reflections under side raking light."
+    },
+    {
+     "n": 4,
+     "stage": "Підгладжування підсихаючого шару для оксамитового переливу",
+     "prompt_en": "Vertical 9:16 close-up of a clean trowel lightly flattening the semi-dry Velvet Luna surface, transforming wet shine into a smooth silky metallic velvet effect with soft highlights and dark shadows."
+    }
+   ],
+   "physics": [
+    "Свіжопокрита ділянка завжди волога, темніша та має яскравий глянець, тоді як висохла — напівматова із шовковистим відблиском.",
+    "Перламутровий візерунок вельвету формується лише під час загладжування вологого/підсихаючого матеріалу кельмою під кутом 5–15 градусів.",
+    "Ефект «мокрого шовку» проявляється завдяки орієнтації пігменту від напрямку руху інструменту та грає світлотінню під бічним скользячим світлом."
+   ],
+   "never": [
+    "Наносити Velvet Luna пензлем або звичайним малярним валиком без подальшого загладжування кельмою чи пластиковою шайбою.",
+    "Малювати високий грубий рельеф штукатурки (типу «короїд» або «карта світу») — покриття є гладким та тонкошаровим.",
+    "Зображувати нанесення декоративного шару безпосередньо на сірий бетон або шпаклівку без кольорової підкладки Fondo Decoro."
+   ],
+   "finish": "Ідеально гладка на дотик, безшовна шовковисто-оксамитова поверхня з глибоким ефектом «мокрого вельвету», яка витончено змінює відтінок і перламутрові переливи від світлого до темно-тонованого залежно від кута огляду та освітлення.",
+   "summary_uk": "Майстер-промт описує покроковий технологічний процес нанесення декоративного покриття «Вельвет Луна» з використанням спеціалізованої підкладки Fondo Decoro та венеціанської кельми. Усі кадри згенеровано у вертикальному форматі 9:16 з чітким дотриманням фізики підсихання перламутрового пігменту та скользячого світла. Промт повністю виключає використання невідповідного інструменту та некоректного рельєфу."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/GMvVX3_sBLk",
+    "title": "Maagdecor (Luna - мокрый шелк) Техника нанесения"
+   },
+   {
+    "video": "https://youtu.be/sNoJBae79P4",
+    "title": "Velvet Dekor тонкости и нюансы нанесения от Home_Art_Odessa!"
+   },
+   {
+    "video": "https://youtu.be/KZfo0FzUDLM",
+    "title": "Velvet Dekor, декоративна фарба з ефектом оксамиту! FEIDAL!"
+   }
+  ]
+ },
+ "патера": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування основи (кварц-ґрунт)",
+     "prompt_en": "Close-up 9:16 vertical shot of a painter rolling white quartz primer onto a wall from bottom to top with a short-nap roller, leaving a textured sandy surface."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення штукатурної маси Pattera",
+     "prompt_en": "Medium shot 9:16 of a craftsman using a stainless steel Venetian trowel at a 15-degree angle to apply thick beige stone plaster paste over a white quartz-primed wall."
+    },
+    {
+     "n": 3,
+     "stage": "Формування кам'яної фактури (відтиск/прилипання)",
+     "prompt_en": "Close-up 9:16 action shot of a Venetian trowel pressing flat against wet plaster and lifting away to create raised textured islands and stone pit caverns."
+    },
+    {
+     "n": 4,
+     "stage": "Ущільнення та згладжування вершин",
+     "prompt_en": "Macro 9:16 shot of a clean metal trowel gently flattening wet plaster peaks on a misted wall, revealing smooth flat tops with deep unpolished stone crevices."
+    },
+    {
+     "n": 5,
+     "stage": "Захисне лакування / воскування",
+     "prompt_en": "Vertical 9:16 photorealistic shot of a paint roller applying a thin semi-transparent glaze over the fully textured dry stone wall, adding a subtle wet satin sheen."
+    }
+   ],
+   "physics": [
+    "Свіжий матеріал завжди має вологий відблиск і є темнішим за повністю висохлу штукатурку.",
+    "Межа нанесеної ділянки чітко видно порівняно з попереднім ґрунтованим або порожнім шаром.",
+    "Інструмент (кельма або валик) під час нанесення контактує зі стіною і містить залишки сирого матеріалу.",
+    "Формування та згладжування фактури виконується тільки по мокрому або зволоженому матеріалу."
+   ],
+   "never": [
+    "Глянцевий або дзеркальний відблиск на сирій матовій штукатурці без етапу полірування.",
+    "Використання пензлів замість металевої або пластикової кельми для нанесення штукатурки Pattera.",
+    "Нанесення фактури на суху незаґрунтовану поверхню або сухе розгладжування висохлого матеріалу.",
+    "Помилкова відсутність кварцового піску у підготовчому ґрунтувальному шарі."
+   ],
+   "finish": "Монолітна мінеральна поверхня з фактурою натурального дикого каменю або травертину, що поєднує гладкі ущільнені верхівки з глибокими матовими кавернами та захищена сатиновим лаком.",
+   "summary_uk": "Майстер-промт розроблено на основі технологічних карт нанесення штукатурки Pattera з урахуванням фізики висихання матеріалу. Алгоритм описує послідовну трансформацію стіни від кварцового ґрунту до фактурного ущільнення кельмою. Промти орієнтовані на вертикальний фотореалістичний формат 9:16 із точним відображенням інструментарію."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/McBHyBC0TMs",
+    "title": "Трендова матова декоративна штукатурка"
+   },
+   {
+    "video": "https://youtu.be/i1eaR__Aijg",
+    "title": "Отделка стен &quot;КОРОЕДОМ&quot;.  Прочная декоративная штукатурка!"
+   },
+   {
+    "video": "https://youtu.be/U_M1PgLkAig",
+    "title": "ЧУДО ДЕКОР ИЗ ОБЫЧНОЙ ШПАКЛЕВКИ от А до Я ! ДЕКОРАТИВНАЯ ШТУКАТУРКА СВОИМИ РУКАМИ"
+   }
+  ]
+ },
+ "піски": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування поверхні (Wallcov Primer Deep)",
+     "prompt_en": "Vertical 9:16 macro photograph of a painter applying transparent acrylic primer to an eggshell-smooth plastered wall using a microfiber roller moving from bottom to top, wet glossy film visible on the lower half while the top shows dry matte smooth putty, well-lit realistic construction setting."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення фонової підкладкової фарби",
+     "prompt_en": "Vertical 9:16 photo of a worker using a short-pile 4mm velour roller to apply rich matte background paint in W-shaped motions, showing wet darker paint with subtle roller texture adjacent to completely dry smooth wall background."
+    },
+    {
+     "n": 3,
+     "stage": "Нанесення першого декоративного шару з піском",
+     "prompt_en": "Extreme close-up 9:16 shot of a wide flat brush held at a 35-degree angle creating diagonal wet strokes of pearlescent sand paint over a matte background, showing visible clusters of wet quartz sand particles glistening under side light."
+    },
+    {
+     "n": 4,
+     "stage": "Формування малюнка та группіровка піщаних гранул",
+     "prompt_en": "Vertical 9:16 macro photo of a dry flat brush lightly touching wet pearlescent decorative paint, arranging quartz sand grains into soft wave-like dunes and islands, illuminated by side rake lighting showing depth and wet sheen."
+    }
+   ],
+   "physics": [
+    "Свіжий (вологий) шар завжди темніший за висохлий і має відчутний вологий відблиск.",
+    "Межа між нанесеним матеріалом та сухою основою/попереднім шаром чітко помітна.",
+    "Інструмент (пензель або валик) під час руху завжди контактує з матеріалом і залишає слід відповідної форми.",
+    "Кварцові піщані гранули групуються тільки вздовж траєкторії руху пензля, створюючи рельєф, і не можуть розгладжуватися металевою кельмою до глянцю."
+   ],
+   "never": [
+    "Зображувати нанесення ґрунту із патьоками та краплями, що стікають вниз.",
+    "Малювати суху фінішну текстуру безпосередньо під рухомим вологим інструментом.",
+    "Зображувати нанесення піщаної фарби за допомогою стандартного валика замість пензля чи губки.",
+    "Показувати абсолютно гладку або дзеркально-глянцеву поверхню для піщаного покриття."
+   ],
+   "finish": "Готове декоративне покриття має вигляд вишуканого шовковисто-перламутрового полотна з об'ємним ефектом піщаних дюн або вітряних барханів, де кварцові гранули м'яко мерехтять під боковим світлом.",
+   "summary_uk": "Майстер-промт розроблено на основі технологічних вимог бази знань Wallcov та детального розбору нанесення піщаних декоративних покриттів. Він описує послідовну зміну стану поверхні від підготовки основи до формування кварцового рельєфу. Виконання фізичних правил та заборон гарантує фотореалістичний результат без типових помилок ШІ-генерації."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/yW5wD9pohIk",
+    "title": "Декоративная КРАСКА с ПЕСКОМ - СПОСОБЫ нанесения! Decorative paint with sand"
+   },
+   {
+    "video": "https://youtu.be/VecOYwkwuac",
+    "title": "Песок перламутровый"
+   },
+   {
+    "video": "https://youtu.be/QjNJPZQjtIs",
+    "title": "Детальный пошаговый мастер класс по нанесению Sand Farbe FEIDAL!"
+   }
+  ]
+ },
+ "мікроцемент": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування основи (Wallcov Primer Deep)",
+     "prompt_en": "Vertical 9:16 photorealistic close-up of a worker applying liquid deep primer with a short-pile micro-fiber roller moving bottom-to-top on a clean wall, showing dark damp damp-look trail next to dry dusty drywall."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення кварц-ґрунту (Fondo / Streichputz)",
+     "prompt_en": "Professional craftsman using a steel trowel at a 20-degree angle applying a thick grainy quartz primer, leaving a wet white sand texture over the dry primed base."
+    },
+    {
+     "n": 3,
+     "stage": "Перший базовий шар мікроцементу",
+     "prompt_en": "A close-up shot of a stainless steel Venetian trowel spreading smooth wet dark gray microcement plaster in arc motions, revealing a sharp contrast with the gritty dry quartz primer."
+    },
+    {
+     "n": 4,
+     "stage": "Другий шар та ущільнення (створення малюнка бетону)",
+     "prompt_en": "Close-up photo of a Venetian trowel flattening the second layer of wet microcement, creating glossy burnished streaks and dark stone texture highlights."
+    },
+    {
+     "n": 5,
+     "stage": "Шліфування та знепилення сухого шару",
+     "prompt_en": "Vertical photo of an orbital sander polishing a fully dry light gray microcement wall, revealing smooth natural stone veins and subtle matte contrast."
+    },
+    {
+     "n": 6,
+     "stage": "Захисне лакування (двокомпонентний PU-лак)",
+     "prompt_en": "A worker applying clear liquid polyurethane varnish with a 4mm short-pile velour roller onto dry microcement, creating a glossy wet highlight streak under side lighting."
+    }
+   ],
+   "physics": [
+    "Свіжий вологий шар мікроцементу та лаку завжди темніший за сухий і має виражений глянцевий або вологий відблиск під світлом.",
+    "Ґрунтування виконується знизу вгору для запобігання потьокам; будь-які потьоки одразу розкочуються валиком.",
+    "Шліфування можливе тільки по повністю сухому шару; волога штукатурка забиває абразив і не шліфується.",
+    "Виразно видно межу розділу шарів: суха основа -> шорсткий кварц-ґрунт -> мокрий темно-сірий мікроцемент."
+   ],
+   "never": [
+    "Заборонено зображувати малювання рідкого мікроцементу м'яким малярним пензлем замість металевої кельми.",
+    "Заборонено показувати суху матову поверхню безпосередньо під лезом кельми чи валиком у момент нанесення.",
+    "Заборонено поєднувати пил від шліфування та вологий блиск свіжого лаку в одному кадрі.",
+    "Заборонено наносити другий шар штукатурки або лак на сирий попередній шар."
+   ],
+   "finish": "Безшовне, гладке на дотик водонепроникне декоративне покриття з фактурою бетону/натурального каменю, вираженими глибинними прожилками та захисним шовковисто-матовим лаком.",
+   "summary_uk": "Майстер-промт повністю описує поетапний технологічний процес нанесення мікроцементу згідно з регламентом бази знань та фізикою матеріалів. Усі кадри зберігають сувору логіку відмінності мокрих і сухих текстур, вірні кути інструментів та відсутність технологічних помилок."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/PjbIoDCdB_E",
+    "title": "Мікроцемент/Mikrozement, як правильно зробити ідеальний декор для стін ванної кімнати!"
+   },
+   {
+    "video": "https://youtu.be/IjjHd5MNtso",
+    "title": "UA | Декоративна штукатурка MARMORINO від TM Daricco. Докладний відеоурок по нанесенню."
+   },
+   {
+    "video": "https://youtu.be/g9yNMqcAr-A",
+    "title": "Що робити якщо набридла плитка у ванній кімнаті. Декор мікроцементом в ванній!"
+   }
+  ]
+ },
+ "міо глос": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування основи",
+     "prompt_en": "Vertical 9:16 photo, close-up of a hand rolling deep penetration primer onto a smooth wall from bottom to top with a short-pile roller, showing wet satin sheen on primed area next to dry matte wall."
+    },
+    {
+     "n": 2,
+     "stage": "Створення фактури «карта світу»",
+     "prompt_en": "Vertical 9:16 photo, close-up of a Venetian trowel applying grey plaster in multi-directional dab-and-pull motions, creating wet textured islands on the wall."
+    },
+    {
+     "n": 3,
+     "stage": "Зволоження та пригладжування",
+     "prompt_en": "Vertical 9:16 photo, close-up of a clean metal trowel smoothing wet spritzed plaster peaks at a low angle, flattening tops while leaving recesses textured."
+    },
+    {
+     "n": 4,
+     "stage": "Нанесення чорної бази",
+     "prompt_en": "Vertical 9:16 photo, medium shot of a paint roller applying deep black paint over dry grey plaster texture, showing wet glossy black paint covering the relief."
+    },
+    {
+     "n": 5,
+     "stage": "Згоняння срібного воску",
+     "prompt_en": "Vertical 9:16 photo, macro shot of a rubber squeegee scraping silver wax off the raised peaks at 45 degrees, revealing black tops and silver recesses."
+    },
+    {
+     "n": 6,
+     "stage": "Тонування вершин губкою",
+     "prompt_en": "Vertical 9:16 photo, extreme close-up of a cellulose sponge lightly touching high peaks of the texture with black paint, keeping recesses silver."
+    },
+    {
+     "n": 7,
+     "stage": "Нанесення глянцевого лаку",
+     "prompt_en": "Vertical 9:16 photo, close-up of a roller applying a whitish-blueish wet clear coat over the black and silver textured wall."
+    },
+    {
+     "n": 8,
+     "stage": "Полірування висушеного лаку",
+     "prompt_en": "Vertical 9:16 photo, close-up of an orbital random sander polishing a dry, crystal-clear, mirror-gloss decorative wall with crisp light reflections."
+    }
+   ],
+   "physics": [
+    "Свіжий шар лаку має блакитно-білястий відтінок і стає повністю прозорим лише після висихання.",
+    "Межа нанесеної ділянки чітко видно за блиском та відтінком порівняно з сухою основою.",
+    "Інструмент у кадрі завжди містить робочий матеріал і тримається під технологічно правильним кутом.",
+    "Ґрунтування виконується знизу вгору, а полірування проводиться тільки по повністю сухому лаку."
+   ],
+   "never": [
+    "Показувати прозорий дзеркальний глянець безпосередньо під валиком під час нанесення мокрого лаку.",
+    "Малювати суцільний срібний віск без проявлених чорних вершин після використання скребка.",
+    "Допускати затікання чорної фарби з губки в заглиблення рельєфу.",
+    "Застосовувати шліфмашину на вологому або сирому покритті."
+   ],
+   "finish": "Покриття «Mio Gloss»: глибока фактура «карта світу» з контрастними матово-чорними вершинами та сяючими сріблясто-перламутровими заглибленнями під дзеркально-полірованим, ідеально гладким прозорим лаком.",
+   "summary_uk": "Майстер-промт описує покроковий процес створення покриття «Міо Глос» від підготовки основи до підсумкового полірування. Логіка генерації базується на чіткому розрізненні мокрого та сухого стану матеріалів і суворих технологічних обмеженнях."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/U_M1PgLkAig",
+    "title": "ЧУДО ДЕКОР ИЗ ОБЫЧНОЙ ШПАКЛЕВКИ от А до Я ! ДЕКОРАТИВНАЯ ШТУКАТУРКА СВОИМИ РУКАМИ"
+   }
+  ]
+ },
+ "елеганті": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування поверхні (Wallcov Primer Deep)",
+     "prompt_en": "A vertical 9:16 close-up photograph of a painter's gloved hand using a short-pile roller to apply clear primer onto a smooth white primed drywall wall from bottom to top, leaving a slightly damp sheen on half the wall while the rest remains dry matte."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення фонового шару фарби-підкладки",
+     "prompt_en": "Vertical 9:16 photo of a short-pile velour roller applying smooth beige background paint over a primed wall, showing wet glossy paint strip adjacent to the dry matte primed surface."
+    },
+    {
+     "n": 3,
+     "stage": "Нанесення першого шару «мокрого шовку» (Eleganti)",
+     "prompt_en": "Close-up 9:16 photograph of a Venetian trowel held at a 20-degree angle spreading a thin wet layer of beige decorative silk plaster with metallic satin shine over a dry matte beige background wall."
+    },
+    {
+     "n": 4,
+     "stage": "Створення шовкового візерунка (вісімки/кругові рухи)",
+     "prompt_en": "Macro 9:16 photograph of a stainless steel Venetian trowel making subtle figure-eight movements on a wet silk plaster coating, creating light-reflecting silky patterns and pearlescent highlights."
+    }
+   ],
+   "physics": [
+    "Свіжий мокрий шар декоративного матеріалу завжди темніший, має вологий глянець або сатиновий блиск і чітку межу нанесення.",
+    "Сухий шар підкладки або ґрунту повністю матовий і виглядає світлішим за мокрий матеріал.",
+    "Декоративний ефект мокрого шовку виникає лише від руху металевої кельми по сирому матеріалу, а не сам по собі.",
+    "Інструмент (кельма/валик) обов'язково торкається стіни і містить сліди робочого матеріалу."
+   ],
+   "never": [
+    "Позиціонування сухого готового шовкового покриття безпосередньо під рухомим валиком чи кельмою.",
+    "Нанесення декоративного покриття на незаґрунтовану голу бетоновану чи цегляну стіну без фонової фарби.",
+    "Відсутність інструмента в руках майстра або висіння інструмента в повітрі окремо від поверхні.",
+    "Наявність крапель, потьоків або занадто товстого рельєфного шару для шовкових покриттів (шовк лягає тонко)."
+   ],
+   "finish": "Гладке, безшовне елітне покриття з ефектом «мокрого шовку»: делікатне сатинове сяйво, м'які переливи світла та перламутрова глибина на шовковисто-бежевому тлі.",
+   "summary_uk": "Майстер-промт охоплює повний технологічний цикл нанесення покриття «елеганті» (мокрий шовк) від рівномірного ґрунтування до фінального формування візерунка кельмою. Всі кадри контролюють фізику матеріалу — контраст між вологим сяючим шаром та сухою матовою основою. Промти адаптовані під формат 9:16 та забезпечують максимальну фотореалістичність процесів."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/7Q7HdCfl_44",
+    "title": "Обзор структурных валиков. нанесение декоративной штукатурки валиком. штукатурка шуба из клея."
+   },
+   {
+    "video": "https://youtu.be/ktxguz64eLw",
+    "title": "Простейший способ нанесения декоративной штукатурки с помощью пленки."
+   },
+   {
+    "video": "https://youtu.be/qnzCXaoOI6g",
+    "title": "Нанесение декоративной штукатурки. Карта мира своими руками"
+   }
+  ]
+ },
+ "слейт / арт-бетон": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування основи (Wallcov Primer Deep)",
+     "prompt_en": "Vertical photo shot 9:16 of a master using a short-pile roller moving bottom-up to apply transparent quartz primer over a dry white putty wall, no drips visible."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення першого базового шару арт-бетону",
+     "prompt_en": "Vertical photo shot 9:16 of a stainless steel Venetian trowel spreading a thin wet dark-grey plaster layer over a primed white wall at a 20-degree angle."
+    },
+    {
+     "n": 3,
+     "stage": "Формування рельєфу та каверн (другий шар)",
+     "prompt_en": "Vertical photo shot 9:16 of a Venetian trowel pulling away from wet dark-grey concrete plaster creating torn cavernous textures and craters on the wall."
+    },
+    {
+     "n": 4,
+     "stage": "Затирання та ущільнення (железнение)",
+     "prompt_en": "Vertical photo shot 9:16 close-up of a stainless steel trowel smoothing down wet concrete plaster peaks, making elevated spots glossy dark grey while pits stay matte."
+    },
+    {
+     "n": 5,
+     "stage": "Фінішне захисне лакування",
+     "prompt_en": "Vertical photo shot 9:16 of a short-pile foam roller applying transparent wet protective varnish over a fully dried grey concrete-textured decorative wall under side light."
+    }
+   ],
+   "physics": [
+    "Свіжий вологий шар штукатурки завжди темніший і має глянець порівняно з сухим матовим світло-сірим шаром.",
+    "Ґрунтування виконується знизу вгору для запобігання потьокам, які псують фінішну фактуру.",
+    "Формування рельєфу та загладження можливі тільки по сирому/підв'яленому матеріалу, а лакування — лише після повного висихання."
+   ],
+   "never": [
+    "Малювання готового сухого малюнка бетону інструментом без наявності мокрої сірої маси.",
+    "Потьоки та краплі ґрунтовки на стіні.",
+    "Використання пензля або малярного валика для формування рельєфних каверн бетону."
+   ],
+   "finish": "Безшовне матове або шовковисто-матове покриття з імітацією полірованого бетону, що поєднує гладкі загладжені ділянки та глибокі контрастні пористі раковини двох відтінків сірого.",
+   "summary_uk": "Майстер-промт описує покроковий технологічний процес нанесення декоративного штукатурного покриття «арт-бетон». Дотримано вимог бази знань щодо правильного ґрунтування без потьоків та послідовності формування фактури кельмою. Промти англійською мовою оптимізовані для генерації кадрів 9:16 із точним дотриманням фізики вологих та сухих матеріалів."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/jxcWVOA5ZJo",
+    "title": "Декоративная штукатурка АРТ-БЕТОН / Дешево / Простое нанесение"
+   },
+   {
+    "video": "https://youtu.be/ojWG2w4Dz3Y",
+    "title": "Декоративная штукатурка Art Beton"
+   },
+   {
+    "video": "https://youtu.be/Q1lDB65t4ew",
+    "title": "♻️КАК СДЕЛАТЬ ДЕКОРАТИВНУЮ ШТУКАТУРКУ АРТ БЕТОН ЗА 10 ЧАСОВ. #декоративнаяштукатурка #каксделать"
+   }
+  ]
+ },
+ "антикатура": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування глибокого проникнення (Wallcov Primer Deep)",
+     "prompt_en": "Close-up vertical 9:16 photo of a hand rolling a short-nap microfiber roller bottom-to-top on a smooth white dry wall, applying a wet glossy transparent primer liquid without drips."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення фактурної гіпсової основи (тампонування)",
+     "prompt_en": "Macro 9:16 shot of a stainless steel venetian trowel creating wet gray plaster peaks on the smooth wall using quick perpendicular tapping motions."
+    },
+    {
+     "n": 3,
+     "stage": "Зволожене розгладжування (пригладжування вершин)",
+     "prompt_en": "Macro 9:16 action shot of a wet stainless steel trowel smoothing down wet gray plaster peaks into flat polished plateaus under mist spray from a water bottle."
+    },
+    {
+     "n": 4,
+     "stage": "Базове глибокоматове фарбування",
+     "prompt_en": "Medium 9:16 shot of a short-nap roller applying a layer of wet glossy black paint completely covering the dry light-gray textured plaster wall."
+    },
+    {
+     "n": 5,
+     "stage": "Нанесення срібного воску та зганяння з вершин",
+     "prompt_en": "Macro 9:16 photo of a rubber squeegee scraping wet metallic silver wax off the flat black plaster plateaus, leaving shiny silver pigment inside deep hollows."
+    },
+    {
+     "n": 6,
+     "stage": "Патинування вершин губкою",
+     "prompt_en": "Detailed 9:16 macro shot of a cellulose sponge gently dabbing black paint only onto the raised flat plateaus without touching the silver-filled recessed hollows."
+    },
+    {
+     "n": 7,
+     "stage": "Фінішне лакування",
+     "prompt_en": "Medium 9:16 photo of a short-nap roller applying a thin layer of milky-white liquid acrylic varnish that turns clear and wet glossy over the dark textured wall."
+    },
+    {
+     "n": 8,
+     "stage": "Механічне полірування",
+     "prompt_en": "Action 9:16 macro shot of an eccentric sander with a fine polishing pad polishing the fully dry black and silver anticatura wall into a mirror-like high-gloss finish."
+    }
+   ],
+   "physics": [
+    "Свіжа рідка фарба, ґрунт чи віск завжди мають вологий відблиск і темніший відтінок, а акриловий лак під час нанесення є молочно-білястим, а не одразу прозорим.",
+    "Межа між сирим нанесеним шаром та сухою основою завжди чітко помітна за кольором і блиском під боковим світлом.",
+    "Ґрунтування завжди виконується знизу вгору для запобігання потьокам; будь-які потьоки одразу розкочуються валиком.",
+    "Зганяння воску скребком (водозгоном) залишає срібний пігмент виключно у заглибленнях рельєфу, повністю оголюючи чорні вершини."
+   ],
+   "never": [
+    "Ніколи не показувати рідкий акриловий лак абсолютно прозорим безмолочним розчином у момент його розкочування валиком.",
+    "Ніколи не малювати нанесення ґрунту зверху вниз із потьоками чи краплями, що стікають по стіні.",
+    "Ніколи не зображувати розгладжування текстури сухою кельмою без зволоження або полірування лаку раніше ніж після його повного висихання.",
+    "Ніколи не показувати інструмент (валик/кельму), що працює по стіні без матеріалу або без вологого сліду за ним."
+   ],
+   "finish": "Високоглянцеве контрастне покриття «антикатура» з дзеркальним відблиском: матові чорні пласкі вершини («острівці») виразно контрастують із глибокими заглибленнями, заповненими сяючим сріблясто-перламутровим воском.",
+   "summary_uk": "Майстер-промт розроблено на основі точного дотримання фізики нанесених шарів та регламентованого інструментарію. Кожен етап деталізує специфіку стану матеріалу (вологий/сухий) та правильну механіку рухів рук згідно з технологічною картою. Дотримання застережень гарантує фотореалістичний та технічно достовірний результат ШІ-генерації у форматі 9:16."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/ZSwJmtUpU44",
+    "title": "КАРТА МИРА - 3 техники. Декоративная штукатурка - мастер-класс. Раскрываем все секреты. diy decor"
+   },
+   {
+    "video": "https://youtu.be/cYNc7BsEemw",
+    "title": "Мраморная штукатурка инструкция нанесения подробно #штукатурка"
+   },
+   {
+    "video": "https://youtu.be/U_M1PgLkAig",
+    "title": "ЧУДО ДЕКОР ИЗ ОБЫЧНОЙ ШПАКЛЕВКИ от А до Я ! ДЕКОРАТИВНАЯ ШТУКАТУРКА СВОИМИ РУКАМИ"
+   }
+  ]
+ },
+ "травертин": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Кварц-ґрунт (Primer al quarzo)",
+     "prompt_en": "A close-up 9:16 vertical shot of a painter's hand using a short-pile roller to apply a white wet grainy quartz primer onto a dry grey plastered wall, showing a clear border between white texture and grey substrate."
+    },
+    {
+     "n": 2,
+     "stage": "Перший подстілаючий шар Pattera Fine",
+     "prompt_en": "A realistic vertical 9:16 shot of a stainless steel Venetian trowel held at a 20-degree angle, spreading a smooth wet light-grey plaster layer over a white dry quartz-primed wall."
+    },
+    {
+     "n": 3,
+     "stage": "Другий шар та створення каверн",
+     "prompt_en": "A vertical macro shot of a master using the edge of a Venetian trowel and a stiff thousand-lines brush to create horizontal torn caverns and grooves in wet grey plaster on a wall."
+    },
+    {
+     "n": 4,
+     "stage": "Пригладжування та ущільнення верхівок",
+     "prompt_en": "A vertical close-up of a clean stainless steel trowel lightly flattening the tops of wet horizontal plaster caverns, creating smooth darker grey flat plateaus contrasting with raw matte pits."
+    },
+    {
+     "n": 5,
+     "stage": "Лесирування та тонування губкою",
+     "prompt_en": "A vertical shot of a hand with a dense foam sponge rubbing brown translucent wax in circular motions over a fully dry matte travertine texture, highlighting deep horizontal caverns with pigment."
+    }
+   ],
+   "physics": [
+    "Вологий шар штукатурки або ґрунту завжди темніший, пластичніший та має вогкий блиск порівняно з матовим сухим.",
+    "Створення каверн і задирів можливе лише на свіжому пластичному другому шарі, до його висихання.",
+    "Лесируючий захисний воск наноситься губкою виключно на повністю суху та загладжену штукатурку, не розмиваючи її основу.",
+    "Робочий інструмент (кельма, валик, губка) обов'язково містить сліди матеріалу, що наноситься."
+   ],
+   "never": [
+    "Нанесення воску або лазурі металевим шпателем замість поролонової губки чи валика.",
+    "Формування каверн травертину на абсолютно сухій стіні або хаотичними круговими/вертикальними продирами замість чітких горизонтальних смуг.",
+    "Нанесення рідких складів по пильній чи незаґрунтованій поверхні без видимої межі між шарами.",
+    "Глянцевий блиск по всій площі замість контрасту між полірованими плоскими верхівками та матовими заглибленнями."
+   ],
+   "finish": "Фактурне декоративне покриття з реалістичною імітацією зрізу натурального каменю травертин (Pattera Fine), що виглядає як чергування виражених горизонтальних каверн та ущільнених полірованих гладких плато з м'яким контрастом тонування у заглибленнях.",
+   "summary_uk": "Майстер-промт описує покроковий технологічний процес нанесення штукатурки «травертин» з дотриманням фізики декоративних матеріалів Pattera Fine. Кожен кадр контролює стан вологості шару, правильний інструмент та чітку векторну спрямованість горизонтальних каверн. Промти адаптовані для генерації фотореалістичних вертикальних зображень (9:16) без графічних аномалій."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/Dd5fm4XQiz0",
+    "title": "Відеоурок техніка нанесення штукатурки травертин"
+   },
+   {
+    "video": "https://youtu.be/VHeLiSMJjdw",
+    "title": "ТРАВЕРТИН. Нанесение декоративной штукатурки Parade@Milano Carrara Bianco. Мастер-класс №17"
+   },
+   {
+    "video": "https://youtu.be/QH68JCaA97A",
+    "title": "Штукатурка OZON Травертин - техника нанесения"
+   }
+  ]
+ },
+ "марморин": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування глибокопроникним ґрунтом",
+     "prompt_en": "Vertical framing 9:16 photorealistic close-up of a painter using a short-pile roller applying clear liquid primer from bottom to top on a dry light gray plaster wall, showing a subtle wet sheen without drips."
+    },
+    {
+     "n": 2,
+     "stage": "Нанесення кварц-ґрунту",
+     "prompt_en": "Vertical framing 9:16 ultra-realistic detailed shot of a paint roller applying white quartz primer with fine sand grains onto a dry primed wall, creating a rough matte textured adhesion layer."
+    },
+    {
+     "n": 3,
+     "stage": "Нанесення першого базового шару Marmorino",
+     "prompt_en": "Vertical framing 9:16 detailed macro photograph of a stainless steel Venetian trowel held at 20 degrees spreading smooth gray Marmorino plaster paste over a white textured quartz primer base."
+    },
+    {
+     "n": 4,
+     "stage": "Формування малюнка «Карта світу» (другий шар)",
+     "prompt_en": "Vertical framing 9:16 macro shot of a Venetian trowel dab-and-pull technique applying wet volumetric light-gray plaster islands over a dry matte gray background layer."
+    },
+    {
+     "n": 5,
+     "stage": "Перше пригладжування та ущільнення",
+     "prompt_en": "Vertical framing 9:16 realistic shot of a clean metal trowel gliding at 5 degrees over wet plaster islands, flattening tops into smooth semi-gloss cut surfaces while depressed areas remain matte."
+    },
+    {
+     "n": 6,
+     "stage": "Нанесення захисного воску/лазурі",
+     "prompt_en": "Vertical framing 9:16 close-up of a dense foam sponge rubbing a thin layer of milky-white liquid wax into the relief pores of a fully dry gray decorative plaster wall."
+    }
+   ],
+   "physics": [
+    "Свіжонанесений рідкий матеріал завжди темніший, пластичний і має вологий відблиск, а висохлий шар — світліший, матовий і твердий.",
+    "Ґрунтування виконується знизу вгору без потьоків, а кварц-ґрунт обов'язково має дрібнозернисту шорстку структуру піску.",
+    "Другий шар («острівці») наноситься виключно на повністю висохлу (12 год) матову базову підкладку.",
+    "Захисний віск наноситься як молочно-біла рідина/плівка, яка після повного висихання стає повністю прозорою."
+   ],
+   "never": [
+    "Заборонено зображувати гладку або глянцеву поверхню одразу під час розкочування рідкої штукатурки чи ґрунту.",
+    "Заборонено показувати потьоки ґрунтовки на стіні або залишкові краплі.",
+    "Заборонено малювати нанесення текстурних «острівців» поверх вологого незатверділого першого шару.",
+    "Заборонено використовувати металеву кельму під кутом 90 градусів до стіни при розгладженні, щоб не зрізати весь покривний шар."
+   ],
+   "finish": "Безшовне декоративне покриття Marmorino з ефектом «Карта світу»: пласкі, загладжені, напівглянцеві світлі острівці виступають над матовими шорсткими заглибленнями, поверхня захищена прозорим шовковистим воском.",
+   "summary_uk": "Цей майстер-промт розроблено на основі технологічних карт нанесення штукатурки Marmorino та правил підготовки основи з бази знань. Він гарантує збереження фізичної достовірності кожного етапу — від ґрунтування без потьоків до формування характерної каменерельєфної фактури «Карта світу». Промти англійською розраховані на точну генерацію фотореалістичних кадрів у форматі 9:16."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/DsyAnh8kpDk",
+    "title": "Декоративна штукатурка, відео урок по роботі з  Марморином, техніка нанесення Карта світу"
+   },
+   {
+    "video": "https://youtu.be/IjjHd5MNtso",
+    "title": "UA | Декоративна штукатурка MARMORINO від TM Daricco. Докладний відеоурок по нанесенню."
+   },
+   {
+    "video": "https://youtu.be/-YAJuyIMObo",
+    "title": "Матовий Марморін в 1 шар/Дуже проста в нанесенні декоративна штукатурка/тм Imagine decor"
+   }
+  ]
+ },
+ "венеціанка": {
+  "synth": {
+   "stages": [
+    {
+     "n": 1,
+     "stage": "Ґрунтування основи (Primer Deep)",
+     "prompt_en": "A close-up vertical shot of a professional painter using a short-pile microfibre roller to evenly apply a clear wet primer from bottom to top on an eggshell-smooth white prepped wall.",
+     "tool": "Валик з коротким ворсом (мікрофібра), пензель для кутів",
+     "hand_motion": "Рівномірні вертикальні рухи знизу вгору, ретельне розкатування без потьоків",
+     "coverage": "100% поверхні стіни",
+     "wet_vs_dry": "Мокре: злегка вологий прозоро-білуватий блиск; Сухе: повністю матове, непомітне безплівкове покриття",
+     "context": "Ідеально гладка підготовлена біла шпакльована стіна (як яйце)"
+    },
+    {
+     "n": 2,
+     "stage": "Фоновий базовий шар штукатурки",
+     "prompt_en": "A side-angle shot of a Venetian stainless steel trowel held at a 20-degree angle stretching a thin layer of wet smooth plaster pasty texture across the primed wall.",
+     "tool": "Венеціанська кельма з нержавіючої сталі, шпатель",
+     "hand_motion": "Плавні дугоподібні мазки 'на здир' під кутом 15–30 градусів",
+     "coverage": "90–100% площі",
+     "wet_vs_dry": "Мокре: вологий шовковисто-матовий пастоподібний шар; Сухе: рівний матовий фоновий тон",
+     "context": "Видно матовий шар кварц-ґрунту або підкладочної фарби у відкритих ділянках"
+    },
+    {
+     "n": 3,
+     "stage": "Формування візерунка та жилок (2-й шар)",
+     "prompt_en": "A detailed macro shot of a small flexible palette knife and trowel applying short overlapping wet colored plaster strokes to create dark marble-like vein patterns.",
+     "tool": "Малий мастихін, венеціанська кельма",
+     "hand_motion": "Часті перехресні, хаотичні мазки ('метелик') з різним натиском",
+     "coverage": "30–70% поверхні",
+     "wet_vs_dry": "Мокре: соковиті, вологі, темніші контрастні плями та лінії; Сухе: приглушені матові кольорові плями",
+     "context": "Сухий світлий перший базовий шар штукатурки"
+    },
+    {
+     "n": 4,
+     "stage": "Загладжування та залізнення (глянцювання)",
+     "prompt_en": "Extreme close-up of a clean polished steel Venetian trowel gliding at a tight 10-degree angle under heavy hand pressure, instantly creating a mirror-like shine on the drying plaster.",
+     "tool": "Чиста полірована венеціанська кельма з округленими кутами",
+     "hand_motion": "Інтенсивне вигладжування ребром кельми майже плашмя (5–15 градусів) із запрасуванням",
+     "coverage": "100% візерунка",
+     "wet_vs_dry": "Мокре/підсихаюче: миттєва поява дзеркального відблиску під лезом без додавання води",
+     "context": "Підсохлі багатошарові плями штукатурки, що перетворюються на сріблясто-дзеркальний глянець"
+    },
+    {
+     "n": 5,
+     "stage": "Воскування та полірування",
+     "prompt_en": "A medium shot of an artisan polishing a dried waxed Venetian plaster wall using a buffing machine with a soft wool pad, revealing deep translucent polished marble reflections.",
+     "tool": "Губка/мікрофібра для воску, полірувальна машина з хутряним диском",
+     "hand_motion": "Кругові втираючі рухи губкою, потім високооборотні проходи полірувальної машини",
+     "coverage": "100% поверхні",
+     "wet_vs_dry": "Мокре: тонка волога плівка воску; Сухе/Готове: високий дзеркальний глянець із оптичною глибиною",
+     "context": "Загладжена стіна з вираженою глибиною та відблисками джерел світла"
+    }
+   ],
+   "physics": [
+    "Свіжий вологий шар завжди темніший, пластичний і має поверхневий відблиск; сухий шар — матовий і світліший.",
+    "Рідка штукатурка не тримає гострі вертикальні піки — вона нанесена тонким слоєм 'на здир'.",
+    "Глянець з'являється виключно від механічного залізнення кельмою або полірування воску хутряним диском, а не сам по собі при нанесенні валиком.",
+    "Ґрунт наноситься строго знизу вгору без потьоків на підготовлену основу гладку як яєчна шкаралупа.",
+    "Межа між нанесеним сирим матеріалом та сухою основою завжди чітко помітна."
+   ],
+   "never": [
+    "Не показувати нанесення венеціанської штукатурки малярним пензлем замість металевої кельми чи мастихіна.",
+    "Не малювати рідку фарбу або товсті рельєфні шуби під час створення фактури венеціанки.",
+    "Заборонено показувати потьоки ґрунтовки на стіні або залишкові краплі.",
+    "Заборонено зображувати ідеальне дзеркальне відображення на мокрому першому шарі без етапу залізнення.",
+    "Заборонено наносити віск на непідготовлену матову або сиру штукатурку."
+   ],
+   "finish": "Ідеально гладка, дзеркально-глянцева поверхня з прозорим ефектом глибини природного зрізу полірованого мармуру або ониксу, із контрастними прожилками та м'якими кольоровими переходами.",
+   "summary_uk": "Майстер-промт охоплює повний технологічний цикл створення венеціанської штукатурки відповідно до правил бази знань та професійної фізики матеріалів. Кожен етап деталізує стан покриття, правильні інструменти, точні рухи майстра та ступінь блиску для генерації фотореалістичних кадрів 9:16. Структура гарантує відсутність типових помилок штучного інтелекту, як-от відсутність інструменту або неправильна фактура."
+  },
+  "sources": [
+   {
+    "video": "https://youtu.be/0ImNjnpJl6c",
+    "title": "КАК ПРАВИЛЬНО НАНОСИТЬ ВЕНЕЦИАНСКУЮ ШТУКАТУРКУ? МАСТЕР КЛАСС…"
+   },
+   {
+    "video": "https://youtu.be/IjjHd5MNtso",
+    "title": "UA | Декоративна штукатурка MARMORINO від TM Daricco. Докладний відеоурок по нанесенню."
+   },
+   {
+    "video": "https://youtu.be/VcxxRq_HnxE",
+    "title": "Детальний майстер клас по нанесенню венеціанської штукатурки Veneciano від FEIDAL!"
+   }
+  ]
+ }
+}

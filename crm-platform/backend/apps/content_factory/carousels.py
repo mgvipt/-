@@ -296,8 +296,9 @@ def _wrap(draw, text, font, width):
     return lines
 
 
-def _plaster(base=(233, 226, 214), seed=0):
+def _plaster(base=(233, 226, 214), seed=0, size=None):
     """Фон «світла штукатурка»: мʼякі плями + дрібне зерно (детерміновано від seed)."""
+    W, H = size or (1080, 1350)
     rnd = random.Random(seed)
     img = Image.new("RGB", (W // 4, H // 4), base)
     d = ImageDraw.Draw(img)
@@ -319,7 +320,14 @@ def _hex(c):
     return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def render_slide(c, idx):
+def render_slide(c, idx, fmt="ig"):
+    """fmt="ig" — 1080×1350 (Instagram 4:5); fmt="tiktok" — 1080×1920 (9:16), текст у безпечній зоні TikTok
+    (згори статус і вкладки, знизу підпис і музика, праворуч кнопки — див. platform_rules.SAFE)."""
+    tt = fmt == "tiktok"
+    W, H = (1080, 1920) if tt else (1080, 1350)
+    TOP = 250 if tt else 60          # верхня службова зона
+    BOTTOM = 560 if tt else 84       # нижня: підпис, музика, кнопки
+    RIGHT = 190 if tt else 80        # праворуч у TikTok — лайк/коментар/поділитись
     s = c.slides[idx]
     n = len(c.slides)
     blog = c.blog
@@ -341,33 +349,35 @@ def render_slide(c, idx):
         text_top = None
     else:
         dark = tpl == "graphite"
-        canvas = Image.new("RGB", (W, H), (20, 24, 27)) if dark else _plaster(seed=c.id or 1)
+        canvas = Image.new("RGB", (W, H), (20, 24, 27)) if dark else _plaster(seed=c.id or 1, size=(W, H))
         ink, sub = ((240, 240, 238), (190, 196, 199)) if dark else ((28, 26, 23), (70, 64, 57))
         text_top = -1  # без фото — текст по центру слайда
         if photo:
-            ph = _cover(photo, (W - 160, 620))
+            ph = _cover(photo, (W - 80 - RIGHT, 860 if tt else 620))
             mask = Image.new("L", ph.size, 0)
             ImageDraw.Draw(mask).rounded_rectangle([0, 0, ph.size[0], ph.size[1]], radius=28, fill=255)
-            canvas.paste(ph, (80, 110), mask)
-            text_top = 790
+            canvas.paste(ph, (80, TOP + 50), mask)
+            text_top = TOP + 50 + ph.size[1] + 60
     d = ImageDraw.Draw(canvas)
     h_font = _font("Montserrat", "ExtraBold", 92 if cover else 70)
     b_font = _font("Inter", "Medium", 38)
     small = _font("Inter", "Bold", 26)
     head = s.get("headline") or ""
     body = s.get("body") or ""
-    hl = [ln for para in head.split("\n") for ln in (_wrap(d, para, h_font, W - 160) or [""])]
-    bl = [ln for para in body.split("\n") for ln in (_wrap(d, para, b_font, W - 160) or [""])] if body else []
+    hl = [ln for para in head.split("\n") for ln in (_wrap(d, para, h_font, W - 80 - RIGHT) or [""])]
+    bl = [ln for para in body.split("\n") for ln in (_wrap(d, para, b_font, W - 80 - RIGHT) or [""])] if body else []
     lh_h, lh_b = int(h_font.size * 1.12), int(b_font.size * 1.38)
     block = len(hl) * lh_h + (24 + len(bl) * lh_b if bl else 0)
     pos = s.get("pos") or "auto"
     if pos == "top" and text_top is None:
-        text_top = 170
+        text_top = TOP + 110
     elif pos == "center" and text_top is None:
         text_top = -1
     elif pos == "bottom" and text_top == -1:
         text_top = None
-    y = (H - 150 - block) if text_top is None else ((H - block) // 2 - 20 if text_top == -1 else text_top)
+    low = H - BOTTOM - 66  # нижня межа тексту
+    y = (low - block) if text_top is None else ((TOP + low - block) // 2 if text_top == -1 else text_top)
+    y = max(TOP + 70, min(y, low - block))
     d.rectangle([80, y - 30, 80 + 90, y - 22], fill=accent)
     for line in hl:
         d.text((80, y), line, font=h_font, fill=ink)
@@ -380,18 +390,18 @@ def render_slide(c, idx):
     # номер слайда й підпис блогу
     pill = f"{idx + 1}/{n}"
     pw = d.textlength(pill, font=small) + 36
-    d.rounded_rectangle([W - 80 - pw, 60, W - 80, 108], radius=24, fill=(0, 0, 0) if tpl == "photo" else accent)
-    d.text((W - 80 - pw + 18, 70), pill, font=small, fill=(255, 255, 255) if tpl == "photo" else (20, 20, 20))
+    d.rounded_rectangle([W - RIGHT - pw, TOP, W - RIGHT, TOP + 48], radius=24, fill=(0, 0, 0) if tpl == "photo" else accent)
+    d.text((W - RIGHT - pw + 18, TOP + 10), pill, font=small, fill=(255, 255, 255) if tpl == "photo" else (20, 20, 20))
     who = blogs.handle(blog) if blog else ""
     if who:
-        d.text((80, H - 84), who, font=small, fill=sub)
+        d.text((80, H - BOTTOM), who, font=small, fill=sub)
     if not last and n > 1:
-        d.text((W - 80 - d.textlength("гортай →", font=small), H - 84), "гортай →", font=small, fill=sub)
+        d.text((W - RIGHT - d.textlength("гортай →", font=small), H - BOTTOM), "гортай →", font=small, fill=sub)
     if (s.get("image") or {}).get("kind") == "ai" and blog and blog.label_ai:
         lab = "ШІ-візуалізація"
         lw = d.textlength(lab, font=small) + 30
-        d.rounded_rectangle([80, 60, 80 + lw, 108], radius=10, fill=(0, 0, 0))
-        d.text((95, 70), lab, font=small, fill=(255, 255, 255))
+        d.rounded_rectangle([80, TOP, 80 + lw, TOP + 48], radius=10, fill=(0, 0, 0))
+        d.text((95, TOP + 10), lab, font=small, fill=(255, 255, 255))
     out = io.BytesIO()
     canvas.convert("RGB").save(out, "JPEG", quality=90, optimize=True, progressive=True)  # ~4× легше за PNG
     return out.getvalue()
@@ -406,6 +416,17 @@ def render(c):
         c.slides[i]["rendered_id"] = aiimage.save(img, "image/jpeg", f"carousel-{c.id}-{i + 1}").id
     c.error = ""
     c.save()
+    SharedLink.objects.filter(id__in=old).delete()
+    return c
+
+
+def render_tiktok(c):
+    """Версія каруселі для TikTok (фото-режим 9:16): ті самі слайди, текст у безпечній зоні. Без ШІ, безкоштовно."""
+    from apps.inbox.models import SharedLink
+    old = [s.get("tiktok_id") for s in c.slides if s.get("tiktok_id")]
+    for i in range(len(c.slides)):
+        c.slides[i]["tiktok_id"] = aiimage.save(render_slide(c, i, "tiktok"), "image/jpeg", f"carousel-{c.id}-{i + 1}-tiktok").id
+    c.save(update_fields=["slides"])
     SharedLink.objects.filter(id__in=old).delete()
     return c
 

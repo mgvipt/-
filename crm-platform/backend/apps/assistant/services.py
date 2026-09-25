@@ -150,7 +150,10 @@ def transcribe_pending(limit=30):
             with urllib.request.urlopen(f"https://api.telegram.org/file/bot{token}/{path}", timeout=120) as r:
                 audio = r.read()
             mime = "video/mp4" if m.kind == "video_note" else "audio/ogg"
-            m.transcript = _gemini_transcribe(audio, mime).strip()[:20000]
+            # 25.09: спершу безкоштовний Groq Whisper; не вийшло — платний Gemini, як раніше
+            from apps.content_factory.freeai import groq_transcribe
+            text = groq_transcribe(audio, "note.mp4" if m.kind == "video_note" else "voice.ogg", mime, source=TRANSCRIBE_SOURCE + ".groq")
+            m.transcript = (text if text else _gemini_transcribe(audio, mime)).strip()[:20000]
         except Exception as e:  # файл завеликий (>20 МБ для бота) або мережа — позначаємо, щоб не крутити по колу
             m.transcript = ""
             m.text = (m.text + f"\n[не вдалося розшифрувати: {str(e)[:80]}]").strip()

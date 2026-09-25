@@ -124,3 +124,59 @@ def spec_for(material):
     s = SPECS.get(_norm(material)) or {}
     parts = [GENERAL, s.get("surface", ""), s.get("light", ""), ("Avoid: " + s["negative"]) if s.get("negative") else ""]
     return " ".join(p for p in parts if p).strip()
+
+
+# ── 25.09: нанесення по етапах (відеограф переглянув уроки + технологія з бази знань) ─────────────
+# apply_specs.json: {матеріал: {"synth": {stages[{n, stage, prompt_en}], physics[], never[], finish, summary_uk}, "sources": [...]}}
+import json as _json
+import os as _os
+import re as _re
+
+_APPLY = None
+APPLY_RX = _re.compile(r"нанос|нанес|наніс|шпател|кельм|терк|валик|пензл|затира|шар\b|trowel|spatula|applying|apply|roller|brush|layer", _re.I)
+
+
+def _apply_data():
+    global _APPLY
+    if _APPLY is None:
+        path = _os.path.join(_os.path.dirname(__file__), "apply_specs.json")
+        try:
+            with open(path, encoding="utf8") as f:
+                _APPLY = _json.load(f)
+        except (OSError, ValueError):
+            _APPLY = {}
+    return _APPLY
+
+
+def apply_spec(material):
+    """Етапи нанесення матеріалу або {} (ключі — як у SPECS + «травертин», «марморин»)."""
+    d = _apply_data()
+    m = _norm(material)
+    return (d.get(m) or d.get(find_material(m)) or {}).get("synth") or {}
+
+
+def apply_stages_text(material):
+    """Для сценариста: етапи нанесення, щоб у кожному кадрі з роботою був названий конкретний етап."""
+    s = apply_spec(material)
+    if not s.get("stages"):
+        return ""
+    return ("Етапи нанесення «%s» (кадр із роботою майстра — лише один конкретний етап, стіна в стані саме цього етапу):\n" % material
+            + "\n".join(f"{x.get('n')}. {x.get('stage')}" for x in s["stages"]))
+
+
+def apply_rules(prompt, material):
+    """Для художника: якщо в кадрі нанесення — фізика процесу й заборони (свіжий шар мокрий, стіна не може бути вже готовою)."""
+    if not APPLY_RX.search(prompt or ""):
+        return ""
+    s = apply_spec(material)
+    if not s:
+        return (" Application in progress: the freshly applied area looks wet, darker and glossier than the dry part; a visible boundary "
+                "between covered and uncovered wall; the wall is NOT finished or dry while the craftsman is working.")
+    stage = ""
+    low = (prompt or "").lower()
+    for x in s.get("stages") or []:  # етап, який згадано в описі кадру
+        if any(w for w in _re.split(r"\W+", (x.get("stage") or "").lower()) if len(w) > 4 and w in low):
+            stage = " Stage: " + (x.get("prompt_en") or "")
+            break
+    return (stage + " Application physics: " + " ".join(s.get("physics") or [])[:900]
+            + " Never: " + " ".join(s.get("never") or [])[:700])

@@ -146,6 +146,78 @@ def from_video_asset(asset):
     return st
 
 
+def _video_style(light, name, source_url=""):
+    d = _gemini([{"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(light).decode()}}, {"text": STRUCTURE_PROMPT}])
+    d = d if isinstance(d, dict) else {}
+    st = _to_style(d.get("style") or {}, name, ReelStyle.Origin.REFERENCE, source_url) or ReelStyle.objects.create(
+        name=name[:120], origin=ReelStyle.Origin.REFERENCE, source_url=source_url[:2000])
+    st.structure = {k: d.get(k) for k in ("total_sec", "beats", "hook", "pace", "notes") if d.get(k) is not None}
+    st.save(update_fields=["structure"])
+    return st
+
+
+def from_bytes(data, mime, name, source_url=""):
+    """Свій референс (25.09): картинка → стиль тексту; відео → стиль тексту + будова ролика."""
+    import shutil
+    import tempfile
+    from .reels import WORK, _light_copy
+    if mime.startswith("image/"):
+        d = _gemini([{"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode()}}, {"text": STYLE_PROMPT}])
+        return _to_style(d, name, ReelStyle.Origin.REFERENCE, source_url)
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        src = os.path.join(folder, "ref")
+        with open(src, "wb") as f:
+            f.write(data)
+        with open(_light_copy(src, folder), "rb") as f:
+            light = f.read()
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return _video_style(light, name, source_url)
+
+
+def from_url(url):
+    """Посилання: YouTube — Gemini дивиться сам; TikTok/інші ролики — завантажуємо (yt-dlp); картинка — напряму."""
+    import re
+    url = (url or "").strip()
+    if not url.startswith("http"):
+        raise ValueError("Вставте посилання на ролик або картинку.")
+    m = re.search(r"(?:youtube\.com/(?:shorts/|watch\?v=)|youtu\.be/)([\w-]{11})", url)
+    if m:
+        d = _gemini([{"fileData": {"fileUri": f"https://www.youtube.com/watch?v={m.group(1)}"}}, {"text": STRUCTURE_PROMPT}])
+        d = d if isinstance(d, dict) else {}
+        st = _to_style(d.get("style") or {}, "Референс YouTube", ReelStyle.Origin.REFERENCE, url) or ReelStyle.objects.create(
+            name="Референс YouTube", origin=ReelStyle.Origin.REFERENCE, source_url=url[:2000])
+        st.structure = {k: d.get(k) for k in ("total_sec", "beats", "hook", "pace", "notes") if d.get(k) is not None}
+        st.save(update_fields=["structure"])
+        return st
+    if re.search(r"\.(jpe?g|png|webp)(\?|$)", url, re.I):
+        return from_image_url(url, "Референс-картинка")
+    import shutil
+    import tempfile
+    import yt_dlp
+    from .reels import WORK
+    os.makedirs(WORK, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=WORK)
+    try:
+        opts = {"outtmpl": os.path.join(folder, "ref.%(ext)s"), "format": "mp4/best", "quiet": True, "no_warnings": True,
+                "noprogress": True, "noplaylist": True, "max_filesize": 80 * 1024 * 1024}
+        try:
+            with yt_dlp.YoutubeDL(opts) as y:
+                y.download([url])
+        except Exception:
+            raise ValueError("Ця мережа не віддала відео (Instagram — лише з входом). Збережіть ролик і завантажте файлом.")
+        files = [f for f in os.listdir(folder) if f.startswith("ref.")]
+        if not files:
+            raise ValueError("Відео не завантажилось — завантажте файлом.")
+        with open(os.path.join(folder, files[0]), "rb") as f:
+            data = f.read()
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return from_bytes(data, "video/mp4", "Референс: " + url.split("/")[2].replace("www.", ""), url)
+
+
 def our_blog(limit=3):
     """«Наш блог»: обкладинки наших найпереглянутіших роликів → один стиль (перший, де знайдено текст)."""
     for item in FeedItem.objects.filter(is_own=True).exclude(preview_url="").order_by("-views")[:limit]:

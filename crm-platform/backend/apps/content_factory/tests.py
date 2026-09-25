@@ -760,3 +760,20 @@ class ReelStudioTests(TestCase):
         from . import studio
         with self.assertRaises(ValueError):
             studio.search_all("")
+
+
+class FreeAiTests(TestCase):
+    """Безкоштовні сервіси (25.09): розбір ніку й коду Instagram, без ключів — тихий відкат на старий шлях."""
+    def test_ig_helpers(self):
+        from . import freeai
+        self.assertEqual(freeai.ig_username_from_snippet('28 likes, 0 comments - color.studio.gomel on February 6, 2026: "x"'), "color.studio.gomel")
+        self.assertEqual(freeai.ig_shortcode("https://www.instagram.com/reel/DUazolWjdLn/"), "DUazolWjdLn")
+        self.assertEqual(freeai.ig_shortcode("https://www.instagram.com/wallcov/p/ABC_12/"), "ABC_12")
+
+    def test_no_keys_fall_back(self):
+        from . import freeai
+        with patch.dict("os.environ", {"GROQ_API_KEY": "", "CF_ACCOUNT_ID": "", "YOUTUBE_API_KEY": "", "TAVILY_API_KEY": ""}):
+            self.assertIsNone(freeai.groq_transcribe(b"x"))
+            self.assertIsNone(freeai.cf_image("x"))
+            self.assertEqual(freeai.youtube_search("x"), [])
+            self.assertEqual(freeai.tavily_search("x"), [])

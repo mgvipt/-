@@ -110,6 +110,8 @@ CHECKS = [
     ("Контент-завод: рилси з нарізок", "owner", "/api/content-factory/reels/", {200}, ["reels", "materials", "scenes"]),
     ("Контент-завод: майстер рилса — пошук без слова", "owner", "/api/content-factory/studio/search/", {400}, ["error"]),
     ("Контент-завод: майстер рилса — менеджеру закрито", "manager", "/api/content-factory/studio/search/?q=x", {403}, []),
+    ("Контент-завод: голоси для озвучки", "owner", "/api/content-factory/studio/voices/", {200}, ["voices"]),
+    ("Контент-завод: стилі тексту рилсів", "owner", "/api/content-factory/reels/styles/", {200}, ["styles"]),
     ("Асистент: пропозиції й чати (власник)", "owner", "/api/assistant/", {200}, ["chats", "proposals", "settings"]),
     ("Асистент: менеджеру закрито", "manager", "/api/assistant/", {403}, []),
     ("Асистент: приймання без секрету — відмова", "owner", "/api/assistant/ingest/", {403, 405}, []),
