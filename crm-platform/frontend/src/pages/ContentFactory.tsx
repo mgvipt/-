@@ -328,6 +328,22 @@ const CSS = `
 .cf-vir{font-style:normal;font-size:10.5px;font-weight:700;margin-left:6px;padding:1px 6px;border-radius:5px;background:var(--cf-panel2);color:var(--cf-ink3)}
 .cf-vir.on{background:rgba(108,192,143,.14);color:var(--cf-good)}
 .cf-h1-sub{font-weight:600;color:var(--cf-ink3);font-size:.6em}
+.cf-row.open{grid-template-rows:auto auto}
+.cf-page-c{grid-column:1/-1;display:grid;gap:10px;padding-top:10px;border-top:1px solid var(--cf-line)}
+.cf-page-sum{display:flex;gap:8px;flex-wrap:wrap}
+.cf-page-sum > *{display:grid;gap:1px;padding:8px 12px;border-radius:9px;background:var(--cf-bg);border:1px solid var(--cf-line);font-size:11.5px;color:var(--cf-ink3);text-decoration:none;max-width:320px}
+.cf-page-sum b{font-size:17px;color:var(--cf-ink);font-variant-numeric:tabular-nums}
+.cf-page-sum a b{color:var(--cf-gold)}
+.cf-page-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.cf-pitem{display:grid;gap:4px;text-decoration:none;color:var(--cf-ink);min-width:0}
+.cf-pitem .ph{position:relative;aspect-ratio:9/13;border-radius:8px;overflow:hidden;background:#0b1118}
+.cf-pitem img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-pitem em{position:absolute;left:5px;top:5px;font-style:normal;font-size:11px;font-weight:800;padding:2px 6px;border-radius:5px;background:rgba(0,0,0,.7);color:#fff}
+.cf-pitem em.hot{background:var(--cf-gold);color:#1b1608}
+.cf-pitem u{position:absolute;right:5px;bottom:5px;text-decoration:none;font-size:10px;background:rgba(0,0,0,.7);color:#fff;padding:1px 5px;border-radius:4px}
+.cf-pitem small{font-size:11px;color:var(--cf-ink3)}
+.cf-pitem p{margin:0;font-size:11.5px;color:var(--cf-ink2);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media (max-width:760px){.cf-page-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cf-page-sum > *{flex:1 1 40%}}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 /* ── Редизайн 24.09: конвеєр, «Сьогодні», власні елементи керування ── */
 .cf-logo{display:inline-block;width:18px;height:18px;border-radius:5px;margin-right:8px;vertical-align:-3px;
@@ -1150,10 +1166,47 @@ function AddChannel({ roles, platforms, onAdded, blogId }: { roles: [string, str
   );
 }
 
+type PageItem = { id: number; url: string; preview_url: string; caption: string; media_type: string; duration: number | null;
+  views: number | null; likes: number | null; comments: number | null; engagement: number | null; x: number | null; status: string; published_at: string | null };
+type PageData = { items: PageItem[]; summary: { count: number; median_views: number | null; best: { caption: string; x: number; url: string } | null; last: string | null; reels_share: number | null } };
+
+/** Що зараз на сторінці: останні ролики й пости з Virale з цифрами. */
+function PageContent({ ch }: { ch: Channel }) {
+  const [d, setD] = useState<PageData | null>(null);
+  const [sort, setSort] = useState("date");
+  useEffect(() => { api.get<PageData>(`/api/content-factory/channels/${ch.id}/content/`).then(setD).catch(() => setD({ items: [], summary: { count: 0, median_views: null, best: null, last: null, reels_share: null } })); }, [ch.id]);
+  if (!d) return <div className="cf-page-c"><span className="cf-quiet">Завантажую…</span></div>;
+  if (!d.items.length) return (
+    <div className="cf-page-c"><p className="cf-quiet">{ch.in_virale ? "Роликів ще немає — зʼявляться після найближчого оновлення стрічки (щоранку або «Оновити з Virale»)." : "Сторінка ще не відстежується. Натисніть «У стрічку» — тоді тут буде її контент з цифрами."}</p></div>);
+  const items = [...d.items].sort((a, b) => sort === "x" ? (b.x || 0) - (a.x || 0) : sort === "views" ? (b.views || 0) - (a.views || 0) : 0);
+  const s = d.summary;
+  return (
+    <div className="cf-page-c">
+      <div className="cf-page-sum">
+        <span><b>{s.count}</b>публікацій у базі</span>
+        <span><b>{s.median_views == null ? "—" : fmtN(s.median_views)}</b>звичні перегляди</span>
+        <span><b>{s.reels_share ?? "—"}%</b>рилси</span>
+        <span><b>{s.last ? new Date(s.last).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" }) : "—"}</b>остання</span>
+        {s.best && <a href={s.best.url} target="_blank" rel="noreferrer"><b>×{s.best.x}</b>найсильніше: {s.best.caption || "без підпису"}</a>}
+      </div>
+      <Seg label="Сортування" value={sort} onChange={setSort} opts={[{ v: "date", l: "Нові" }, { v: "x", l: "Вистрілило ×" }, { v: "views", l: "Перегляди" }]} />
+      <div className="cf-page-grid">{items.map((i) => (
+        <a key={i.id} href={i.url} target="_blank" rel="noreferrer" className="cf-pitem">
+          <span className="ph">{i.preview_url ? <img src={i.preview_url} alt="" loading="lazy" referrerPolicy="no-referrer" /> : null}
+            {i.x != null && <em className={i.x >= 2 ? "hot" : ""}>×{i.x}</em>}
+            <u>{i.media_type === "carousel" ? "карусель" : i.duration ? `${Math.round(i.duration)} с` : "відео"}</u></span>
+          <small>{i.views == null ? "—" : fmtN(i.views)} переглядів · {i.published_at ? new Date(i.published_at).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" }) : ""}</small>
+          <p>{i.caption || "без підпису"}</p>
+        </a>))}</div>
+    </div>
+  );
+}
+
 function ChannelRow({ ch, roles, onChanged, blogs }: { ch: Channel; roles: [string, string][]; onChanged: () => void; blogs: BlogT[] }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [show, setShow] = useState(false);
   const toVirale = async () => {
     setBusy(true); setNote("");
     try { const x: any = await api.post(`/api/content-factory/channels/${ch.id}/virale/`); setNote(x.note); onChanged(); }
@@ -1168,7 +1221,7 @@ function ChannelRow({ ch, roles, onChanged, blogs }: { ch: Channel; roles: [stri
     try { await api.del(`/api/content-factory/channels/${ch.id}/`); onChanged(); } finally { setBusy(false); }
   };
   return (
-    <div className={"cf-row" + (ch.is_active ? "" : " off")}>
+    <div className={"cf-row" + (ch.is_active ? "" : " off") + (show ? " open" : "")}>
       <span className={"cf-mark " + ch.platform} aria-label={ch.platform_display}>{PLATFORM_MARK[ch.platform] || "?"}</span>
       <div style={{ minWidth: 0 }}>
         <a href={ch.url} target="_blank" rel="noreferrer">@{ch.handle}</a>
@@ -1180,7 +1233,8 @@ function ChannelRow({ ch, roles, onChanged, blogs }: { ch: Channel; roles: [stri
         <Pick small label="Блог" value={String(ch.blog_id ?? "")} disabled={busy} onChange={(v) => patch({ blog_id: Number(v) || null } as any)}
           placeholder="без блогу" opts={blogs.map((b) => ({ v: String(b.id), l: b.name }))} />
         <Pick small label="Тип сторінки" value={ch.role} disabled={busy} onChange={(v) => patch({ role: v })} opts={roles.map(([v, l]) => ({ v, l }))} />
-        {ch.role !== "own" && !ch.in_virale && ["instagram", "tiktok", "youtube"].includes(ch.platform) && (
+        <button type="button" className={"cf-btn ghost" + (show ? " on" : "")} onClick={() => setShow(!show)}>{show ? "Сховати контент" : "Контент"}</button>
+        {!ch.in_virale && ["instagram", "tiktok", "youtube"].includes(ch.platform) && (
           <button type="button" className="cf-btn ghost" disabled={busy} onClick={toVirale} title="Витрачає ліміт дій Virale">У стрічку</button>)}
         <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => patch({ is_active: !ch.is_active })}>
           {ch.is_active ? "Вимкнути" : "Увімкнути"}
@@ -1194,6 +1248,7 @@ function ChannelRow({ ch, roles, onChanged, blogs }: { ch: Channel; roles: [stri
           <button type="button" className="cf-btn ghost" onClick={() => setConfirm(true)}>Прибрати</button>
         )}
       </div>
+      {show && <PageContent ch={ch} />}
     </div>
   );
 }

@@ -1430,3 +1430,25 @@ class BlogLearnView(_Base):
             return Response(learnsvc.extract(b, text))
         except learnsvc.LearnError as e:
             return Response({"error": str(e)}, status=400)
+
+
+
+class ChannelContentView(_Base):
+    """GET — що зараз є на сторінці: останні ролики/пости з Virale (перегляди, ER, «×N від звичного»), зведення."""
+    def get(self, request, pk):
+        import statistics
+        ch = get_object_or_404(ContentChannel, pk=pk)
+        qs = list(FeedItem.objects.filter(username__iexact=ch.handle).order_by("-published_at")[:40])
+        med = ansvc.medians()
+        views = [i.views for i in qs if i.views]
+        items = [{"id": i.id, "url": i.url, "preview_url": i.preview_url, "caption": (i.caption or "")[:300],
+                  "media_type": i.media_type, "duration": i.duration, "views": i.views, "likes": i.likes,
+                  "comments": i.comments, "engagement": i.engagement, "x": ansvc.outlier(i, med), "status": i.status,
+                  "published_at": _iso(i.published_at)} for i in qs]
+        best = max(items, key=lambda x: x["x"] or 0) if items else None
+        return Response({"channel": _row(ch), "items": items, "summary": {
+            "count": len(items), "median_views": int(statistics.median(views)) if views else None,
+            "best": {"caption": best["caption"][:120], "x": best["x"], "url": best["url"]} if best and best["x"] else None,
+            "last": items[0]["published_at"] if items else None,
+            "reels_share": round(sum(1 for i in qs if (i.media_type or "").lower() in ("video", "reel", "clips")) / len(qs) * 100) if qs else None,
+        }})
