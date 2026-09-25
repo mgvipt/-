@@ -20,14 +20,56 @@ SOURCE = "content_factory.carousels"
 W, H = 1080, 1350
 TEMPLATES = {"photo": "Фото на весь слайд", "plaster": "Світла штукатурка", "graphite": "Графіт"}
 
+KINDS = {"single": "Одна тема по кроках", "list": "Добірка: кілька порад/тем"}
+FUNNELS = {  # ціль каруселі → чого просимо в кінці (Instagram рахує збереження й пересилання як сильні сигнали)
+    "save": "Зберегти: корисна інструкція/чекліст, до якого повернуться; заклик «збережіть, щоб не загубити»",
+    "share": "Переслати: впізнавана ситуація чи «покажи тому, хто…»; заклик переслати конкретній людині",
+    "comment": "Коментар: питання-вибір «А чи Б?» або «а як у вас?»; заклик відповісти в коментарях",
+    "dm": "Заявка: кодове слово в Direct; заклик написати слово, щоб отримати розрахунок/добірку",
+    "follow": "Підписка: частина серії; заклик підписатись, щоб не пропустити наступну частину",
+}
+
 TASK = """Ти редактор каруселей для Instagram. Зроби карусель на задану тему: {n} слайдів.
-Слайд 1 — обкладинка: заголовок-гачок до 7 слів (питання чи інтрига, не констатація), body — 1 коротке речення або порожньо.
-Слайди 2…{n1} — по одній думці: headline до 6 слів, body 1–3 речення (до 220 символів), конкретика.
-Останній слайд — висновок і заклик блогу.
-image_hint — що має бути на картинці цього слайда (коротко, для підбору фото або генерації).
-caption — підпис до допису 2–5 речень + заклик блогу, без емодзі.
+ТИП: {kind_rule}
+ЦІЛЬ (воронка): {funnel_rule}
+Слайд 1 — обкладинка: заголовок-гачок до 7 слів (питання, інтрига або обіцянка користі), body — 1 коротке речення.
+Слайд 2 — другий вхід у тему: сильна думка, що тримає й сама по собі (кожен слайд має тягнути гортати далі).
+Середні слайди — по одній думці: headline до 6 слів, body до 220 символів; можна переносити рядки (\n) для списків.
+Останній слайд — підсумок і заклик за ЦІЛЛЮ та закликом блогу.
+image_hint — що має бути на картинці слайда (коротко).
+caption — підпис 2–5 речень: перший рядок — гачок із ключовими словами теми (пошук Instagram), далі суть, заклик за ціллю;
+в кінці 3–5 доречних хештегів. Без емодзі.
+alt — короткий опис каруселі для людей з вадами зору (1 речення).
 checks — факти з тексту, які людина має звірити (цифри, ціни, властивості).
-Відповідай ЛИШЕ JSON: {{"title":"...","caption":"...","slides":[{{"headline":"...","body":"...","image_hint":"..."}}],"checks":["..."]}}"""
+promise — якщо карусель обіцяє продовження — що саме (одним реченням), інакше порожньо. answers_promise_id — id відкритої обіцянки, на яку відповідає ця карусель, або null.
+Відповідай ЛИШЕ JSON: {{"title":"...","caption":"...","alt":"...","slides":[{{"headline":"...","body":"...","image_hint":"..."}}],"checks":["..."],"promise":"","answers_promise_id":null}}"""
+KIND_RULES = {
+    "single": "одна тема: слайд 1 обіцяє конкретний результат, далі розкриття по кроках (кожен слайд — наступний крок/деталь тієї ж теми), без стрибків на інші теми.",
+    "list": "добірка з кількох порад/тем: слайд 1 — гачок + ЩО ВСЕРЕДИНІ (перелік тем у body через \n, коротко), далі по одній темі на слайд у тому ж порядку.",
+}
+
+REWRITE_ONE = """Перепиши ТЕКСТ одного слайда каруселі (заголовок і текст), не змінюючи його місце в історії та тему. Картинка лишається.
+Врахуй сусідні слайди, щоб не повторюватись. Заголовок до 7 слів, текст до 220 символів, можна переноси рядків.
+{wish}
+Відповідай ЛИШЕ JSON: {{"headline":"...","body":"..."}}"""
+
+REWRITE_ALL = """Перепиши ТЕКСТИ всіх слайдів каруселі (кількість слайдів і порядок не змінюй — картинки лишаються на своїх місцях).
+Дотримуйся типу й цілі каруселі. {wish}
+Відповідай ЛИШЕ JSON: {{"slides":[{{"headline":"...","body":"..."}}],"caption":"..."}}"""
+
+ADVICE = """Ти SMM-продюсер. Подивись карусель і дай ДО 5 порад, як краще досягти ЦІЛІ каруселі й мети блогу (збереження, пересилання,
+коментарі, заявки, підписки). Кожна порада — дія з переліку (поле action):
+- {{"type":"text","slide":N,"headline":"...","body":"..."}} — новий текст слайда N (N з 0);
+- {{"type":"image","slide":N,"value":"що намалювати ШІ"}} — нова ШІ-картинка слайда N (лише якщо блог дозволяє ШІ-картинки для цього змісту);
+- {{"type":"caption","value":"новий підпис"}};
+- {{"type":"pos","slide":N,"value":"top|center|bottom"}} — де розмістити текст.
+Якщо порада не наближає до цілі — не пиши її. Не пропонуй вигаданих фактів. У title не пиши номер слайда.
+Відповідай ЛИШЕ JSON: {{"advice":[{{"title":"до 8 слів","why":"як це працює на ціль","action":{{...}}}}]}}"""
+
+
+def _lines(text, n):
+    """Прибрати емодзі, але зберегти переноси рядків (структуру тексту)."""
+    return "\n".join(clean_text(ln) for ln in str(text or "").splitlines()).strip()[:n]
 
 
 def spent_month():
@@ -35,17 +77,20 @@ def spent_month():
     return month_spent(SOURCE)
 
 
-def generate(blog, topic, n=6, template="photo", images="auto", material="", call=None, into=None):
+def generate(blog, topic, n=6, template="photo", images="auto", material="", call=None, into=None, kind="single", funnel="save"):
     """Згенерувати текст каруселі й підібрати картинки. images: auto|library|ai|none.
     into — заготовка Carousel (створена одразу, щоб Олег бачив «готую…»), інакше створюється нова."""
     blogs.require_ready(blog)
     n = max(3, min(int(n or 6), 10))
     facts_text, fact_titles = blogs.facts_block(blog, f"{topic} {material}")
-    system = blogs.system_for(blog, TASK.format(n=n, n1=n - 1))
+    kind = kind if kind in KINDS else "single"
+    funnel = funnel if funnel in FUNNELS else "save"
+    system = blogs.system_for(blog, TASK.format(n=n, kind_rule=KIND_RULES[kind], funnel_rule=FUNNELS[funnel]))
     if call is None:
         from apps.crm.ai import claude_json
         call = lambda p: claude_json(p, model="claude-sonnet-4-6", max_tokens=2500, system=system, source=SOURCE)
-    ask = f"Тема: {topic}\nМатеріал: {material or '—'}\n\nБаза знань:\n{facts_text or '(немає)'}"
+    ask = (f"Тема: {topic}\nМатеріал: {material or '—'}\n\nБаза знань:\n{facts_text or '(немає)'}\n\n"
+           + blogs.memory_block(blog))
     try:
         r = call(ask) or {}
     except TimeoutError:  # таймаут спільного claude_json (45 с) — ще одна спроба
@@ -53,17 +98,22 @@ def generate(blog, topic, n=6, template="photo", images="auto", material="", cal
     slides = []
     for s in (r.get("slides") or [])[:n]:
         if isinstance(s, dict) and (s.get("headline") or s.get("body")):
-            slides.append({"headline": clean_text(str(s.get("headline") or ""))[:90],
-                           "body": clean_text(str(s.get("body") or ""))[:300],
+            slides.append({"headline": _lines(s.get("headline"), 90),
+                           "body": _lines(s.get("body"), 400),
                            "hint": clean_text(str(s.get("image_hint") or ""))[:200], "image": {"kind": "none"}})
     if len(slides) < 3:
         raise ValueError("ШІ не склав слайди — спробуйте іншу тему.")
     c = into or Carousel(blog=blog, topic=topic)
     c.title = clean_text(str(r.get("title") or topic))[:200]
     c.caption = _clean_caption(str(r.get("caption") or ""))
-    c.template, c.slides = template, slides
+    c.template, c.slides, c.kind, c.funnel = template, slides, kind, funnel
     c.facts = fact_titles + [f"Перевірити: {clean_text(str(x))}" for x in (r.get("checks") or [])][:12]
     c.save()
+    blogs.remember(blog, "carousel", c.id, c.title, " / ".join(x["headline"] for x in slides)[:600],
+                   promise=str(r.get("promise") or ""), answers_id=r.get("answers_promise_id"))
+    if r.get("alt"):
+        c.facts = [f"Alt-текст: {clean_text(str(r['alt']))[:300]}"] + c.facts
+        c.save(update_fields=["facts"])
     mode = images
     if mode == "auto":
         mode = "library" if blog.use_crm_kb else "none"
@@ -208,10 +258,17 @@ def render_slide(c, idx):
     small = _font("Inter", "Bold", 26)
     head = s.get("headline") or ""
     body = s.get("body") or ""
-    hl = _wrap(d, head, h_font, W - 160)
-    bl = _wrap(d, body, b_font, W - 160)
+    hl = [ln for para in head.split("\n") for ln in (_wrap(d, para, h_font, W - 160) or [""])]
+    bl = [ln for para in body.split("\n") for ln in (_wrap(d, para, b_font, W - 160) or [""])] if body else []
     lh_h, lh_b = int(h_font.size * 1.12), int(b_font.size * 1.38)
     block = len(hl) * lh_h + (24 + len(bl) * lh_b if bl else 0)
+    pos = s.get("pos") or "auto"
+    if pos == "top" and text_top is None:
+        text_top = 170
+    elif pos == "center" and text_top is None:
+        text_top = -1
+    elif pos == "bottom" and text_top == -1:
+        text_top = None
     y = (H - 150 - block) if text_top is None else ((H - block) // 2 - 20 if text_top == -1 else text_top)
     d.rectangle([80, y - 30, 80 + 90, y - 22], fill=accent)
     for line in hl:
@@ -275,3 +332,86 @@ def send_test(c):
         raise PublishError("Слайди ще не намальовані.")
     media[0]["caption"] = (c.caption or c.title)[:1024]
     _tg("sendMediaGroup", {"chat_id": owner, "media": _json.dumps(media, ensure_ascii=False)}, files)
+
+
+
+# ── 25.09 v2: перегенерувати лише текст, поради під ціль ──────────────────────────────────────────
+
+def _ctx(c):
+    return "\n".join(f"[{i}] {x.get('headline', '')} — {x.get('body', '')}".replace("\n", " ") for i, x in enumerate(c.slides))
+
+
+def _call(system, prompt, max_tokens, call=None):
+    if call is not None:
+        return call(prompt) or {}
+    from apps.crm.ai import claude_json
+    try:
+        return claude_json(prompt, model="claude-sonnet-4-6", max_tokens=max_tokens, system=system, source=SOURCE) or {}
+    except TimeoutError:
+        return claude_json(prompt, model="claude-sonnet-4-6", max_tokens=max_tokens, system=system, source=SOURCE) or {}
+
+
+def _head(c):
+    return (f"Тема: {c.topic}\nТип: {KINDS.get(c.kind, '')}\nЦіль: {FUNNELS.get(c.funnel, '')}\n"
+            f"Кількість слайдів: {len(c.slides)}\n\nСлайди:\n{_ctx(c)}")
+
+
+def rewrite_slide(c, idx, wish="", call=None):
+    """Нова версія тексту одного слайда (картинка, позиція й дизайн лишаються)."""
+    blogs.require_ready(c.blog)
+    facts_text, _t = blogs.facts_block(c.blog, f"{c.topic} {c.slides[idx].get('headline', '')}")
+    system = blogs.system_for(c.blog, REWRITE_ONE.format(wish=f"Побажання: {wish}" if wish else ""))
+    r = _call(system, _head(c) + f"\n\nПерепиши слайд [{idx}].\n\nБаза знань:\n{facts_text or '(немає)'}", 500, call)
+    if not (r.get("headline") or r.get("body")):
+        raise ValueError("ШІ не повернув текст — спробуйте ще раз.")
+    c.slides[idx]["headline"] = _lines(r.get("headline"), 90)
+    c.slides[idx]["body"] = _lines(r.get("body"), 400)
+    render(c)
+    return c
+
+
+def rewrite_all(c, wish="", call=None):
+    """Нові тексти всіх слайдів і підпису; картинки на місцях."""
+    blogs.require_ready(c.blog)
+    facts_text, _t = blogs.facts_block(c.blog, c.topic)
+    system = blogs.system_for(c.blog, REWRITE_ALL.format(wish=f"Побажання: {wish}" if wish else ""))
+    r = _call(system, _head(c) + f"\n\nБаза знань:\n{facts_text or '(немає)'}", 1800, call)
+    new = [x for x in (r.get("slides") or []) if isinstance(x, dict)]
+    if len(new) != len(c.slides):
+        raise ValueError("ШІ змінив кількість слайдів — спробуйте ще раз.")
+    for s, x in zip(c.slides, new):
+        s["headline"], s["body"] = _lines(x.get("headline"), 90), _lines(x.get("body"), 400)
+    if r.get("caption"):
+        c.caption = _clean_caption(str(r["caption"]))
+    render(c)
+    return c
+
+
+def advice(c, call=None):
+    blog = c.blog
+    if not (blog and blog.goal.strip()):
+        raise ValueError("Вкажіть мету блогу в «Блогах» — без неї поради будуть навмання.")
+    system = blogs.system_for(blog, ADVICE)
+    r = _call(system, _head(c) + f"\n\nПідпис:\n{c.caption[:800]}", 1400, call)
+    out = []
+    for a in (r.get("advice") or [])[:5]:
+        act = a.get("action") if isinstance(a, dict) else None
+        if not isinstance(act, dict):
+            continue
+        t = act.get("type")
+        if t in ("text", "image", "pos"):
+            try:
+                sl = int(act.get("slide"))
+            except (TypeError, ValueError):
+                continue
+            if not 0 <= sl < len(c.slides):
+                continue
+            act["slide"] = sl
+        if t == "pos" and act.get("value") not in ("top", "center", "bottom"):
+            continue
+        if t == "image" and blog.label_ai and c.slides[act["slide"]].get("image", {}).get("kind") == "library":
+            continue  # Wallcov: справжнє фото фактури не замінюємо ШІ
+        if t not in ("text", "image", "caption", "pos"):
+            continue
+        out.append({"title": clean_text(str(a.get("title") or ""))[:80], "why": clean_text(str(a.get("why") or ""))[:240], "action": act})
+    return out

@@ -612,3 +612,48 @@ class BlogCarouselAssistTests(TestCase):
             {"title": "Поза межами", "why": "x", "action": {"type": "text", "beat": 9, "value": "т"}}]}
         out = assist.reel_advice(reel, call=fake)
         self.assertEqual([a["title"] for a in out], ["Перехід", "ШІ-кадр"])
+
+
+    def test_memory_promise_and_text_rewrite(self):
+        from . import carousels as carsvc
+        from .models import Blog, ContentMemory
+        b = Blog.objects.get(slug="stiny-v-shotsi")
+        first = lambda p: {"title": "Серія 1", "caption": "п", "promise": "Покажемо, чим закінчився ремонт",
+                           "slides": [{"headline": f"Крок {i}", "body": "рядок 1\nрядок 2"} for i in range(4)]}
+        c1 = carsvc.generate(b, "Серія 1", n=4, template="graphite", images="none", call=first, kind="list", funnel="follow")
+        self.assertEqual(c1.slides[0]["body"], "рядок 1\nрядок 2")  # переноси збережено
+        m1 = ContentMemory.objects.get(blog=b, ref_id=c1.id)
+        self.assertFalse(m1.promise_done)
+        self.assertIn(f"id {m1.id}", self.blogsvc.memory_block(b))
+        second = lambda p: {"title": "Серія 2", "caption": "п", "answers_promise_id": m1.id,
+                            "slides": [{"headline": "Фінал", "body": "так"} for _ in range(3)]}
+        carsvc.generate(b, "Серія 2", n=3, template="graphite", images="none", call=second)
+        m1.refresh_from_db()
+        self.assertTrue(m1.promise_done)
+        carsvc.rewrite_slide(c1, 1, call=lambda p: {"headline": "Новий крок", "body": "а\nб"})
+        self.assertEqual((c1.slides[1]["headline"], c1.slides[1]["body"]), ("Новий крок", "а\nб"))
+        self.assertEqual(c1.slides[0]["headline"], "Крок 0")
+        with self.assertRaises(ValueError):
+            carsvc.rewrite_all(c1, call=lambda p: {"slides": [{"headline": "x", "body": "y"}]})
+
+    def test_learn_extract_and_accept(self):
+        import io
+        import zipfile
+        from . import learn
+        from .models import Blog, BlogFact
+        b = Blog.objects.get(slug="stiny-v-shotsi")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("word/document.xml", "<w:document><w:p><w:r><w:t>Барсик рудий</w:t></w:r></w:p><w:p><w:t>Гена в синьому</w:t></w:p></w:document>")
+        self.assertIn("Барсик рудий\nГена в синьому", learn.text_from_file("x.docx", buf.getvalue()))
+        fake = lambda p: {"items": [{"kind": "rule", "title": "Барсик завжди рудий", "text": "у кожному кадрі"},
+                                    {"kind": "rule", "title": "Барсик завжди рудий", "text": "дубль"},
+                                    {"kind": "weird", "title": "Гена в синьому комбінезоні"}], "master_add": "Візуал: 3D"}
+        r = learn.extract(b, "Інструкція до мультика. " * 10, call=fake)
+        self.assertEqual([i["title"] for i in r["items"]], ["Барсик завжди рудий", "Гена в синьому комбінезоні"])
+        self.assertEqual(r["items"][1]["kind"], "fact")
+        resp = self.c.post(f"/api/content-factory/blogs/{b.id}/learn/accept/", {"items": r["items"], "master_add": r["master_add"]}, format="json")
+        self.assertEqual(resp.json()["added"], 2)
+        self.assertEqual(BlogFact.objects.filter(blog=b).count(), 2)
+        b.refresh_from_db()
+        self.assertTrue(b.master_prompt.endswith("Візуал: 3D"))

@@ -140,9 +140,11 @@ def facts_block(blog, query, limit=8, max_chars=3500):
     return text[:max_chars + 1500], titles
 
 
-def system_for(blog, task):
-    """Системний промпт: завдання генератора + майстер-промт блогу + спільні заборони."""
-    return (f"{task}\n\nБЛОГ: «{blog.name}».\nМАЙСТЕР-ПРОМТ БЛОГУ (головне, дотримуйся буквально):\n{blog.master_prompt.strip()}\n\n"
+def system_for(blog, task, platform=True):
+    """Системний промпт: завдання генератора + майстер-промт блогу + правила Instagram + спільні заборони."""
+    from .platform_rules import INSTAGRAM
+    rules = f"\n\nПРАВИЛА INSTAGRAM (офіційні рекомендації Meta — дотримуйся):\n{INSTAGRAM}" if platform else ""
+    return (f"{task}{rules}\n\nБЛОГ: «{blog.name}».\nМАЙСТЕР-ПРОМТ БЛОГУ (головне, дотримуйся буквально):\n{blog.master_prompt.strip()}\n\n"
             f"Мета блогу: {blog.goal.strip() or '(не вказана)'}\nЗаклик блогу: {blog.cta.strip() or '(немає — без заклику)'}\n\n{COMMON_RULES}")
 
 
@@ -167,3 +169,39 @@ def master_from_brief(blog, brief, call=None):
     r = call(f"Блог: {blog.name}\nАкаунти: {', '.join('@' + c.handle for c in blog.channels.all())}\n\nОпис Олега:\n{brief}") or {}
     return {"master_prompt": str(r.get("master_prompt") or "")[:6000], "cta": str(r.get("cta") or "")[:1000],
             "about": str(r.get("about") or "")[:300]}
+
+
+
+# ── Памʼять блогу: що вже зробили й що пообіцяли ────────────────────────────────────────────────
+
+MEMORY_RULES = ("ПАМʼЯТЬ БЛОГУ нижче. Не повторюй уже зроблені теми тими самими словами. Якщо є ВІДКРИТІ ОБІЦЯНКИ "
+                "(«у наступному покажемо…») і тема цього контенту їх стосується — відповідай на найстаршу й вкажи її id в "
+                "answers_promise_id. Якщо тема інша (термінова чи для розбавлення) — не давай нової обіцянки поверх відкритої, "
+                "а в заклику коротко нагадай, що відповідь на обіцяне буде далі. Нову обіцянку (поле promise) давай лише якщо "
+                "справді плануєш продовження, одним реченням.")
+
+
+def memory_block(blog, limit=8):
+    from .models import ContentMemory
+    recent = list(ContentMemory.objects.filter(blog=blog)[:limit])
+    opened = list(ContentMemory.objects.filter(blog=blog, promise_done=False).exclude(promise="").order_by("created_at")[:5])
+    lines = [MEMORY_RULES, "Останнє:"] + ([f"- {m.get_kind_display()} «{m.title}»: {m.summary[:160]}" for m in recent] or ["- (нічого)"])
+    lines.append("ВІДКРИТІ ОБІЦЯНКИ:" if opened else "ВІДКРИТІ ОБІЦЯНКИ: немає")
+    lines += [f"- id {m.id}: {m.promise} (з «{m.title}», {m.created_at:%d.%m})" for m in opened]
+    return "\n".join(lines)
+
+
+def remember(blog, kind, ref_id, title, summary, promise="", answers_id=None):
+    """Записати одиницю контенту в памʼять; якщо вона відповідає на обіцянку — закрити її."""
+    from .models import ContentMemory
+    ans = None
+    try:
+        ans = ContentMemory.objects.filter(pk=int(answers_id), blog=blog, promise_done=False).first() if answers_id else None
+    except (TypeError, ValueError):
+        ans = None
+    m = ContentMemory.objects.create(blog=blog, kind=kind, ref_id=ref_id, title=title[:200], summary=summary[:1000],
+                                     promise=(promise or "")[:300], answers=ans)
+    if ans:
+        ans.promise_done = True
+        ans.save(update_fields=["promise_done"])
+    return m

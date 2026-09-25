@@ -39,7 +39,8 @@ from . import aiimage as aisvc
 from . import blogs as blogsvc
 from . import carousels as carsvc
 from . import assist as assistsvc
-from .models import (AnalystReport, AnalystSettings, Blog, BlogFact, Carousel, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
+from . import learn as learnsvc
+from .models import (AnalystReport, AnalystSettings, Blog, BlogFact, Carousel, ContentMemory, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
                      QuestionMention, QuestionSettings, QuestionTopic, ReelDraft, ReelStyle, SourceAsset, SourceChat,
                      TgPost, TgSettings, VideoScene, parse_channel_link)
 
@@ -980,10 +981,11 @@ def _blog(b, full=False):
     chans = [{"id": c.id, "platform": c.platform, "handle": c.handle, "url": c.url}
              for c in b.channels.filter(role=ContentChannel.Role.OWN).order_by("platform", "handle")]
     out = {"id": b.id, "slug": b.slug, "name": b.name, "kind": b.kind, "kind_display": b.get_kind_display(),
-           "about": b.about, "color": b.color, "is_default": b.is_default, "use_crm_kb": b.use_crm_kb,
+           "about": b.about, "goal": b.goal, "color": b.color, "is_default": b.is_default, "use_crm_kb": b.use_crm_kb,
            "label_ai": b.label_ai, "real_footage": b.real_footage, "ready": blogsvc.is_ready(b),
            "accounts": chans, "facts_count": b.facts.filter(active=True).count(),
-           "reels": b.reels.count(), "carousels": b.carousels.count()}
+           "reels": b.reels.count(), "carousels": b.carousels.count(),
+           "open_promises": b.memory.filter(promise_done=False).exclude(promise="").count()}
     if full:
         out.update({"master_prompt": b.master_prompt, "goal": b.goal, "cta": b.cta, "template": blogsvc.TEMPLATE,
                     "facts": [{"id": f.id, "kind": f.kind, "kind_display": f.get_kind_display(), "title": f.title,
@@ -1132,11 +1134,12 @@ class BlogBriefView(_Base):
 def _carousel(request, c):
     return {
         "id": c.id, "blog_id": c.blog_id, "topic": c.topic, "title": c.title, "caption": c.caption, "template": c.template,
+        "kind": c.kind, "funnel": c.funnel,
         "status": c.status, "status_display": c.get_status_display(), "busy": c.busy, "error": c.error,
         "facts": c.facts, "created_at": _iso(c.created_at),
         "slides": [{"headline": s.get("headline", ""), "body": s.get("body", ""), "hint": s.get("hint", ""),
                     "image_kind": (s.get("image") or {}).get("kind", "none"),
-                    "image_prompt": (s.get("image") or {}).get("prompt", ""),
+                    "image_prompt": (s.get("image") or {}).get("prompt", ""), "pos": s.get("pos") or "auto",
                     "png_url": _link_url(request, s["rendered_id"]) if s.get("rendered_id") else ""} for s in c.slides],
     }
 
@@ -1149,6 +1152,9 @@ class CarouselsView(_Base):
             qs = qs.filter(blog_id=request.GET["blog"])
         from .telegram import real_materials
         return Response({"carousels": [_carousel(request, c) for c in qs[:20]], "templates": list(carsvc.TEMPLATES.items()),
+                         "kinds": list(carsvc.KINDS.items()), "funnels": list(carsvc.FUNNELS.items()),
+                         "promises": [{"id": m.id, "promise": m.promise, "title": m.title} for m in
+                                      ContentMemory.objects.filter(blog_id=request.GET.get("blog") or 0, promise_done=False).exclude(promise="").order_by("created_at")[:5]],
                          "materials": sorted(set(real_materials())), "spent_month_usd": round(carsvc.spent_month(), 3),
                          "images_spent_month_usd": round(aisvc.spent_month(), 3), "images_cap_usd": aisvc.MONTH_CAP})
 
@@ -1168,10 +1174,11 @@ class CarouselsView(_Base):
         tpl = data.get("template") if data.get("template") in carsvc.TEMPLATES else "photo"
         c = Carousel.objects.create(blog=blog, topic=topic, title=topic[:200], template=tpl, busy=True)
         n, material = data.get("slides") or 6, str(data.get("material") or "")[:80]
+        kind, funnel = data.get("kind") or "single", data.get("funnel") or "save"
 
         def work():
             try:
-                carsvc.generate(blog, topic, n=n, template=tpl, images=images, material=material, into=c)
+                carsvc.generate(blog, topic, n=n, template=tpl, images=images, material=material, into=c, kind=kind, funnel=funnel)
             except Exception as e:
                 Carousel.objects.filter(pk=c.pk).update(error=str(e)[:300], status=Carousel.Status.REJECTED)
             finally:
@@ -1191,8 +1198,10 @@ class CarouselView(_Base):
             if len(data["slides"]) != len(c.slides):
                 return Response({"error": "Кількість слайдів змінювати тут не можна."}, status=400)
             for s, new in zip(c.slides, data["slides"]):
-                s["headline"] = reelsvc.clean_text(str(new.get("headline") or ""))[:90]
-                s["body"] = reelsvc.clean_text(str(new.get("body") or ""))[:300]
+                s["headline"] = carsvc._lines(new.get("headline"), 90)  # переноси рядків зберігаються
+                s["body"] = carsvc._lines(new.get("body"), 400)
+                if new.get("pos") in ("auto", "top", "center", "bottom"):
+                    s["pos"] = new["pos"]
             redraw = True
         if data.get("template") in carsvc.TEMPLATES:
             c.template, redraw = data["template"], True
@@ -1224,6 +1233,26 @@ class CarouselView(_Base):
             except tgsvc.PublishError as e:
                 return Response({"error": str(e)}, status=400)
             return Response({"ok": True, "note": "Надіслано вам у Telegram альбомом."})
+        if action == "text":  # лише текст: один слайд або всі; картинки лишаються
+            data = request.data or {}
+            if c.busy:
+                return Response({"error": "Карусель ще обробляється — зачекайте."}, status=409)
+            try:
+                if data.get("op") == "all":
+                    carsvc.rewrite_all(c, wish=str(data.get("wish") or "")[:300])
+                else:
+                    idx = int(data.get("index"))
+                    if not 0 <= idx < len(c.slides):
+                        raise ValueError("Невідомий слайд.")
+                    carsvc.rewrite_slide(c, idx, wish=str(data.get("wish") or "")[:300])
+            except (TypeError, ValueError) as e:
+                return Response({"error": str(e) or "Невідомий слайд."}, status=400)
+            return Response(_carousel(request, c))
+        if action == "advice":
+            try:
+                return Response({"advice": carsvc.advice(c)})
+            except ValueError as e:
+                return Response({"error": str(e)}, status=400)
         if action != "image":
             return Response(status=405)
         data = request.data or {}
@@ -1319,3 +1348,62 @@ class TelegramPhotoAIView(_Base):
         post.photo_ids = [copy.id if i == pid else i for i in post.photo_ids]
         post.save(update_fields=["photo_ids"])
         return Response(_post(request, post))
+
+
+
+class BlogMemoryView(_Base):
+    """GET — памʼять блогу: останній контент і відкриті обіцянки. PATCH ?id= {promise_done} — закрити/відкрити обіцянку."""
+    def get(self, request, pk):
+        b = get_object_or_404(Blog, pk=pk)
+        row = lambda m: {"id": m.id, "kind": m.kind, "kind_display": m.get_kind_display(), "ref_id": m.ref_id, "title": m.title,
+                         "summary": m.summary, "promise": m.promise, "promise_done": m.promise_done,
+                         "answers": m.answers_id, "created_at": _iso(m.created_at)}
+        return Response({"recent": [row(m) for m in ContentMemory.objects.filter(blog=b)[:30]],
+                         "open": [row(m) for m in ContentMemory.objects.filter(blog=b, promise_done=False).exclude(promise="").order_by("created_at")]})
+
+    def patch(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        m = get_object_or_404(ContentMemory, pk=request.GET.get("id") or 0, blog_id=pk)
+        m.promise_done = bool((request.data or {}).get("promise_done"))
+        m.save(update_fields=["promise_done"])
+        return self.get(request, pk)
+
+
+
+class BlogLearnView(_Base):
+    """Навчити блог знаннями ззовні.
+    POST (файл у multipart «file», або JSON {text} / {url}) — розібрати на пропозиції записів (не зберігає, ≈$0.02–0.08).
+    POST /accept/ {items:[{kind,title,text}], master_add?} — додати вибрані записи й (за бажанням) дописати майстер-промт."""
+    def post(self, request, pk, action=None):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        if action == "accept":
+            data = request.data or {}
+            made = 0
+            for it in (data.get("items") or [])[:200]:
+                title = str((it or {}).get("title") or "").strip()[:200]
+                if not title:
+                    continue
+                kind = it.get("kind") if it.get("kind") in BlogFact.Kind.values else BlogFact.Kind.FACT
+                BlogFact.objects.create(blog=b, kind=kind, title=title, text=str(it.get("text") or "")[:4000])
+                made += 1
+            add = str(data.get("master_add") or "").strip()
+            if add:
+                b.master_prompt = (b.master_prompt.rstrip() + "\n" + add[:3000]).strip()
+                b.save(update_fields=["master_prompt", "updated_at"])
+            return Response({"added": made, "master_updated": bool(add), "blog": _blog(b, full=True)})
+        try:
+            f = request.FILES.get("file")
+            if f:
+                if f.size > 15 * 1024 * 1024:
+                    return Response({"error": "Файл більший за 15 МБ."}, status=400)
+                text = learnsvc.text_from_file(f.name, f.read())
+            elif (request.data or {}).get("url"):
+                text = learnsvc.text_from_url(str(request.data["url"]).strip())
+            else:
+                text = str((request.data or {}).get("text") or "")
+            return Response(learnsvc.extract(b, text))
+        except learnsvc.LearnError as e:
+            return Response({"error": str(e)}, status=400)

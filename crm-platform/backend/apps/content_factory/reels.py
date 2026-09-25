@@ -179,9 +179,13 @@ def plan(topic, material, scenes, call=None, structure=None, blog=None):
         system = blogs.system_for(blog, PLAN_TASK_BLOG)
     else:
         facts_text, fact_titles = kb_facts(f"{topic} {material}")
-        system = PLAN_SYSTEM
+        from .platform_rules import INSTAGRAM
+        system = PLAN_SYSTEM + "\n\nПРАВИЛА INSTAGRAM (офіційні рекомендації Meta):\n" + INSTAGRAM
     catalog = "\n".join(f"{s.id} | {s.end - s.start:.1f}с | {s.shot} | {s.what} | q{s.quality}" for s in scenes)
     prompt = f"Тема: {topic}\nМатеріал: {material}\n\nКаталог сцен:\n{catalog}\n\nБаза знань:\n{facts_text or '(немає)'}"
+    if blog is not None:
+        from . import blogs as _b
+        prompt += "\n\n" + _b.memory_block(blog) + MEMORY_JSON
     if structure:  # повторити будову й темп референсу — але наші кадри, наші факти, свої слова
         prompt += ("\n\nПовтори БУДОВУ й ТЕМП ролика-референсу (кількість кадрів, їх тривалість і призначення, прийом гачка), "
                    "не копіюючи його текст:\n" + json.dumps(structure, ensure_ascii=False))
@@ -203,7 +207,8 @@ def plan(topic, material, scenes, call=None, structure=None, blog=None):
     if len(beats) < 3:
         raise ReelError("Замало придатних сцен для ролика — розмітьте більше відео цього матеріалу.")
     return {"title": clean_text(str(r.get("title") or topic))[:200], "caption": _clean_caption(str(r.get("caption") or "")),
-            "beats": beats[:6], "checks": r.get("checks") or [], "facts": fact_titles}
+            "beats": beats[:6], "checks": r.get("checks") or [], "facts": fact_titles,
+            "promise": str(r.get("promise") or ""), "answers": r.get("answers_promise_id")}
 
 
 PLAN_TASK_BLOG = """Ти монтажер коротких вертикальних роликів. Зроби рилс 12–25 секунд на задану тему з ГОТОВИХ сцен (каталог нижче).
@@ -238,6 +243,8 @@ def _wrap(text, width=18):
 
 
 AI_LABEL = "ШІ-візуалізація"
+MEMORY_JSON = ('\n\nДодатково в JSON: "promise" (що обіцяємо показати далі, одним реченням, або "") і '
+               '"answers_promise_id" (id відкритої обіцянки, на яку відповідає ролик, або null).')
 XFADE = {"fade": "fade", "slide": "slideleft", "zoom": "zoomin", "cut": None}
 XFADE_SEC = 0.35
 MOTIONS = ("zoomin", "zoomout", "none")
@@ -348,9 +355,14 @@ def make_reel(topic, material, markup_limit=15, call=None, style=None, blog=None
         data, dur = render(p, folder, style=style, blog=blog)
         link = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{material}.mp4",
                                          content_type="video/mp4", data=data)
-        return ReelDraft.objects.create(title=p["title"], topic=topic, material=material, caption=p["caption"],
+        reel = ReelDraft.objects.create(title=p["title"], topic=topic, material=material, caption=p["caption"],
                                         beats=p["beats"], facts=p["facts"] + [f"Перевірити: {clean_text(str(c))}" for c in p["checks"]][:10],
                                         file=link, duration=round(dur, 1), style=style, blog=blog)
+        if blog is not None:
+            from . import blogs as _b
+            _b.remember(blog, "reel", reel.id, reel.title, " / ".join(b["text"] for b in reel.beats)[:600],
+                        promise=p.get("promise", ""), answers_id=p.get("answers"))
+        return reel
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
@@ -366,7 +378,7 @@ def make_ai_reel(topic, blog, call=None, style=None):
     if call is None:
         from apps.crm.ai import claude_json
         call = lambda p: claude_json(p, model="claude-sonnet-4-6", max_tokens=1400, system=system, source=PLAN_SOURCE)
-    prompt = f"Тема: {topic}\n\nБаза знань:\n{facts_text or '(немає)'}"
+    prompt = f"Тема: {topic}\n\nБаза знань:\n{facts_text or '(немає)'}\n\n" + blogs.memory_block(blog) + MEMORY_JSON
     if style and style.structure:
         prompt += "\n\nПовтори БУДОВУ й ТЕМП референсу (не текст):\n" + json.dumps(style.structure, ensure_ascii=False)
     try:
@@ -393,10 +405,13 @@ def make_ai_reel(topic, blog, call=None, style=None):
     try:
         data, dur = render({"beats": beats}, folder, style=style, blog=blog)
         link = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{blog.slug}.mp4", content_type="video/mp4", data=data)
-        return ReelDraft.objects.create(title=clean_text(str(r.get("title") or topic))[:200], topic=topic, material="",
+        reel = ReelDraft.objects.create(title=clean_text(str(r.get("title") or topic))[:200], topic=topic, material="",
                                         caption=_clean_caption(str(r.get("caption") or "")), beats=beats,
                                         facts=fact_titles + [f"Перевірити: {clean_text(str(c))}" for c in (r.get("checks") or [])][:10],
                                         file=link, duration=round(dur, 1), style=style, blog=blog)
+        blogs.remember(blog, "reel", reel.id, reel.title, " / ".join(b["text"] for b in beats)[:600],
+                       promise=str(r.get("promise") or ""), answers_id=r.get("answers_promise_id"))
+        return reel
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 

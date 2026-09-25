@@ -494,6 +494,8 @@ class Carousel(models.Model):
     title = models.CharField(max_length=200)
     caption = models.TextField(blank=True)
     template = models.CharField(max_length=20, default="photo")
+    kind = models.CharField(max_length=12, default="single", help_text="single — одна тема по кроках; list — добірка з анонсом")
+    funnel = models.CharField(max_length=12, default="save", help_text="Ціль каруселі: save|share|comment|dm|follow")
     slides = models.JSONField(default=list, blank=True,
                               help_text="[{headline, body, image:{kind: library|ai|none, link_id, prompt}, rendered_id}]")
     facts = models.JSONField(default=list, blank=True)
@@ -502,6 +504,31 @@ class Carousel(models.Model):
     busy = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+
+class ContentMemory(models.Model):
+    """Памʼять блогу (25.09.2026): що вже зробили й що ПООБІЦЯЛИ глядачу («у наступному покажемо…»).
+    Генератор бачить останні одиниці й відкриті обіцянки, щоб не повторюватись і не забути відповісти,
+    навіть якщо між ними вийшов ролик на іншу, термінову тему."""
+    class Kind(models.TextChoices):
+        REEL = "reel", "Рилс"
+        CAROUSEL = "carousel", "Карусель"
+        POST = "post", "Пост"
+
+    blog = models.ForeignKey(Blog, on_delete=models.CASCADE, related_name="memory")
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    ref_id = models.IntegerField(null=True, blank=True)
+    title = models.CharField(max_length=200)
+    summary = models.TextField(blank=True)
+    promise = models.CharField(max_length=300, blank=True, help_text="Що пообіцяли показати/розповісти далі")
+    promise_done = models.BooleanField(default=False)
+    answers = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="answered_by",
+                                help_text="На яку обіцянку відповідає цей контент")
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]

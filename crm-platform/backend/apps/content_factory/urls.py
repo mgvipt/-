@@ -70,3 +70,12 @@ urlpatterns += [  # 25.09: блоги, каруселі, ШІ-кадри, вич
     path("api/content-factory/proofread/", views.ProofreadView.as_view()),
     path("api/content-factory/telegram/posts/<int:pk>/photo-ai/", views.TelegramPhotoAIView.as_view()),
 ]
+urlpatterns += [  # 25.09 v2: каруселі (текст, поради), памʼять блогу
+    path("api/content-factory/carousels/<int:pk>/text/", views.CarouselView.as_view(), {"action": "text"}),
+    path("api/content-factory/carousels/<int:pk>/advice/", views.CarouselView.as_view(), {"action": "advice"}),
+    path("api/content-factory/blogs/<int:pk>/memory/", views.BlogMemoryView.as_view()),
+]
+urlpatterns += [  # 25.09: навчання блогу знаннями ззовні
+    path("api/content-factory/blogs/<int:pk>/learn/", views.BlogLearnView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/learn/accept/", views.BlogLearnView.as_view(), {"action": "accept"}),
+]
