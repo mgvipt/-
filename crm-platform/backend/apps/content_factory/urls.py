@@ -81,3 +81,14 @@ urlpatterns += [  # 25.09: навчання блогу знаннями ззов
 ]
 urlpatterns += [path("api/content-factory/channels/<int:pk>/virale/", views.ChannelDetailView.as_view())]
 urlpatterns += [path("api/content-factory/channels/<int:pk>/content/", views.ChannelContentView.as_view())]
+urlpatterns += [
+    path("api/content-factory/blogs/<int:pk>/learn/drive-list/", views.BlogLearnView.as_view(), {"action": "drive-list"}),
+    path("api/content-factory/blogs/<int:pk>/learn/drive/", views.BlogLearnView.as_view(), {"action": "drive"}),
+]
+urlpatterns += [path("api/content-factory/blogs/<int:pk>/visual/", views.BlogVisualView.as_view())]
+urlpatterns += [
+    path("api/content-factory/write/", views.WriteView.as_view()),
+    path("api/content-factory/reels/<int:pk>/versions/", views.ReelView.as_view(), {"action": "versions"}),
+    path("api/content-factory/reels/<int:pk>/adapt/", views.ReelView.as_view(), {"action": "adapt"}),
+    path("api/content-factory/carousels/<int:pk>/adapt/", views.CarouselView.as_view(), {"action": "adapt"}),
+]

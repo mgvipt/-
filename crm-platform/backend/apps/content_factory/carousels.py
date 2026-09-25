@@ -9,7 +9,7 @@
 import io
 import random
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps, ImageStat
 
 from . import aiimage, blogs
 from .models import Carousel
@@ -36,7 +36,7 @@ TASK = """Ти редактор каруселей для Instagram. Зроби 
 Слайд 2 — другий вхід у тему: сильна думка, що тримає й сама по собі (кожен слайд має тягнути гортати далі).
 Середні слайди — по одній думці: headline до 6 слів, body до 220 символів; можна переносити рядки (\n) для списків.
 Останній слайд — підсумок і заклик за ЦІЛЛЮ та закликом блогу.
-image_hint — що має бути на картинці слайда (коротко).
+image_hint — СЦЕНА й композиція кадру (кімната, ракурс, предмети, світло) коротко; фактуру покриття НЕ описуй — вона береться з реального фото.
 caption — підпис 2–5 речень: перший рядок — гачок із ключовими словами теми (пошук Instagram), далі суть, заклик за ціллю;
 в кінці 3–5 доречних хештегів. Без емодзі.
 alt — короткий опис каруселі для людей з вадами зору (1 речення).
@@ -135,29 +135,120 @@ def generate(blog, topic, n=6, template="photo", images="auto", material="", cal
     return c
 
 
+def best_photos(material, limit=20):
+    """Реальні фото матеріалу, найкращі за оцінкою (світло/різкість/композиція); неоцінені — наприкінці."""
+    from apps.inbox.models import MediaLibraryItem
+    from .models import PhotoScore
+    from .telegram import REAL_TAG
+    ids = list(MediaLibraryItem.objects.filter(is_active=True, kind="image", tags__icontains=REAL_TAG, material__iexact=material)
+               .values_list("id", flat=True))
+    score = dict(PhotoScore.objects.filter(lib_id__in=ids).values_list("lib_id", "score"))
+    ids = [i for i in ids if score.get(i, 5.5) > 1]  # оцінка ≤1 — «не еталон» (чужий водяний знак, не наш матеріал)
+    random.shuffle(ids)  # різноманіття серед рівних
+    return sorted(ids, key=lambda i: -(score.get(i, 5.5)))[:limit]
+
+
 def _library_images(c, material):
-    """Реальні фото матеріалу з бібліотеки CRM — по одному на слайд, без повторів."""
-    from .telegram import pick_photos
-    used = []
-    for s in c.slides:
-        ids = pick_photos(material, exclude=used) if material else []
-        if ids:
-            used.append(ids[0])
-            s["image"] = {"kind": "library", "lib_id": ids[0]}
+    """Найкращі реальні фото матеріалу з бібліотеки CRM — по одному на слайд, без повторів."""
+    pool = best_photos(material, limit=len(c.slides) * 2) if material else []
+    for s, lib in zip(c.slides, pool):
+        s["image"] = {"kind": "library", "lib_id": lib}
 
 
 def set_library_image(c, idx, lib_id, save=True):
+    _remember_image(c.slides[idx])
     c.slides[idx]["image"] = {"kind": "library", "lib_id": int(lib_id)}
     if save:
         render(c)
 
 
+def _texture_for(c, idx):
+    """Wallcov: фото-зразок фактури для ШІ — поточне фото слайда або найкраще реальне фото матеріалу каруселі."""
+    from .material_specs import find_material
+    cur = c.slides[idx].get("image") or {}
+    got = _image_bytes(cur.get("from") or cur) if cur.get("kind") == "ai" else _image_bytes(cur)
+    material = find_material(f"{c.topic} {c.title}") or ""
+    if not got and material:
+        from apps.inbox.models import MediaLibraryItem
+        for lib in best_photos(material, limit=1):  # material__iexact — регістр не важливий
+            m = MediaLibraryItem.objects.filter(pk=lib).select_related("file").first()
+            if m and m.file_id:
+                got = (bytes(m.file.data), m.file.content_type)
+    return got, material
+
+
+def _remember_image(slide):
+    slide["image_prev"] = slide.get("image") or {"kind": "none"}
+
+
+def undo_image(c, idx):
+    prev = c.slides[idx].get("image_prev")
+    if not prev:
+        raise ValueError("Попередньої картинки немає.")
+    c.slides[idx]["image_prev"], c.slides[idx]["image"] = c.slides[idx].get("image") or {"kind": "none"}, prev
+    render(c)
+    return c
+
+
 def set_ai_image(c, idx, prompt, save=True):
-    data, mime = aiimage.regenerate(prompt, c.blog, aspect="4:5")
+    texture, material = (_texture_for(c, idx) if c.blog and c.blog.label_ai else (None, ""))
+    if c.blog and c.blog.label_ai and not texture:
+        raise ValueError("Для Wallcov ШІ малює стіну лише за реальним фото фактури — спершу поставте на слайд фото з бібліотеки.")
+    data, mime = aiimage.regenerate(prompt, c.blog, aspect="4:5", texture=texture, material=material)
     link = aiimage.save(data, mime, f"carousel-{c.id}-{idx}")
-    c.slides[idx]["image"] = {"kind": "ai", "link_id": link.id, "prompt": prompt[:500]}
+    _remember_image(c.slides[idx])
+    c.slides[idx]["image"] = {"kind": "ai", "link_id": link.id, "prompt": prompt[:500], "from": c.slides[idx]["image_prev"]}
     if save:
         render(c)
+
+
+INTERIOR = ("Сучасний житловий інтерʼєр (вітальня, спальня або коридор — обери доречне), де одна стіна оздоблена декоративним "
+            "покриттям ТОЧНО як на цьому фото: та сама фактура, малюнок, колір і блиск — не перемальовуй і не вигадуй візерунок. "
+            "Реалістичні масштаби, мотивоване денне світло, стримані меблі. Без тексту й логотипів. Вертикальний кадр 4:5.")
+
+
+def interior_image(c, idx):
+    """ШІ-інтерʼєр із фактурою з реального фото слайда (позначка «ШІ-візуалізація» для label_ai)."""
+    got = _image_bytes(c.slides[idx].get("image") or {})
+    if not got:
+        raise ValueError("Спершу поставте на слайд реальне фото фактури.")
+    from .material_specs import find_material
+    from .material_specs import SPECS
+    mat = find_material(f"{c.topic} {c.title}")
+    room = (SPECS.get(mat) or {}).get("room", "")
+    data, mime = aiimage.generate(aiimage.texture_prompt(f"{INTERIOR} {room}", mat), aspect="4:5", ref=got)
+    link = aiimage.save(data, mime, f"carousel-{c.id}-{idx}-interior")
+    _remember_image(c.slides[idx])
+    prev = c.slides[idx]["image"]
+    c.slides[idx]["image"] = {"kind": "ai", "link_id": link.id, "prompt": "інтерʼєр з цією фактурою", "from": prev}
+    render(c)
+
+
+def improve_all(c):
+    """Покращити ШІ всі реальні фото каруселі (≈$0.04 кожне); ШІ-картинки не чіпаємо."""
+    n = 0
+    for i, s in enumerate(c.slides):
+        if (s.get("image") or {}).get("kind") == "library":
+            got = _image_bytes(s["image"])
+            if not got:
+                continue
+            data, mime = aiimage.improve(got[0], got[1], c.blog, aspect="4:5")
+            link = aiimage.save(data, mime, f"carousel-{c.id}-{i}-better")
+            s["image"] = {"kind": "ai", "link_id": link.id, "prompt": "покращено ШІ", "from": s["image"]}
+            n += 1
+    render(c)
+    return n
+
+
+def _polish(img, keep_color=True):
+    """Безкоштовне покращення фото при рендері: рівні, темні — світліше, трохи різкості; колір фактури не міняємо."""
+    img = ImageOps.autocontrast(img.convert("RGB"), cutoff=0.5)
+    lum = ImageStat.Stat(img.convert("L")).mean[0]
+    if lum < 115:
+        img = ImageEnhance.Brightness(img).enhance(min(1.25, 125 / max(lum, 40)))
+    if not keep_color:
+        img = ImageEnhance.Color(img).enhance(1.08)
+    return ImageEnhance.Sharpness(img).enhance(1.25)
 
 
 def improve_image(c, idx):
@@ -166,6 +257,7 @@ def improve_image(c, idx):
         raise ValueError("На цьому слайді немає картинки, яку можна покращити.")
     data, mime = aiimage.improve(got[0], got[1], c.blog, aspect="4:5")
     link = aiimage.save(data, mime, f"carousel-{c.id}-{idx}-better")
+    _remember_image(c.slides[idx])
     prev = c.slides[idx]["image"]
     c.slides[idx]["image"] = {"kind": "ai", "link_id": link.id, "prompt": "покращено ШІ", "from": prev}
     render(c)
@@ -233,7 +325,7 @@ def render_slide(c, idx):
     blog = c.blog
     accent = _hex(blog.color if blog else "#e3b85f")
     got = _image_bytes(s.get("image") or {})
-    photo = Image.open(io.BytesIO(got[0])) if got else None
+    photo = _polish(Image.open(io.BytesIO(got[0])), keep_color=bool(blog and blog.label_ai)) if got else None
     tpl = c.template if c.template in TEMPLATES else "photo"
     if tpl == "photo" and not photo:
         tpl = "graphite"
@@ -439,3 +531,66 @@ def advice(c, call=None):
             continue
         out.append({"title": clean_text(str(a.get("title") or ""))[:80], "why": clean_text(str(a.get("why") or ""))[:240], "action": act})
     return out
+
+
+SCORE_PROMPT = """Оціни це фото як кадр для Instagram-каруселі магазину декоративних покриттів: світло, різкість, композиція,
+чистота кадру, наскільки гарно видно фактуру. Відповідай ЛИШЕ JSON: {"score": 1-10, "note": "коротко, що не так"}"""
+
+
+def score_photos(material="", limit=400):
+    """Оцінити неоцінені реальні фото бібліотеки (Gemini, зменшене фото ≈$0.001 кожне). Повертає кількість."""
+    import base64
+    from apps.inbox.models import MediaLibraryItem
+    from .models import PhotoScore
+    from .reels import _gemini
+    from .telegram import REAL_TAG
+    qs = MediaLibraryItem.objects.filter(is_active=True, kind="image", tags__icontains=REAL_TAG).select_related("file")
+    if material:
+        qs = qs.filter(material__iexact=material)
+    done = set(PhotoScore.objects.values_list("lib_id", flat=True))
+    n = 0
+    for m in qs.exclude(id__in=done)[:limit]:
+        if not m.file_id or not m.file.data:
+            continue
+        try:
+            im = Image.open(io.BytesIO(bytes(m.file.data))).convert("RGB")
+            im.thumbnail((512, 512))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=80)
+            r = _gemini([{"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()}},
+                         {"text": SCORE_PROMPT}], max_tokens=300)
+            r = r if isinstance(r, dict) else (r[0] if isinstance(r, list) and r else {})
+            PhotoScore.objects.update_or_create(lib_id=m.id, defaults={"score": float(r.get("score") or 5),
+                                                                       "note": str(r.get("note") or "")[:200]})
+            n += 1
+        except Exception:
+            continue
+    return n
+
+
+ADAPT_ALL = """Адаптуй готову карусель під ІНШИЙ блог: картинки й кількість слайдів ті самі, але заголовки, тексти й підпис —
+у тематиці, тоні, меті й заклику ЦЬОГО блогу (майстер-промт нижче). Не переноси чужі контакти й назви продуктів, якщо блог не про них.
+Відповідай ЛИШЕ JSON: {"title":"...","caption":"...","slides":[{"headline":"...","body":"..."}]}"""
+
+
+def adapt_to_blog(c, blog, call=None):
+    """Копія каруселі для іншого блогу: переписується лише текст (≈$0.03), картинки лишаються."""
+    import copy as _copy
+    blogs.require_ready(blog)
+    new = Carousel.objects.create(blog=blog, topic=c.topic, title=c.title, caption=c.caption, template=c.template,
+                                  kind=c.kind, funnel=c.funnel,
+                                  slides=[{k: v for k, v in _copy.deepcopy(s).items() if k not in ("rendered_id", "prev", "image_prev")} for s in c.slides],
+                                  facts=[f"Адаптовано з каруселі #{c.id}"])
+    system = blogs.system_for(blog, ADAPT_ALL)
+    r = _call(system, _head(c) + f"\n\nПідпис:\n{c.caption[:800]}", 1800, call)
+    xs = [x for x in (r.get("slides") or []) if isinstance(x, dict)]
+    if len(xs) != len(new.slides):
+        new.delete()
+        raise ValueError("ШІ змінив кількість слайдів — спробуйте ще раз.")
+    for s, x in zip(new.slides, xs):
+        s["headline"], s["body"] = _lines(x.get("headline"), 90), _lines(x.get("body"), 400)
+    new.title = clean_text(str(r.get("title") or c.title))[:200]
+    new.caption = _clean_caption(str(r.get("caption") or ""))
+    render(new)
+    blogs.remember(blog, "carousel", new.id, new.title, " / ".join(x["headline"] for x in new.slides)[:600])
+    return new

@@ -144,6 +144,12 @@ def system_for(blog, task, platform=True):
     """Системний промпт: завдання генератора + майстер-промт блогу + правила Instagram + спільні заборони."""
     from .platform_rules import INSTAGRAM
     rules = f"\n\nПРАВИЛА INSTAGRAM (офіційні рекомендації Meta — дотримуйся):\n{INSTAGRAM}" if platform else ""
+    from .marketing import foundation
+    rules += "\n\nМАРКЕТИНГ-ФУНДАМЕНТ:\n" + foundation(blog)
+    from .visual import visual_text
+    vis = visual_text(blog)
+    if vis:
+        rules += f"\n\nВІЗУАЛЬНА БІБЛІЯ БЛОГУ (з прикладу Олега — кадри й описи мають їй відповідати):\n{vis}"
     return (f"{task}{rules}\n\nБЛОГ: «{blog.name}».\nМАЙСТЕР-ПРОМТ БЛОГУ (головне, дотримуйся буквально):\n{blog.master_prompt.strip()}\n\n"
             f"Мета блогу: {blog.goal.strip() or '(не вказана)'}\nЗаклик блогу: {blog.cta.strip() or '(немає — без заклику)'}\n\n{COMMON_RULES}")
 

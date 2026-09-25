@@ -262,13 +262,15 @@ def _motion(kind, seconds):
     return f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=30,"
 
 
-def render(p, folder, style=None, blog=None):
+def render(p, folder, style=None, blog=None, platform="instagram"):
     """Змонтувати ролик за планом у заданому стилі тексту. Повертає (bytes mp4, тривалість).
     Кадр з image_id (ШІ-покращений або згенерований) — нерухоме фото з повільним наближенням; для блогів з label_ai
     на ньому пишеться «ШІ-візуалізація» (правило Wallcov: ШІ-картинку не видаємо за реальний обʼєкт)."""
     from apps.inbox.models import SharedLink
     from .styles import drawtext, font_file
-    width = max(10, int(1000 / ((style.size if style else 68) * 0.56)))
+    from .platform_rules import SAFE
+    z = SAFE.get(platform) or SAFE["instagram"]
+    width = max(8, int((1080 - z["left"] - z["right"] - 40) / ((style.size if style else 68) * 0.56)))
     label = ""
     if blog is not None and blog.label_ai:
         lf = os.path.join(folder, "label.txt")
@@ -292,14 +294,14 @@ def render(p, folder, style=None, blog=None):
             with open(img, "wb") as f:
                 f.write(bytes(link.data))
             vf = ("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,"
-                  + motion + drawtext(style, tf) + label)
+                  + motion + drawtext(style, tf, platform) + label)
             _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-framerate", "30", "-t", secs, "-i", img,
                   "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
         else:
             sc = VideoScene.objects.select_related("asset").get(pk=b["scene_id"])
             src = fetch_original(sc.asset, folder)
             start = sc.start + float(b.get("offset") or 0)
-            vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30," + motion + drawtext(style, tf)
+            vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30," + motion + drawtext(style, tf, platform)
             _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{start:.2f}", "-i", src, "-t", secs,
                   "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
         segs.append(out)
@@ -334,23 +336,30 @@ def render(p, folder, style=None, blog=None):
         return f.read(), dur
 
 
-def make_reel(topic, material, markup_limit=15, call=None, style=None, blog=None):
+def make_reel(topic, material, markup_limit=15, call=None, style=None, blog=None, asset_ids=None):
     """Повний цикл: розмітка (лише нове) → сценарій → монтаж → ReelDraft з файлом у CRM.
     Блог без власних нарізок (real_footage=False) → усі кадри генерує ШІ (make_ai_reel)."""
     from secrets import token_urlsafe
     from apps.inbox.models import SharedLink
-    if blog is not None and not blog.real_footage:
+    if blog is not None and not blog.real_footage and not asset_ids:
         return make_ai_reel(topic, blog, call=call, style=style)
     os.makedirs(WORK, exist_ok=True)
     folder = tempfile.mkdtemp(dir=WORK)
     try:
-        for a in candidates(material, limit=markup_limit):
+        chosen = list(SourceAsset.objects.filter(id__in=asset_ids or [], kind="video")) if asset_ids else None
+        for a in (chosen if chosen is not None else candidates(material, limit=markup_limit)):
+            if chosen is not None and a.markup_at:
+                continue  # вибрані й уже розмічені — повторно не платимо
             try:
                 markup(a, folder)
             except Exception:  # одне «криве» відео не зупиняє ролик; не позначаємо як розмічене
                 continue
-        scenes = list(VideoScene.objects.filter(asset__material=material, quality__gte=3, asset__hidden=False)
-                      .select_related("asset").order_by("-quality")[:80])
+        if chosen is not None:  # рилс лише з вибраних відео
+            scenes = list(VideoScene.objects.filter(asset__in=chosen, quality__gte=2).select_related("asset").order_by("-quality")[:80])
+            material = material or (chosen[0].material if chosen else "")
+        else:
+            scenes = list(VideoScene.objects.filter(asset__material=material, quality__gte=3, asset__hidden=False)
+                          .select_related("asset").order_by("-quality")[:80])
         p = plan(topic, material, scenes, call=call, structure=(style.structure if style else None) or None, blog=blog)
         data, dur = render(p, folder, style=style, blog=blog)
         link = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{material}.mp4",
@@ -464,7 +473,12 @@ def improve_frame(reel, idx):
 def regenerate_frame(reel, idx, prompt):
     from . import aiimage
     prompt = (prompt or "").strip() or (reel.beats[idx].get("prompt") or reel.beats[idx].get("text") or reel.title)
-    data, mime = aiimage.regenerate(prompt, reel.blog)
+    if reel.blog and reel.blog.label_ai:  # Wallcov: нова сцена, але фактура — з поточного справжнього кадру
+        from .material_specs import find_material
+        data, mime = aiimage.regenerate(prompt, reel.blog, texture=frame_bytes(reel, idx),
+                                        material=find_material(f"{reel.material} {reel.title}"))
+    else:
+        data, mime = aiimage.regenerate(prompt, reel.blog)
     return _set_frame(reel, idx, data, mime, "generated", prompt)
 
 
@@ -536,3 +550,51 @@ def rerender(reel):
         return reel
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+
+
+def platform_versions(reel):
+    """Версії рилса для TikTok і YouTube Shorts: ті самі кадри, текст у безпечній зоні платформи. Без ШІ, безкоштовно."""
+    from secrets import token_urlsafe
+    from apps.inbox.models import SharedLink
+    os.makedirs(WORK, exist_ok=True)
+    out = dict(reel.variants or {})
+    for platform in ("tiktok", "youtube"):
+        folder = tempfile.mkdtemp(dir=WORK)
+        try:
+            data, _dur = render({"beats": reel.beats}, folder, style=reel.style, blog=reel.blog, platform=platform)
+            old = out.get(platform)
+            out[platform] = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{reel.id}-{platform}.mp4",
+                                                      content_type="video/mp4", data=data).id
+            if old:
+                SharedLink.objects.filter(pk=old).delete()
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+    reel.variants = out
+    reel.save(update_fields=["variants"])
+    return reel
+
+
+ADAPT = """Адаптуй готовий ролик під ІНШИЙ блог: ті самі кадри (картинки лишаються), але текст на кадрах і підпис — у тематиці,
+тоні й меті цього блогу. Кількість кадрів не змінюй. Текст на кадрі до 7 слів.
+Відповідай ЛИШЕ JSON: {"title":"...","caption":"...","texts":["текст кадру 1", "..."]}"""
+
+
+def adapt_to_blog(reel, blog, call=None):
+    """Копія рилса для іншого блогу: переписується лише текст (≈$0.01), відео/кадри ті самі, потім перемонтаж."""
+    from . import blogs as _b
+    _b.require_ready(blog)
+    system = _b.system_for(blog, ADAPT)
+    src = "\n".join(f"[{i}] {b.get('text', '')}" for i, b in enumerate(reel.beats))
+    if call is None:
+        from apps.crm.ai import claude_json
+        call = lambda p: claude_json(p, model="claude-sonnet-4-6", max_tokens=900, system=system, source=PLAN_SOURCE)
+    r = call(f"Вихідний ролик «{reel.title}»:\n{src}\nПідпис: {reel.caption[:800]}") or {}
+    texts = [clean_text(str(t))[:80] for t in (r.get("texts") or [])]
+    if len(texts) != len(reel.beats):
+        raise ReelError("ШІ змінив кількість кадрів — спробуйте ще раз.")
+    beats = [dict(b, text=t) for b, t in zip(reel.beats, texts)]
+    copy = ReelDraft.objects.create(title=clean_text(str(r.get("title") or reel.title))[:200], topic=reel.topic, material=reel.material,
+                                    caption=_clean_caption(str(r.get("caption") or "")), beats=beats, style=reel.style, blog=blog,
+                                    facts=[f"Адаптовано з рилса #{reel.id} ({reel.blog.name if reel.blog else ''})"])
+    return rerender(copy)

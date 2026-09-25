@@ -671,3 +671,31 @@ class BlogCarouselAssistTests(TestCase):
         self.assertEqual(c.slides[1]["prev"], {"headline": "H1", "body": "моє"})
         carsvc.undo_slide(c, 1)
         self.assertEqual((c.slides[1]["headline"], c.slides[1]["body"]), ("H1", "моє"))
+
+    def test_visual_bible_in_prompts_and_scoped_feed(self):
+        from . import analyst, visual
+        from .models import Blog, ContentChannel, FeedItem
+        b = Blog.objects.get(slug="stiny-v-shotsi")
+        visual.apply(b, {"style": "3D-мультфільм", "characters": [{"name": "Барсик", "look": "рудий кіт"}]}, [(b"\xff\xd8x", "image/jpeg", "Барсик")])
+        b.refresh_from_db()
+        self.assertIn("Барсик: рудий кіт", self.blogsvc.system_for(b, "т"))
+        self.assertEqual(len(b.ref_images), 1)
+        ContentChannel.objects.create(platform="tiktok", handle="cartoon_x", url="https://www.tiktok.com/@cartoon_x", role="inspiration", blog=b)
+        self.assertEqual(analyst.tracked_handles(b), {"cartoon_x"})
+        w = Blog.objects.get(slug="wallcov")
+        self.assertNotIn("cartoon_x", analyst.tracked_handles(w))
+        self.assertEqual(list(analyst.feed(blog=Blog.objects.get(slug="robota"))), [])  # блог без сторінок — порожньо
+
+    def test_image_undo_and_wallcov_needs_texture(self):
+        from . import carousels as carsvc
+        from .models import Blog
+        w = Blog.objects.get(slug="wallcov")
+        c = carsvc.generate(w, "шви", n=3, template="graphite", images="none",
+                            call=lambda p: {"title": "т", "slides": [{"headline": "H", "body": "b"} for _ in range(3)]})
+        with self.assertRaises(ValueError):  # без фото фактури Wallcov не малює «голу» стіну
+            carsvc.set_ai_image(c, 0, "стіна з шовком")
+        c.slides[0]["image"] = {"kind": "ai", "link_id": 1}
+        carsvc._remember_image(c.slides[0])
+        c.slides[0]["image"] = {"kind": "none"}
+        carsvc.undo_image(c, 0)
+        self.assertEqual(c.slides[0]["image"], {"kind": "ai", "link_id": 1})

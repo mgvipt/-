@@ -112,7 +112,7 @@ def sync_folder(folder):
             material, tags = tags_from_caption(place + " " + f.get("name", ""))
             meta = f.get("imageMediaMetadata") or f.get("videoMediaMetadata") or {}
             SourceAsset.objects.update_or_create(file_unique_id="drive:" + f["id"], defaults={
-                "origin": SourceAsset.Origin.DRIVE, "kind": kind, "file_id": f["id"], "mime": mime,
+                "origin": SourceAsset.Origin.DRIVE, "kind": kind, "file_id": f["id"], "mime": mime, "blog_id": folder.blog_id,
                 "size": int(f["size"]) if f.get("size") else None, "width": meta.get("width"), "height": meta.get("height"),
                 "duration": int(meta["durationMillis"]) // 1000 if meta.get("durationMillis") else None,
                 "file_name": f.get("name", "")[:255], "caption": place, "link": f.get("webViewLink", ""),

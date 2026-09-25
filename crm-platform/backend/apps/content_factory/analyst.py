@@ -174,18 +174,44 @@ SYSTEM = """Ти — аналітик контенту Wallcov (декорати
 Ідей — рівно 5, кожна повʼязана з реальним питанням клієнтів або ролику ніші з даних."""
 
 
-def generate_report(days=7, call=None):
+BLOG_TASK = """Ти — аналітик контенту цього блогу. Власник — не маркетолог: пиши простою українською, коротко, без жаргону.
+Отримаєш JSON за період: наші публікації (перегляди, ×N від звичного), ролики конкурентів і натхнення блогу, що «вистрілили»,
+памʼять блогу (що вже зробили, які обіцянки відкриті). Не вигадуй цифр. Якщо даних мало — так і скажи й поясни, яких сторінок бракує.
+Відповідай ЛИШЕ JSON:
+{"summary": "3–6 коротких абзаців: що спрацювало, що ні, що робити цього тижня (\\n\\n між абзацами)",
+ "ideas": [{"title": "...", "hook": "перше речення/кадр", "why": "з яких даних", "format": "рилс / карусель", "material": ""}]}
+Ідей — рівно 5, під мету й майстер-промт блогу; якщо є відкрита обіцянка — одна ідея на неї."""
+
+
+def build_blog_inputs(blog, days=7):
+    from . import blogs as _b
+    own = [c.handle for c in blog.channels.filter(role=ContentChannel.Role.OWN)]
+    med = medians()
+    since = timezone.now() - timedelta(days=max(days, 30))
+    mine = [{"user": i.username, "views": i.views, "x": outlier(i, med), "caption": (i.caption or "")[:140]}
+            for i in FeedItem.objects.filter(username__in=own, published_at__gte=since).order_by("-published_at")[:15]]
+    return {"period_days": days, "blog": blog.name, "own_accounts": own, "own_posts": mine,
+            "niche_hits": [{"user": i.username, "views": i.views, "x": x, "hook": (i.caption or "")[:140]}
+                           for i, x in feed(days=max(days, 14), sort="outlier", limit=12, blog=blog) if x and x >= 1.5],
+            "tracked_pages": sorted(tracked_handles(blog)), "memory": _b.memory_block(blog)}
+
+
+def generate_report(days=7, call=None, blog=None):
     s = AnalystSettings.get()
     if questions.month_spent(SOURCE) + estimate_usd(s.model) > float(s.monthly_budget_usd):
         raise BudgetError(f"Досягнуто місячного ліміту ${float(s.monthly_budget_usd):.2f} для аналітика.")
-    inputs = build_inputs(days)
+    if blog is not None and blog.slug != "wallcov":  # інший блог: його сторінки, стрічка, памʼять і майстер-промт
+        from . import blogs as _b
+        inputs, system = build_blog_inputs(blog, days), _b.system_for(blog, BLOG_TASK)
+    else:
+        inputs, system = build_inputs(days), SYSTEM
     if call is None:
         from apps.crm.ai import claude_json
-        call = lambda p: claude_json(p, model=s.model, max_tokens=2500, system=SYSTEM, source=SOURCE)
+        call = lambda p: claude_json(p, model=s.model, max_tokens=2500, system=system, source=SOURCE)
     r = call(json.dumps(inputs, ensure_ascii=False, default=str)) or {}
     summary = str(r.get("summary") or r.get("suggestion") or "").strip()
     if not summary:
         raise ValueError("ШІ не повернув звіт — спробуйте ще раз.")
     ideas = [{k: str(i.get(k, ""))[:300] for k in ("title", "hook", "why", "format", "material")}
              for i in (r.get("ideas") or []) if isinstance(i, dict)][:5]
-    return AnalystReport.objects.create(period_days=days, summary=summary, ideas=ideas, inputs=inputs, model=s.model)
+    return AnalystReport.objects.create(period_days=days, summary=summary, ideas=ideas, inputs=inputs, model=s.model, blog=blog)

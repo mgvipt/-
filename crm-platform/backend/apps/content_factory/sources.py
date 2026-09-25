@@ -101,7 +101,7 @@ def ingest(update):
     material, tags = tags_from_caption(caption)
     posted = datetime.fromtimestamp(msg.get("date", 0), tz=dt_tz.utc) if msg.get("date") else None
     asset, created = SourceAsset.objects.update_or_create(file_unique_id=f["file_unique_id"], defaults={
-        "origin": SourceAsset.Origin.TELEGRAM, "kind": kind, "chat": chat, "message_id": msg.get("message_id"),
+        "origin": SourceAsset.Origin.TELEGRAM, "kind": kind, "chat": chat, "blog_id": chat.blog_id, "message_id": msg.get("message_id"),
         "media_group_id": group, "file_id": f["file_id"], "thumb_file_id": (thumb or {}).get("file_id", ""),
         "mime": f.get("mime_type", "image/jpeg" if kind == "photo" else ""), "size": f.get("file_size"),
         "width": f.get("width"), "height": f.get("height"), "duration": f.get("duration"),

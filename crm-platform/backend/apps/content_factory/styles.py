@@ -52,11 +52,15 @@ def _hex(c, alpha=None):
     return f"0x{c}" + (f"@{alpha:.2f}" if alpha is not None else "")
 
 
-def drawtext(style, textfile):
-    """Фільтр ffmpeg drawtext для стилю (без сторонніх залежностей)."""
+def drawtext(style, textfile, platform="instagram"):
+    """Фільтр ffmpeg drawtext для стилю. Текст не виходить за безпечну зону платформи (там підпис, нік і кнопки)."""
+    from .platform_rules import SAFE
     s = style or ReelStyle(**PRESETS[0])
+    z = SAFE.get(platform) or SAFE["instagram"]
+    x = f"x={z['left']}+(w-{z['left'] + z['right']}-text_w)/2"
+    y = f"y=max({z['top']}\\,min(h*{s.position:.2f}-text_h/2\\,h-{z['bottom']}-text_h))"
     parts = [f"fontfile={font_file(s.font, s.weight)}", f"textfile={textfile}", f"fontcolor={_hex(s.color)}",
-             f"fontsize={s.size}", "line_spacing=14", "x=(w-text_w)/2", f"y=h*{s.position:.2f}-text_h/2"]
+             f"fontsize={s.size}", "line_spacing=14", x, y]
     if s.stroke:
         parts += [f"borderw={s.stroke}", f"bordercolor={_hex(s.stroke_color)}"]
     if s.box:

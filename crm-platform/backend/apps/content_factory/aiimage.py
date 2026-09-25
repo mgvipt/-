@@ -27,14 +27,14 @@ def spent_month():
     return month_spent(SOURCE)
 
 
-def generate(prompt, aspect="9:16", ref=None):
-    """prompt → (bytes, mime). ref=(bytes, mime) — редагування/покращення наявного кадру."""
+def generate(prompt, aspect="9:16", ref=None, extra_parts=None):
+    """prompt → (bytes, mime). ref=(bytes, mime) — редагування/покращення наявного кадру; extra_parts — референси стилю."""
     if spent_month() >= MONTH_CAP:
         raise ImageError(f"Досягнуто місячної стелі ШІ-картинок ${MONTH_CAP:.0f}.")
     key = os.environ.get("GEMINI_API_KEY", "")
     if not key:
         raise ImageError("Немає GEMINI_API_KEY.")
-    parts = []
+    parts = list(extra_parts or [])
     if ref:
         parts.append({"inlineData": {"mimeType": ref[1], "data": base64.b64encode(ref[0]).decode()}})
     parts.append({"text": prompt})
@@ -77,14 +77,34 @@ def improve(data, mime, blog, aspect="9:16"):
     return generate(IMPROVE_REAL if blog and blog.label_ai else IMPROVE_FREE, aspect=aspect, ref=(data, mime))
 
 
-def regenerate(prompt, blog, aspect="9:16"):
-    """Новий кадр з опису. Для Wallcov — лише інтерʼєр/фон як візуалізація (фактура в кадрі має бути справжньою)."""
+def texture_prompt(prompt, material, aspect="4:5"):
+    """Кадр із декоративною стіною ЗА РЕАЛЬНИМ ЗРАЗКОМ: перше зображення — фото фактури, його не можна «спрощувати»."""
+    from .material_specs import spec_for
+    spec = spec_for(material)
+    return (f"{prompt.strip()}. The decorative wall MUST reproduce the wall finish from the first reference photo exactly: "
+            f"same pattern, trowel marks, relief, sparkle/sheen and colour at true scale — do NOT render a plain painted or smooth wall. "
+            f"{spec} Photorealistic, real camera, no text, no letters, no logos.")
+
+
+def regenerate(prompt, blog, aspect="9:16", texture=None, material=""):
+    """Новий кадр з опису. texture=(bytes, mime) — реальне фото фактури: для Wallcov стіна малюється лише за ним."""
+    if texture is not None:
+        return generate(texture_prompt(prompt, material, aspect), aspect=aspect, ref=texture)
+    """Для інших блогів — стиль і персонажі з візуального зразка блогу."""
     rules = ""
     if blog and blog.label_ai:
         rules = (" Це ВІЗУАЛІЗАЦІЯ інтерʼєру, не фото реального обʼєкта: сучасний житловий інтерʼєр, реалістичні масштаби, "
                  "мотивоване світло. Декоративну стіну показуй спокійно, без вигаданих візерунків.")
-    style = ""
-    if blog and blog.master_prompt:
-        vis = [ln for ln in blog.master_prompt.splitlines() if ln.lower().startswith(("візуал", "герої", "про що"))]
-        style = " Контекст блогу: " + " ".join(vis)[:700]
-    return generate(f"{prompt.strip()}.{rules}{style} Без тексту, літер і логотипів у кадрі.", aspect=aspect)
+    style, refs = "", []
+    if blog is not None:
+        from .visual import ref_parts, visual_text
+        bible = visual_text(blog)
+        if bible:
+            style = " Візуальна біблія блогу (дотримуйся точно, особливо зовнішності персонажів): " + bible[:1800]
+        elif blog.master_prompt:
+            vis = [ln for ln in blog.master_prompt.splitlines() if ln.lower().startswith(("візуал", "герої", "про що"))]
+            style = " Контекст блогу: " + " ".join(vis)[:700]
+        refs = ref_parts(blog)
+        if refs:
+            style += " Перші зображення — референси: повтори їхній стиль малювання і тих самих персонажів, але нову сцену."
+    return generate(f"{prompt.strip()}.{rules}{style} Без тексту, літер і логотипів у кадрі.", aspect=aspect, extra_parts=refs)

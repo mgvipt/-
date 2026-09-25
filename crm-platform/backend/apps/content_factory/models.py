@@ -230,6 +230,7 @@ class SourceChat(models.Model):
     username = models.CharField(max_length=100, blank=True)
     kind = models.CharField(max_length=20, blank=True, help_text="group / supergroup / channel")
     enabled = models.BooleanField(default=False)
+    blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="source_chats")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -267,6 +268,8 @@ class SourceAsset(models.Model):
     material = models.CharField(max_length=80, blank=True, db_index=True)
     tags = models.JSONField(default=list, blank=True)
     hidden = models.BooleanField(default=False, help_text="Не показувати в добірках (сміття, дубль)")
+    blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="assets",
+                             help_text="Блог джерела (з чату чи папки)")
     markup_at = models.DateTimeField(null=True, blank=True, help_text="Коли ШІ розмітив сцени (лише відео)")
     posted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -281,6 +284,7 @@ class DriveFolder(models.Model):
     folder_id = models.CharField(max_length=80, unique=True)
     title = models.CharField(max_length=200, blank=True)
     enabled = models.BooleanField(default=True)
+    blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="drive_folders")
     last_sync_at = models.DateTimeField(null=True, blank=True)
     files_count = models.IntegerField(default=0)
     last_error = models.CharField(max_length=300, blank=True)
@@ -347,6 +351,7 @@ class AnalystSettings(models.Model):
 
 
 class AnalystReport(models.Model):
+    blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="reports")
     created_at = models.DateTimeField(auto_now_add=True)
     period_days = models.PositiveSmallIntegerField(default=7)
     summary = models.TextField(help_text="Звіт простими словами")
@@ -395,6 +400,7 @@ class ReelDraft(models.Model):
     style = models.ForeignKey("ReelStyle", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="reels")
     busy = models.BooleanField(default=False, help_text="Йде ШІ-обробка кадру / перемонтаж")
+    variants = models.JSONField(default=dict, blank=True, help_text="{tiktok|youtube: SharedLink id} — версії з безпечними зонами платформ")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -447,6 +453,8 @@ class Blog(models.Model):
     about = models.CharField(max_length=300, blank=True, help_text="Одним рядком: про що блог")
     master_prompt = models.TextField(blank=True, help_text="Тема, аудиторія, тон, формати, заборони, заклик — усе, що ШІ має знати")
     goal = models.TextField(blank=True, help_text="Мета блогу (заявки, підписники, найм…) — під неї ШІ радить ефекти й кадри")
+    visual = models.JSONField(default=dict, blank=True, help_text="Візуальна біблія з прикладу: стиль, персонажі, оточення, рух, темп")
+    ref_images = models.JSONField(default=list, blank=True, help_text="[{id: SharedLink, who}] — кадри-референси для ШІ-художника")
     cta = models.TextField(blank=True, help_text="Заклик у кінці підпису/останнього слайда")
     use_crm_kb = models.BooleanField(default=False, help_text="Брати факти ще й з бази знань CRM (AI ЦЕНТР) — для Wallcov")
     label_ai = models.BooleanField(default=False, help_text="Позначати ШІ-кадри «ШІ-візуалізація» (правило Wallcov)")
@@ -533,3 +541,12 @@ class ContentMemory(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+
+class PhotoScore(models.Model):
+    """Оцінка фото бібліотеки для каруселей (25.09): світло, різкість, композиція 1–10. Рахується раз, дешево (Gemini)."""
+    lib_id = models.IntegerField(unique=True, help_text="inbox.MediaLibraryItem.id (без FK — бібліотеку не чіпаємо)")
+    score = models.FloatField(default=0)
+    note = models.CharField(max_length=200, blank=True)
+    scored_at = models.DateTimeField(auto_now=True)
