@@ -73,6 +73,9 @@ def sync_feed(per_account=20):
                 items += 1
             except (DataError, KeyError, ValueError):  # один «кривий» ролик не зупиняє всю стрічку
                 continue
+    names = {(a.get("username") or "").lower() for a in accounts}  # що саме відстежує Virale — позначка в «Сторінках»
+    ContentChannel.objects.filter(handle__in=names).update(in_virale=True)
+    ContentChannel.objects.exclude(handle__in=names).update(in_virale=False)
     s.last_feed_sync_at = timezone.now()
     s.last_feed_note = f"{len(accounts)} сторінок, {items} роликів"
     s.save(update_fields=["last_feed_sync_at", "last_feed_note"])
@@ -92,18 +95,22 @@ def outlier(item, med):
     return round(item.views / m, 1) if m and item.views else None
 
 
-def tracked_handles():
-    """Сторінки з розділу «Сторінки» (конкуренти й натхнення). Порожньо — показуємо все з Virale."""
-    return set(ContentChannel.objects.filter(is_active=True).exclude(role=ContentChannel.Role.OWN)
-               .values_list("handle", flat=True))
+def tracked_handles(blog=None):
+    """Сторінки з розділу «Сторінки» (конкуренти й натхнення); з blog — лише сторінки цього блогу."""
+    qs = ContentChannel.objects.filter(is_active=True).exclude(role=ContentChannel.Role.OWN)
+    if blog is not None:
+        qs = qs.filter(blog=blog)
+    return set(qs.values_list("handle", flat=True))
 
 
-def feed(days=7, sort="outlier", status="", include_own=False, limit=60, only_tracked=True):
+def feed(days=7, sort="outlier", status="", include_own=False, limit=60, only_tracked=True, blog=None):
     since = timezone.now() - timedelta(days=days)
     qs = FeedItem.objects.filter(published_at__gte=since)
-    handles = tracked_handles() if only_tracked else set()
+    handles = tracked_handles(blog) if only_tracked else set()
     if handles:
         qs = qs.filter(username__in=handles)
+    elif blog is not None and only_tracked:
+        qs = qs.none()  # у блогу ще немає сторінок для стрічки
     if status:
         qs = qs.filter(status=status)
     else:

@@ -18,6 +18,7 @@ import { api } from "../api";
 type Channel = {
   id: number; platform: string; platform_display: string; handle: string; url: string; title: string;
   role: string; role_display: string; note: string; is_active: boolean; created_at: string;
+  blog_id: number | null; in_virale: boolean;
 };
 type ChannelList = { results: Channel[]; roles: [string, string][]; platforms: [string, string][] };
 type Today = {
@@ -324,6 +325,9 @@ const CSS = `
 .cf-sty.on .frame{border-color:var(--cf-gold)}
 .cf-sty .frame span{position:absolute;left:6%;right:6%;text-align:center;transform:translateY(-50%);line-height:1.15;padding:3px 4px;border-radius:3px}
 .cf-sty em{font-style:normal;font-size:10px;color:var(--cf-gold)}
+.cf-vir{font-style:normal;font-size:10.5px;font-weight:700;margin-left:6px;padding:1px 6px;border-radius:5px;background:var(--cf-panel2);color:var(--cf-ink3)}
+.cf-vir.on{background:rgba(108,192,143,.14);color:var(--cf-good)}
+.cf-h1-sub{font-weight:600;color:var(--cf-ink3);font-size:.6em}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 /* ── Редизайн 24.09: конвеєр, «Сьогодні», власні елементи керування ── */
 .cf-logo{display:inline-block;width:18px;height:18px;border-radius:5px;margin-right:8px;vertical-align:-3px;
@@ -1110,7 +1114,7 @@ function Studio({ ov, go }: { ov: Overview | null; go: (t: string) => void }) {
   );
 }
 
-function AddChannel({ roles, platforms, onAdded }: { roles: [string, string][]; platforms: [string, string][]; onAdded: () => void }) {
+function AddChannel({ roles, platforms, onAdded, blogId }: { roles: [string, string][]; platforms: [string, string][]; onAdded: () => void; blogId: number | null }) {
   const [link, setLink] = useState("");
   const [role, setRole] = useState("competitor");
   const [platform, setPlatform] = useState("instagram");
@@ -1122,7 +1126,7 @@ function AddChannel({ roles, platforms, onAdded }: { roles: [string, string][]; 
     if (!link.trim()) return;
     setBusy(true); setMsg(null);
     try {
-      const ch = await api.post<Channel>("/api/content-factory/channels/", { link, role, platform: atName ? platform : "" });
+      const ch = await api.post<Channel>("/api/content-factory/channels/", { link, role, platform: atName ? platform : "", blog_id: blogId });
       setMsg({ ok: true, text: `Додано: ${ch.platform_display} @${ch.handle}` });
       setLink("");
       onAdded();
@@ -1146,9 +1150,15 @@ function AddChannel({ roles, platforms, onAdded }: { roles: [string, string][]; 
   );
 }
 
-function ChannelRow({ ch, roles, onChanged }: { ch: Channel; roles: [string, string][]; onChanged: () => void }) {
+function ChannelRow({ ch, roles, onChanged, blogs }: { ch: Channel; roles: [string, string][]; onChanged: () => void; blogs: BlogT[] }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const toVirale = async () => {
+    setBusy(true); setNote("");
+    try { const x: any = await api.post(`/api/content-factory/channels/${ch.id}/virale/`); setNote(x.note); onChanged(); }
+    catch (e: any) { setNote(e?.data?.error || "Не вдалося."); } finally { setBusy(false); }
+  };
   const patch = async (b: Partial<Channel>) => {
     setBusy(true);
     try { await api.patch(`/api/content-factory/channels/${ch.id}/`, b); onChanged(); } finally { setBusy(false); }
@@ -1162,10 +1172,16 @@ function ChannelRow({ ch, roles, onChanged }: { ch: Channel; roles: [string, str
       <span className={"cf-mark " + ch.platform} aria-label={ch.platform_display}>{PLATFORM_MARK[ch.platform] || "?"}</span>
       <div style={{ minWidth: 0 }}>
         <a href={ch.url} target="_blank" rel="noreferrer">@{ch.handle}</a>
-        <div className="meta">{ch.platform_display}{ch.title ? " · " + ch.title : ""}{ch.note ? " · " + ch.note : ""}{ch.is_active ? "" : " · вимкнена"}</div>
+        <div className="meta">{ch.platform_display}{ch.title ? " · " + ch.title : ""}{ch.note ? " · " + ch.note : ""}{ch.is_active ? "" : " · вимкнена"}
+          {ch.role !== "own" && (ch.in_virale ? <em className="cf-vir on">у стрічці</em> : <em className="cf-vir">не в стрічці</em>)}</div>
+        {note && <div className="cf-msg ok" style={{ fontSize: 12 }}>{note}</div>}
       </div>
       <div className="cf-acts">
+        <Pick small label="Блог" value={String(ch.blog_id ?? "")} disabled={busy} onChange={(v) => patch({ blog_id: Number(v) || null } as any)}
+          placeholder="без блогу" opts={blogs.map((b) => ({ v: String(b.id), l: b.name }))} />
         <Pick small label="Тип сторінки" value={ch.role} disabled={busy} onChange={(v) => patch({ role: v })} opts={roles.map(([v, l]) => ({ v, l }))} />
+        {ch.role !== "own" && !ch.in_virale && ["instagram", "tiktok", "youtube"].includes(ch.platform) && (
+          <button type="button" className="cf-btn ghost" disabled={busy} onClick={toVirale} title="Витрачає ліміт дій Virale">У стрічку</button>)}
         <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => patch({ is_active: !ch.is_active })}>
           {ch.is_active ? "Вимкнути" : "Увімкнути"}
         </button>
@@ -1182,8 +1198,10 @@ function ChannelRow({ ch, roles, onChanged }: { ch: Channel; roles: [string, str
   );
 }
 
-function Channels({ data, reload }: { data: ChannelList | null; reload: () => void }) {
+function Channels({ data, reload, blogs, blog }: { data: ChannelList | null; reload: () => void; blogs: BlogT[]; blog: BlogT | undefined }) {
+  const [all, setAll] = useState(false);
   if (!data) return <div className="cf-empty">Завантажую…</div>;
+  const list = all || !blog ? data.results : data.results.filter((c) => c.blog_id === blog.id);
   return (
     <>
       <div>
@@ -1191,14 +1209,18 @@ function Channels({ data, reload }: { data: ChannelList | null; reload: () => vo
         <p className="cf-sub">Наші сторінки, конкуренти й джерела натхнення. З етапу 3 аналітик збиратиме їхні ролики й щотижня пропонуватиме ідеї.
           Вставте посилання на профіль — соцмережа визначиться сама.</p>
       </div>
-      <AddChannel roles={data.roles} platforms={data.platforms} onAdded={reload} />
+      <div className="cf-set">
+        <Seg label="Які сторінки" value={all ? "all" : "blog"} onChange={(v) => setAll(v === "all")}
+          opts={[{ v: "blog", l: blog ? `Блог «${blog.name}»` : "Цей блог" }, { v: "all", l: `Усі · ${data.results.length}` }]} />
+      </div>
+      <AddChannel roles={data.roles} platforms={data.platforms} onAdded={reload} blogId={blog?.id ?? null} />
       {ROLE_ORDER.map((role) => {
-        const rows = data.results.filter((c) => c.role === role);
+        const rows = list.filter((c) => c.role === role);
         const label = data.roles.find(([v]) => v === role)?.[1] || role;
         return (
           <section key={role} className="cf-role">
             <div className="cf-role-h"><b>{label}</b><span>{rows.length} · {ROLE_HINT[role]}</span></div>
-            {rows.length ? rows.map((ch) => <ChannelRow key={ch.id} ch={ch} roles={data.roles} onChanged={reload} />)
+            {rows.length ? rows.map((ch) => <ChannelRow key={ch.id} ch={ch} roles={data.roles} onChanged={reload} blogs={blogs} />)
               : <div className="cf-empty">Поки порожньо.</div>}
           </section>
         );
@@ -1793,20 +1815,21 @@ function Sources() {
 
 const fmtN = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + " млн" : n >= 1e3 ? Math.round(n / 1e3) + " тис" : String(n);
 
-function Feed() {
+function Feed({ blog, go }: { blog: BlogT | undefined; go: (t: string) => void }) {
   const [q, setQ] = useState({ days: 7, sort: "outlier", status: "", all: false });
-  const [data, setData] = useState<{ items: FeedT[]; total: number; tracked: number; last_sync_at: string | null; last_note: string } | null>(null);
+  const [data, setData] = useState<{ items: FeedT[]; total: number; tracked: number; last_sync_at: string | null; last_note: string;
+    blog_pages: { id: number; handle: string; platform: string; role: string; in_virale: boolean }[] } | null>(null);
   const [msg, setMsg] = useState("");
   const load = useCallback(async () => {
-    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
-  }, [q]);
+    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}${blog ? `&blog=${blog.id}` : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
+  }, [q, blog]);
   useEffect(() => { load(); }, [load]);
   const sync = async () => { try { const r: any = await api.post("/api/content-factory/feed/"); setMsg(r.note); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } };
   const mark = async (id: number, status: string) => { await api.patch(`/api/content-factory/feed/${id}/`, { status }); load(); };
   return (
     <>
       <div>
-        <h1 className="cf-h1">Стрічка рекомендацій</h1>
+        <h1 className="cf-h1">Стрічка рекомендацій{blog ? <span className="cf-h1-sub"> · {blog.name}</span> : null}</h1>
         <p className="cf-sub">Ролики конкурентів і сторінок-натхнення з Virale. Жовта мітка «×3.4» — у скільки разів ролик набрав більше
           переглядів, ніж зазвичай у цього автора: це і є те, що «вистрілило». Зберігайте в ідеї — з них робитимемо рилси з ваших нарізок.</p>
       </div>
@@ -1817,15 +1840,20 @@ function Feed() {
         <Seg label="Статус" value={q.status} onChange={(v) => setQ({ ...q, status: v })}
           opts={[{ v: "", l: "Усі" }, { v: "saved", l: "В ідеях" }, { v: "used", l: "Зроблено" }, { v: "hidden", l: "Сховані" }]} />
         <div className="cf-chips">
-          <button type="button" className={"cf-chip" + (!q.all ? " on" : "")} onClick={() => setQ({ ...q, all: false })}>Мої сторінки{data ? ` · ${data.tracked}` : ""}</button>
+          <button type="button" className={"cf-chip" + (!q.all ? " on" : "")} onClick={() => setQ({ ...q, all: false })}>Сторінки блогу{data ? ` · ${data.tracked}` : ""}</button>
           <button type="button" className={"cf-chip" + (q.all ? " on" : "")} onClick={() => setQ({ ...q, all: true })}>Усі з Virale</button>
         </div>
         <button type="button" className="cf-btn ghost" onClick={sync}>Оновити з Virale</button>
         <span className="cf-kv">{data ? `${data.total} роликів у базі${data.last_sync_at ? " · оновлено " + new Date(data.last_sync_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : " · ще не оновлювалась"}` : ""}</span>
       </div>
       {msg && <div className="cf-msg ok">{msg}</div>}
+      {data && !q.all && data.tracked === 0 && (
+        <div className="cf-empty">У блогу «{blog?.name}» ще немає конкурентів і сторінок-натхнення. Додайте їх у «Сторінках» (вибраний блог підставиться сам) і натисніть «У стрічку».
+          {" "}<button type="button" className="cf-link" onClick={() => go("channels")}>До сторінок →</button></div>)}
+      {data && !q.all && data.blog_pages.some((p) => !p.in_virale) && data.tracked > 0 && (
+        <div className="cf-note">Ще не в стрічці: {data.blog_pages.filter((p) => !p.in_virale).map((p) => "@" + p.handle).join(", ")} — у «Сторінках» натисніть «У стрічку».</div>)}
       {!data ? <div className="cf-empty">Завантажую…</div> : data.items.length === 0
-        ? <div className="cf-empty">{data.total ? "За цей період нічого." : "Стрічка порожня — натисніть «Оновити з Virale»."}</div> : (
+        ? (data.tracked === 0 && !q.all ? null : <div className="cf-empty">{data.total ? "За цей період нічого." : "Стрічка порожня — натисніть «Оновити з Virale»."}</div>) : (
         <div className="cf-feed">
           {data.items.map((i) => (
             <div key={i.id} className="cf-fcard">
@@ -2848,11 +2876,11 @@ export default function ContentFactory() {
         {err && <div className="cf-msg err" role="alert">{err}</div>}
         <Masthead s={section} />
         {section.id === "studio" ? <Studio ov={ov} go={go} />
-          : section.id === "channels" ? <Channels data={list} reload={load} />
+          : section.id === "channels" ? <Channels data={list} reload={load} blogs={blogs} blog={blog} />
           : section.id === "questions" ? <Questions />
           : section.id === "telegram" ? <Telegram />
           : section.id === "sources" ? <Sources />
-          : section.id === "feed" ? <Feed />
+          : section.id === "feed" ? <Feed key={blog?.id} blog={blog} go={go} />
           : section.id === "analyst" ? <Analyst />
           : section.id === "reels" ? <Reels key={blog?.id} blog={blog} />
           : section.id === "carousels" ? <Carousels key={blog?.id} blog={blog} />

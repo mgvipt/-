@@ -56,6 +56,7 @@ def _row(ch):
         "id": ch.id, "platform": ch.platform, "platform_display": ch.get_platform_display(),
         "handle": ch.handle, "url": ch.url, "title": ch.title, "role": ch.role,
         "role_display": ch.get_role_display(), "note": ch.note, "is_active": ch.is_active,
+        "blog_id": ch.blog_id, "in_virale": ch.in_virale,
         "created_at": timezone.localtime(ch.created_at).isoformat(),
     }
 
@@ -147,7 +148,7 @@ class ChannelListView(_Base):
         ch = ContentChannel.objects.create(
             platform=platform, handle=handle, url=url, role=role,
             title=(data.get("title") or "").strip()[:200], note=(data.get("note") or "").strip(),
-            created_by=request.user)
+            blog=Blog.objects.filter(pk=data.get("blog_id") or 0).first(), created_by=request.user)
         return Response(_row(ch), status=201)
 
 
@@ -165,8 +166,25 @@ class ChannelDetailView(_Base):
             ch.note = (data.get("note") or "").strip()
         if "is_active" in data:
             ch.is_active = bool(data["is_active"])
+        if "blog_id" in data:
+            ch.blog = Blog.objects.filter(pk=data["blog_id"] or 0).first()
         ch.save()
         return Response(_row(ch))
+
+    def post(self, request, pk):
+        """POST /channels/<id>/virale/ — додати сторінку у Virale, щоб її ролики йшли в стрічку (витрачає ліміт дій Virale)."""
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        ch = get_object_or_404(ContentChannel, pk=pk)
+        if ch.platform not in ("instagram", "tiktok", "youtube"):
+            return Response({"error": "Virale відстежує лише Instagram, TikTok і YouTube."}, status=400)
+        try:
+            ansvc._mcp("virale_accounts_add", {"url": ch.url})
+        except RuntimeError as e:
+            return Response({"error": f"Virale: {str(e)[:200]}"}, status=400)
+        ch.in_virale = True
+        ch.save(update_fields=["in_virale"])
+        return Response(dict(_row(ch), note="Додано у Virale — ролики зʼявляться після найближчого оновлення стрічки."))
 
     def delete(self, request, pk):
         get_object_or_404(ContentChannel, pk=pk).delete()
@@ -647,8 +665,9 @@ class FeedView(_Base):
             days = max(1, min(int(request.GET.get("days", 7)), 90))
         except ValueError:
             days = 7
+        blog = Blog.objects.filter(pk=request.GET.get("blog") or 0).first()
         rows = ansvc.feed(days=days, sort=request.GET.get("sort", "outlier"), status=request.GET.get("status", ""),
-                          include_own=request.GET.get("own") == "1", only_tracked=request.GET.get("all") != "1")
+                          include_own=request.GET.get("own") == "1", only_tracked=request.GET.get("all") != "1", blog=blog)
         s = AnalystSettings.get()
         return Response({
             "items": [{"id": i.id, "username": i.username, "platform": i.platform, "url": i.url,
@@ -657,7 +676,9 @@ class FeedView(_Base):
                        "engagement": i.engagement, "x": x, "status": i.status, "is_own": i.is_own,
                        "published_at": _iso(i.published_at)} for i, x in rows],
             "total": FeedItem.objects.count(), "last_sync_at": _iso(s.last_feed_sync_at), "last_note": s.last_feed_note,
-            "tracked": len(ansvc.tracked_handles()),
+            "tracked": len(ansvc.tracked_handles(blog)),
+            "blog_pages": [{"id": c.id, "handle": c.handle, "platform": c.platform, "role": c.role, "in_virale": c.in_virale}
+                           for c in ContentChannel.objects.filter(blog=blog).exclude(role=ContentChannel.Role.OWN)] if blog else [],
         })
 
     def post(self, request):

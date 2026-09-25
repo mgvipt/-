@@ -79,3 +79,4 @@ urlpatterns += [  # 25.09: навчання блогу знаннями ззов
     path("api/content-factory/blogs/<int:pk>/learn/", views.BlogLearnView.as_view()),
     path("api/content-factory/blogs/<int:pk>/learn/accept/", views.BlogLearnView.as_view(), {"action": "accept"}),
 ]
+urlpatterns += [path("api/content-factory/channels/<int:pk>/virale/", views.ChannelDetailView.as_view())]
