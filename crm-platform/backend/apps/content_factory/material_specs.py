@@ -156,12 +156,16 @@ def apply_spec(material):
 
 
 def apply_stages_text(material):
-    """Для сценариста: етапи нанесення, щоб у кожному кадрі з роботою був названий конкретний етап."""
+    """Для сценариста: етапи нанесення, щоб у кожному кадрі з роботою був названий конкретний етап.
+    Технологія з етикетки Wallcov (виробник) — пріоритетніша за уроки з YouTube."""
     s = apply_spec(material)
-    if not s.get("stages"):
+    d = _apply_data()
+    label = (d.get(_norm(material)) or d.get(find_material(material)) or {}).get("label_steps", "")
+    if not s.get("stages") and not label:
         return ""
-    return ("Етапи нанесення «%s» (кадр із роботою майстра — лише один конкретний етап, стіна в стані саме цього етапу):\n" % material
-            + "\n".join(f"{x.get('n')}. {x.get('stage')}" for x in s["stages"]))
+    return (("Технологія виробника з етикетки Wallcov (головне джерело): " + label + "\n" if label else "")
+            + ("Етапи нанесення «%s» (кадр із роботою майстра — лише один конкретний етап, стіна в стані саме цього етапу):\n" % material
+               + "\n".join(f"{x.get('n')}. {x.get('stage')}" for x in s.get("stages") or [])))
 
 
 def apply_rules(prompt, material):
@@ -180,3 +184,25 @@ def apply_rules(prompt, material):
             break
     return (stage + " Application physics: " + " ".join(s.get("physics") or [])[:900]
             + " Never: " + " ".join(s.get("never") or [])[:700])
+
+
+# ── 25.09: етикетки відер з Canva (папка «етикетки 2025») — labels.json: {матеріал: [SharedLink id]} ──
+BUCKET_RX = _re.compile(r"відр|ведр|банк|тар[аиу]\b|упаков|bucket|pail|\bjar\b|container|can of", _re.I)
+_LABELS = None
+
+
+def label_for(material):
+    """Справжня етикетка матеріалу (bytes, mime) або None — щоб ШІ малював відро саме з нашою етикеткою."""
+    global _LABELS
+    if _LABELS is None:
+        try:
+            with open(_os.path.join(_os.path.dirname(__file__), "labels.json"), encoding="utf8") as f:
+                _LABELS = _json.load(f)
+        except (OSError, ValueError):
+            _LABELS = {}
+    ids = _LABELS.get(_norm(material)) or _LABELS.get(find_material(material)) or []
+    if not ids:
+        return None
+    from apps.inbox.models import SharedLink
+    link = SharedLink.objects.filter(pk=ids[0]).first()
+    return (bytes(link.data), link.content_type or "image/jpeg") if link else None

@@ -98,10 +98,19 @@ def _part(img):
 def regenerate(prompt, blog, aspect="9:16", texture=None, material="", composition=None):
     """Новий кадр з опису. texture=(bytes, mime) — реальне фото фактури: для Wallcov стіна малюється лише за ним.
     composition=(bytes, mime) — кадр референсу (ремейк): беремо лише ракурс, крупність і дію, решта — нове."""
+    label_txt, label_part = "", []
+    if material:  # відро/банка в кадрі → справжня етикетка матеріалу з Canva
+        from .material_specs import BUCKET_RX, label_for
+        lab = label_for(material) if BUCKET_RX.search(prompt or "") else None
+        if lab:
+            label_part = [_part(lab)]
+            label_txt = (" A reference image of the product LABEL is provided: any bucket/pail in the frame is a round white plastic bucket "
+                         "with a white lid, and this label is printed around it EXACTLY (same design, colours, WALLCOV logo, text layout), "
+                         "correctly curved around the cylinder.")
     if texture is not None:
-        if composition is not None:  # порядок: фактура (перша) → кадр референсу (остання)
-            return generate(texture_prompt(prompt, material, aspect) + COMPOSITION, aspect=aspect,
-                            extra_parts=[_part(texture), _part(composition)])
+        if composition is not None or label_part:  # порядок: фактура (перша) → етикетка → кадр референсу (остання)
+            return generate(texture_prompt(prompt, material, aspect) + label_txt + (COMPOSITION if composition is not None else ""),
+                            aspect=aspect, extra_parts=[_part(texture)] + label_part + ([_part(composition)] if composition is not None else []))
         return generate(texture_prompt(prompt, material, aspect), aspect=aspect, ref=texture)
     """Для інших блогів — стиль і персонажі з візуального зразка блогу."""
     rules = ""
