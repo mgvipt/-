@@ -401,6 +401,9 @@ class ReelDraft(models.Model):
     blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="reels")
     busy = models.BooleanField(default=False, help_text="Йде ШІ-обробка кадру / перемонтаж")
     variants = models.JSONField(default=dict, blank=True, help_text="{tiktok|youtube: SharedLink id} — версії з безпечними зонами платформ")
+    stage = models.CharField(max_length=10, default="done", help_text="Крок майстра: idea/script/material/style/draft/review/done")
+    brief = models.JSONField(default=dict, blank=True, help_text="Задум: title, hook, goal, why, shots, fit, source, structure референсу")
+    review = models.JSONField(default=dict, blank=True, help_text="Висновки перевірки командою (SMM, монтажер, бренд)")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

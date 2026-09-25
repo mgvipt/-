@@ -38,6 +38,7 @@ from . import telegram as tgsvc
 from . import aiimage as aisvc
 from . import blogs as blogsvc
 from . import carousels as carsvc
+from . import studio as studiosvc
 from . import assist as assistsvc
 from . import learn as learnsvc
 from . import visual as visualsvc
@@ -802,6 +803,9 @@ def _reel(request, r):
         "status": r.status, "status_display": r.get_status_display(), "duration": r.duration, "error": r.error,
         "facts": r.facts, "created_at": _iso(r.created_at), "style_id": r.style_id, "blog_id": r.blog_id, "busy": r.busy,
         "style_name": r.style.name if r.style_id else "Класичний",
+        "stage": r.stage, "brief": {k: v for k, v in (r.brief or {}).items() if k not in ("prev_texts", "prev_caption")},
+        "can_undo_texts": bool((r.brief or {}).get("prev_texts")), "review": r.review or {},
+        "notes": studiosvc.editor_notes(r) if r.stage in ("script", "material", "style") else [],
         "variants": {k: _link_url(request, v) for k, v in (r.variants or {}).items()},
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
         "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else (b.get("prompt") or ""),
@@ -852,6 +856,55 @@ class ReelsView(_Base):
         return Response({"ok": True, "note": "Роблю рилс: розмітка нових відео, сценарій, монтаж — 3–8 хвилин."})
 
 
+class StudioView(_Base):
+    """Майстер рилса: POST /studio/ideas/ — 5 ідей; GET /studio/search/?q= — пошук Shorts на YouTube;
+    POST /studio/ {brief, blog_id, material, asset_ids, style_id} — створити рилс і скласти сценарій (у фоні)."""
+    def get(self, request, action=None):
+        if action != "search":
+            return Response(status=405)
+        try:
+            return Response(studiosvc.search_all(request.GET.get("q", ""), request.GET.get("where", "web")))
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response({"error": f"YouTube не відповів: {str(e)[:120]}"}, status=502)
+
+    def post(self, request, action=None):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник (ШІ платний)."}, status=403)
+        data = request.data or {}
+        blog = blogsvc.get_blog(data.get("blog_id"))
+        if action == "ideas":
+            try:
+                feed_ids = [int(x) for x in (data.get("feed_ids") or []) if str(x).isdigit()][:3]
+                return Response(studiosvc.ideas(blog, str(data.get("source") or "ai"), str(data.get("text") or "")[:1500],
+                                                str(data.get("url") or "")[:500], feed_ids))
+            except (ValueError, reelsvc.ReelError) as e:
+                return Response({"error": str(e)}, status=400)
+        brief = data.get("brief") if isinstance(data.get("brief"), dict) else {}
+        brief = {k: reelsvc.clean_text(str(brief.get(k) or ""))[:400] for k in ("title", "hook", "goal", "why", "shots", "fit", "source")} | (
+            {"structure": brief["structure"]} if isinstance(brief.get("structure"), (dict, list)) else {})
+        if not brief.get("title"):
+            return Response({"error": "Виберіть або впишіть ідею."}, status=400)
+        material = str(data.get("material") or "").strip()[:80]
+        asset_ids = [int(x) for x in (data.get("asset_ids") or []) if str(x).isdigit()][:6]
+        if blog.real_footage and not material and not asset_ids:
+            return Response({"error": "Виберіть матеріал або відео, з яких монтувати."}, status=400)
+        if not blogsvc.is_ready(blog):
+            return Response({"error": f"Блог «{blog.name}» ще не налаштований — допишіть майстер-промт у «Блогах»."}, status=400)
+        r = ReelDraft.objects.create(title=brief["title"][:200], topic=brief["title"][:300], material=material, blog=blog,
+                                     brief=brief, stage="idea", busy=True,
+                                     style=ReelStyle.objects.filter(pk=data.get("style_id") or 0).first())
+
+        def work():
+            try:
+                studiosvc.build_script(ReelDraft.objects.get(pk=r.pk), material=material, asset_ids=asset_ids or None)
+            except Exception as e:
+                ReelDraft.objects.filter(pk=r.pk).update(error=f"Сценарій не вдався: {str(e)[:200]}", busy=False)
+        _bg(work)
+        return Response({"ok": True, "id": r.id, "note": "Сценарист пише сценарій і підбирає кадри — 1–5 хвилин."})
+
+
 class ReelScenesView(_Base):
     """GET ?material=&q= — сцени для заміни кадру (з превʼю). POST {material} — добудувати превʼю (безкоштовно, у фоні)."""
     def get(self, request):
@@ -887,6 +940,9 @@ class ReelView(_Base):
                     if keep["image_id"] not in known:
                         return Response({"error": "Невідомий ШІ-кадр."}, status=400)
                     limit, sid = 8.0, None
+                elif not b.get("scene_id") and keep.get("prompt") and r.stage != "done":
+                    limit, sid = 8.0, None  # майстер: кадр ще не намальований — лише опис для ШІ
+                    keep = {"prompt": keep["prompt"]}
                 else:
                     sc = VideoScene.objects.filter(pk=b.get("scene_id")).first()
                     if not sc:
@@ -917,7 +973,58 @@ class ReelView(_Base):
             r.caption = str(data["caption"] or "")[:2200]
         if "style_id" in data:
             r.style = ReelStyle.objects.filter(pk=data["style_id"] or 0).first()
+        if "stage" in data:
+            if data["stage"] not in studiosvc.STAGES:
+                return Response({"error": "Невідомий крок."}, status=400)
+            r.stage = data["stage"]
+            if r.stage == "done" and r.status == ReelDraft.Status.DRAFT and r.file_id:
+                r.status = ReelDraft.Status.APPROVED
         r.save()
+        return Response(_reel(request, r))
+
+    def _studio(self, request, pk):
+        """POST /reels/<id>/studio/ {op}: script — скласти сценарій заново; texts / undo_texts — переписати тексти / повернути;
+        fill — намалювати відсутні кадри; autofx — ефекти монтажера; review — перевірка командою."""
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        r = get_object_or_404(ReelDraft, pk=pk)
+        op = (request.data or {}).get("op")
+        if r.busy:
+            return Response({"error": "Ролик ще обробляється — зачекайте."}, status=409)
+        try:
+            if op == "texts":
+                studiosvc.rewrite_texts(r)
+            elif op == "undo_texts":
+                studiosvc.undo_texts(r)
+            elif op == "autofx":
+                r.beats = studiosvc.auto_fx(r.beats)
+                r.save(update_fields=["beats"])
+            elif op == "review":
+                studiosvc.team_review(r)
+            elif op in ("script", "fill"):
+                if op == "fill" and aisvc.spent_month() >= aisvc.MONTH_CAP:
+                    return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
+                ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
+
+                def work():
+                    try:
+                        x = ReelDraft.objects.get(pk=r.pk)
+                        if op == "script":
+                            studiosvc.build_script(x, material=x.material)
+                        else:
+                            studiosvc.fill_missing(x)
+                    except Exception as e:
+                        ReelDraft.objects.filter(pk=r.pk).update(error=str(e)[:300])
+                    finally:
+                        ReelDraft.objects.filter(pk=r.pk).update(busy=False)
+                _bg(work)
+                return Response({"ok": True, "note": "Сценарист переписує сценарій — 1–3 хвилини." if op == "script"
+                                 else f"Художник малює кадри ({len(studiosvc.missing(r))}) — до хвилини на кадр."})
+            else:
+                return Response({"error": "Невідома дія."}, status=400)
+        except (ValueError, reelsvc.ReelError) as e:
+            return Response({"error": str(e)}, status=400)
+        r.refresh_from_db()
         return Response(_reel(request, r))
 
     def post(self, request, pk, action=None):
@@ -925,13 +1032,23 @@ class ReelView(_Base):
         if action == "render":
             r = get_object_or_404(ReelDraft, pk=pk)
 
+            if studiosvc.missing(r):
+                return Response({"error": "Не всі кадри мають картинку — завершіть крок «Матеріал»."}, status=400)
+            ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
+
             def work():
                 try:
                     reelsvc.rerender(r)
+                    if r.stage in ("idea", "script", "material", "style"):
+                        ReelDraft.objects.filter(pk=r.pk).update(stage="draft")
                 except Exception as e:
                     ReelDraft.objects.filter(pk=r.pk).update(error=f"Перемонтаж не вдався: {str(e)[:200]}")
+                finally:
+                    ReelDraft.objects.filter(pk=r.pk).update(busy=False)
             _bg(work)
-            return Response({"ok": True, "note": "Перемонтовую — до хвилини."})
+            return Response({"ok": True, "note": "Монтую — до хвилини."})
+        if action == "studio":
+            return self._studio(request, pk)
         if action == "frame":
             if not request.user.is_superuser:
                 return Response({"error": "ШІ-кадри (платно) — лише власник."}, status=403)

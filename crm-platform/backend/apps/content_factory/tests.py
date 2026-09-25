@@ -699,3 +699,64 @@ class BlogCarouselAssistTests(TestCase):
         c.slides[0]["image"] = {"kind": "none"}
         carsvc.undo_image(c, 0)
         self.assertEqual(c.slides[0]["image"], {"kind": "ai", "link_id": 1})
+
+
+class ReelStudioTests(TestCase):
+    """Майстер рилса (25.09): задум у тему, дії перевірки, ефекти монтажера, прогалини кадрів, перевірки без ШІ."""
+    def setUp(self):
+        from . import blogs as blogsvc
+        blogsvc.ensure_blogs()
+        from .models import Blog, ReelDraft
+        self.blog = Blog.objects.get(slug="wallcov")
+        self.reel = ReelDraft.objects.create(title="Шви", blog=self.blog, stage="material", caption="Текст #a #b #c #d #e #f",
+                                             beats=[{"text": "гачок", "seconds": 3.2, "prompt": "стіна"},
+                                                    {"text": "далі", "seconds": 2.0, "image_id": 5}])
+
+    def test_topic_of_includes_hook_and_goal(self):
+        from . import studio
+        t = studio.topic_of({"title": "Чи видно шви", "hook": "Шов є", "goal": "dm", "shots": "макро"})
+        self.assertIn("Шов є", t)
+        self.assertIn("написати в Direct", t)
+
+    def test_missing_and_notes(self):
+        from . import studio
+        self.assertEqual(studio.missing(self.reel), [0])
+        kinds = {n["kind"] for n in studio.editor_notes(self.reel)}
+        self.assertIn("missing", kinds)
+        self.assertIn("hook", kinds)
+
+    def test_valid_action_rules(self):
+        from . import studio
+        self.assertIsNone(studio._valid_action({"type": "transition", "beat": 1, "value": "spin"}, self.reel, self.blog))
+        self.assertIsNone(studio._valid_action({"type": "text", "beat": 9, "value": "x"}, self.reel, self.blog))
+        ok = studio._valid_action({"type": "seconds", "beat": 0, "value": 20}, self.reel, self.blog)
+        self.assertEqual(ok["value"], 8.0)
+
+    def test_auto_fx_and_rule_checks(self):
+        from . import studio
+        fx = studio.auto_fx(self.reel.beats)
+        self.assertEqual(fx[0]["fx"]["transition"], "cut")
+        self.assertEqual(fx[1]["fx"]["motion"], "zoomin")
+        titles = " ".join(x["title"] for x in studio.rule_checks(self.reel))
+        self.assertIn("Хештегів 6", titles)
+
+    def test_render_refuses_missing_frames(self):
+        from . import reels
+        with self.assertRaises(reels.ReelError):
+            reels.render({"beats": self.reel.beats}, "/tmp")
+
+    def test_team_review_filters_actions(self):
+        from . import studio
+        fake = lambda p: {"smm": {"score": 7, "notes": [{"title": "Заклик", "why": "w", "action": {"type": "caption", "beat": 0, "value": "Новий підпис"}}]},
+                          "editor": {"score": 12, "notes": [{"title": "Погано", "why": "w", "action": {"type": "regenerate", "beat": 0, "value": "x"}}]},
+                          "brand": {"score": 9, "notes": []}, "verdict": "Можна"}
+        r = studio.team_review(self.reel, call=fake)
+        self.assertEqual(r["roles"]["smm"]["notes"][0]["action"]["type"], "caption")
+        self.assertEqual(r["roles"]["editor"]["score"], 10)
+        self.reel.refresh_from_db()
+        self.assertEqual(self.reel.stage, "review")
+
+    def test_search_requires_query(self):
+        from . import studio
+        with self.assertRaises(ValueError):
+            studio.search_all("")

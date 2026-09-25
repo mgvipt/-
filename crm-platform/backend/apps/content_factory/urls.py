@@ -52,6 +52,10 @@ urlpatterns += [
     path("api/content-factory/reels/<int:pk>/test/", views.ReelView.as_view(), {"action": "test"}),
     path("api/content-factory/reels/<int:pk>/render/", views.ReelView.as_view(), {"action": "render"}),
     path("api/content-factory/reels/scenes/", views.ReelScenesView.as_view()),
+    path("api/content-factory/studio/", views.StudioView.as_view()),
+    path("api/content-factory/studio/ideas/", views.StudioView.as_view(), {"action": "ideas"}),
+    path("api/content-factory/studio/search/", views.StudioView.as_view(), {"action": "search"}),
+    path("api/content-factory/reels/<int:pk>/studio/", views.ReelView.as_view(), {"action": "studio"}),
     path("api/content-factory/reels/styles/", views.ReelStylesView.as_view()),
 ]
 urlpatterns += [  # 25.09: блоги, каруселі, ШІ-кадри, вичитка

@@ -278,6 +278,9 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
             f.write(AI_LABEL)
         label = (f",drawtext=fontfile={font_file('Inter', 'Bold')}:textfile={lf}:fontcolor=white:fontsize=34:"
                  "x=60:y=150:box=1:boxcolor=0x000000@0.55:boxborderw=14")
+    empty = [str(n + 1) for n, b in enumerate(p["beats"]) if not b.get("image_id") and not b.get("scene_id")]
+    if empty:
+        raise ReelError(f"Кадр {', '.join(empty)} ще без картинки — намалюйте його ШІ або виберіть наш кадр.")
     segs = []
     for n, b in enumerate(p["beats"]):
         tf = os.path.join(folder, f"t{n}.txt")
@@ -460,6 +463,8 @@ def _set_frame(reel, idx, data, mime, kind, prompt=""):
     beats[idx] = b
     reel.beats = beats
     reel.save(update_fields=["beats"])
+    if getattr(reel, "stage", "done") in ("idea", "script", "material", "style"):
+        return reel  # майстер: ще до монтажу — кадр збережено, монтаж на кроці 5
     return rerender(reel)
 
 
@@ -506,11 +511,14 @@ def revert_frame(reel, idx):
     beats[idx] = b
     reel.beats = beats
     reel.save(update_fields=["beats"])
+    if getattr(reel, "stage", "done") in ("idea", "script", "material", "style"):
+        return reel
     return rerender(reel)
 
 
 def spent_month():
-    return round(questions.month_spent(MARKUP_SOURCE) + questions.month_spent(PLAN_SOURCE), 4)
+    return round(questions.month_spent(MARKUP_SOURCE) + questions.month_spent(PLAN_SOURCE)
+                 + questions.month_spent("content_factory.studio"), 4)
 
 
 def backfill_thumbs(material, limit=200):
