@@ -772,15 +772,25 @@ export default function Inbox() {
 
       {/* AI-РОП панель */}
       <div style={{ background: "#fff", borderLeft: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center" }}>
-          <b style={{ fontSize: 14 }}><Icon n="brain" size={16} /> AI-РОП</b>
-          <div style={{ flex: 1 }} />
-          {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : <><Icon n="refresh" size={14} /> {t("Обновить","Оновити")}</>}</button>}
+        <div style={{ padding: "13px 14px 11px", borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <b style={{ fontSize: 14 }}><Icon n="brain" size={16} /> {t("ИИ-РОП — помощник","ШІ-РОП — помічник")}</b>
+            <div style={{ flex: 1 }} />
+          </div>
+          <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.4, marginTop: 3 }}>
+            {t("Это как опытный руководитель рядом: ответит на вопрос, подскажет что писать клиенту и разберёт вашу переписку.",
+               "Це як досвідчений керівник поруч: відповість на питання, підкаже що писати клієнту і розбере вашу переписку.")}
+          </div>
         </div>
         {active && (
           <div style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0", flexShrink: 0, background: "#f8fafc" }}>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
-              <Icon n="💭" size={13} /> {t("Спросить ИИ-РОП об этом диалоге", "Запитати ШІ-РОП про цей діалог")}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
+              <span style={{ fontSize: 13 }}>💬</span>
+              <b style={{ fontSize: 12.5, color: "#1e293b" }}>{t("1. Спросить", "1. Запитати")}</b>
+            </div>
+            <div className="muted" style={{ fontSize: 11, lineHeight: 1.4, marginBottom: 7 }}>
+              {t("Любой вопрос по этому клиенту или по нашим материалам: цена, адрес, наличие, что ответить. Отвечает по базе знаний — не выдумывает.",
+                 "Будь-яке питання про цього клієнта або про наші матеріали: ціна, адреса, наявність, що відповісти. Відповідає з бази знань — не вигадує.")}
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <input
@@ -804,7 +814,15 @@ export default function Inbox() {
           </div>
         )}
         {active && (
-          <div style={{ padding: "0 12px 8px" }}>
+          <div style={{ padding: "10px 12px 10px", borderBottom: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
+              <span style={{ fontSize: 13 }}>🎯</span>
+              <b style={{ fontSize: 12.5, color: "#1e293b" }}>{t("2. Подсказать ответ", "2. Підказати відповідь")}</b>
+            </div>
+            <div className="muted" style={{ fontSize: 11, lineHeight: 1.4, marginBottom: 7 }}>
+              {t("Выберите ситуацию — ИИ прочитает переписку и предложит готовый ответ клиенту. Ниже можно добавить свою мысль, её учтут в первую очередь.",
+                 "Оберіть ситуацію — ШІ прочитає переписку і запропонує готову відповідь клієнту. Нижче можна додати свою думку, її врахують у першу чергу.")}
+            </div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
               {([["", t("Сам вирішить","Сам вирішить")], ["dozhim", t("Дожим","Дожим")], ["objection", t("Возражение","Заперечення")], ["calc", t("Просчёт","Прорахунок")], ["close", t("Закрытие","Закриття")], ["negative", t("Негатив","Негатив")], ["first", t("Первый контакт","Перший контакт")]] as [string,string][]).map(([k, lbl]) => (
                 <button key={k} onClick={() => setAiMode(k)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 12, cursor: "pointer", border: "1px solid " + (aiMode === k ? "var(--brand)" : "#e2e8f0"), background: aiMode === k ? "var(--brand)" : "#fff", color: aiMode === k ? "#fff" : "#64748b", fontWeight: aiMode === k ? 700 : 500 }}>{lbl}</button>
@@ -815,9 +833,22 @@ export default function Inbox() {
               placeholder={t("Подсказка ИИ-РОПу: что учесть…","Підказка ШІ-РОПу: що врахувати…")}
               title={t("Напиши свою мысль — ИИ учтёт её в первую очередь. Enter — обновить подсказку.","Напиши свою думку — ШІ врахує її в першу чергу. Enter — оновити підказку.")}
               style={{ width: "100%", boxSizing: "border-box", height: 30, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 8px" }} />
+            <button className="btn btn-primary" style={{ width: "100%", marginTop: 7, fontSize: 12.5, padding: "6px 10px" }}
+              onClick={() => active && analyzeAI(active.id)} disabled={aiLoad || !active}>
+              {aiLoad ? t("Думаю…","Думаю…") : <><Icon n="brain" size={14} /> {t("Подсказать ответ","Підказати відповідь")}</>}</button>
           </div>
         )}
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+          {active && <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
+              <span style={{ fontSize: 13 }}>📋</span>
+              <b style={{ fontSize: 12.5, color: "#1e293b" }}>{t("3. Разбор диалога", "3. Розбір діалогу")}</b>
+            </div>
+            <div className="muted" style={{ fontSize: 11, lineHeight: 1.4, marginBottom: 10 }}>
+              {t("Коротко: что происходит в переписке и готовый ответ. Это результат кнопки выше — его видите только вы, клиенту ничего не уходит.",
+                 "Коротко: що відбувається в переписці і готова відповідь. Це результат кнопки вище — його бачите лише ви, клієнту нічого не йде.")}
+            </div>
+          </>}
           {!active ? (
             <div className="muted" style={{ fontSize: 13 }}>{t("Выбери диалог — AI-РОП подскажет тезисы и ответ.","Обери діалог — AI-РОП підкаже тези й відповідь.")}</div>
           ) : aiLoad && !ai ? (
