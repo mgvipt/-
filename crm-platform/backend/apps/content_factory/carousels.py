@@ -48,13 +48,19 @@ KIND_RULES = {
     "list": "добірка з кількох порад/тем: слайд 1 — гачок + ЩО ВСЕРЕДИНІ (перелік тем у body через \n, коротко), далі по одній темі на слайд у тому ж порядку.",
 }
 
+KEEP_AUTHOR = ("Поточний текст слайдів — ГОЛОВНИЙ: автор міг правити його вручну. Бери його за основу, зберігай зміст, намір і "
+               "ТИП ДІЇ в заклику (коментарі лишаються коментарями, збереження — збереженням). Не додавай телефонів, посилань, цін і "
+               "контактів, яких немає в поточному тексті. Заклик блогу за замовчуванням тут НЕ підставляй.")
+
 REWRITE_ONE = """Перепиши ТЕКСТ одного слайда каруселі (заголовок і текст), не змінюючи його місце в історії та тему. Картинка лишається.
+""" + KEEP_AUTHOR + """
 Врахуй сусідні слайди, щоб не повторюватись. Заголовок до 7 слів, текст до 220 символів, можна переноси рядків.
 {wish}
 Відповідай ЛИШЕ JSON: {{"headline":"...","body":"..."}}"""
 
 REWRITE_ALL = """Перепиши ТЕКСТИ всіх слайдів каруселі (кількість слайдів і порядок не змінюй — картинки лишаються на своїх місцях).
-Дотримуйся типу й цілі каруселі. {wish}
+""" + KEEP_AUTHOR + """
+Дотримуйся типу каруселі. {wish}
 Відповідай ЛИШЕ JSON: {{"slides":[{{"headline":"...","body":"..."}}],"caption":"..."}}"""
 
 ADVICE = """Ти SMM-продюсер. Подивись карусель і дай ДО 5 порад, як краще досягти ЦІЛІ каруселі й мети блогу (збереження, пересилання,
@@ -364,8 +370,25 @@ def rewrite_slide(c, idx, wish="", call=None):
     r = _call(system, _head(c) + f"\n\nПерепиши слайд [{idx}].\n\nБаза знань:\n{facts_text or '(немає)'}", 500, call)
     if not (r.get("headline") or r.get("body")):
         raise ValueError("ШІ не повернув текст — спробуйте ще раз.")
+    _keep_prev(c.slides[idx])
     c.slides[idx]["headline"] = _lines(r.get("headline"), 90)
     c.slides[idx]["body"] = _lines(r.get("body"), 400)
+    render(c)
+    return c
+
+
+def _keep_prev(slide):
+    """Попередня версія тексту — щоб «↶ Повернути попередній» після невдалої перегенерації."""
+    slide["prev"] = {"headline": slide.get("headline", ""), "body": slide.get("body", "")}
+
+
+def undo_slide(c, idx):
+    prev = c.slides[idx].get("prev")
+    if not prev:
+        raise ValueError("Попередньої версії тексту немає.")
+    cur = {"headline": c.slides[idx].get("headline", ""), "body": c.slides[idx].get("body", "")}
+    c.slides[idx].update(prev)
+    c.slides[idx]["prev"] = cur  # повторне натискання — назад до нової версії
     render(c)
     return c
 
@@ -380,6 +403,7 @@ def rewrite_all(c, wish="", call=None):
     if len(new) != len(c.slides):
         raise ValueError("ШІ змінив кількість слайдів — спробуйте ще раз.")
     for s, x in zip(c.slides, new):
+        _keep_prev(s)
         s["headline"], s["body"] = _lines(x.get("headline"), 90), _lines(x.get("body"), 400)
     if r.get("caption"):
         c.caption = _clean_caption(str(r["caption"]))

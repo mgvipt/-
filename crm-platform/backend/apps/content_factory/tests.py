@@ -657,3 +657,17 @@ class BlogCarouselAssistTests(TestCase):
         self.assertEqual(BlogFact.objects.filter(blog=b).count(), 2)
         b.refresh_from_db()
         self.assertTrue(b.master_prompt.endswith("Візуал: 3D"))
+
+
+    def test_rewrite_keeps_prev_and_undo(self):
+        from . import carousels as carsvc
+        from .models import Blog
+        b = Blog.objects.get(slug="stiny-v-shotsi")
+        c = carsvc.generate(b, "т", n=3, template="graphite", images="none",
+                            call=lambda p: {"title": "т", "slides": [{"headline": f"H{i}", "body": "моє"} for i in range(3)]})
+        seen = {}
+        carsvc.rewrite_slide(c, 1, call=lambda p: seen.setdefault("p", p) and {"headline": "Нове", "body": "ШІ"})
+        self.assertIn("H1 — моє", seen["p"])  # ШІ бачить поточний текст автора
+        self.assertEqual(c.slides[1]["prev"], {"headline": "H1", "body": "моє"})
+        carsvc.undo_slide(c, 1)
+        self.assertEqual((c.slides[1]["headline"], c.slides[1]["body"]), ("H1", "моє"))

@@ -2158,7 +2158,7 @@ type BlogT = {
 };
 type FactT = { id: number; kind: string; kind_display: string; title: string; text: string; active: boolean };
 type BlogFull = BlogT & { master_prompt: string; cta: string; template: string; facts: FactT[]; kinds: [string, string][] };
-type SlideT = { headline: string; body: string; hint: string; image_kind: string; image_prompt: string; png_url: string; pos?: string };
+type SlideT = { headline: string; body: string; hint: string; image_kind: string; image_prompt: string; png_url: string; pos?: string; has_prev?: boolean };
 type CarouselT = {
   id: number; blog_id: number | null; topic: string; title: string; caption: string; template: string; status: string; status_display: string;
   kind: string; funnel: string;
@@ -2598,7 +2598,12 @@ function CarWorkspace({ c, blog, onChanged }: { c: CarouselT; blog: BlogT | unde
     try { const x = await fn(); if (x?.note) setMsg({ ok: true, text: x.note }); onChanged(); }
     catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); } finally { setBusy(""); }
   };
-  const saveText = () => act("save", () => api.patch(base, { slides: slides.map(({ headline, body, pos }) => ({ headline, body, pos })), caption }));
+  const saveText = (xs = slides, cap = caption) => act("save", () => api.patch(base, { slides: xs.map(({ headline, body, pos }) => ({ headline, body, pos })), caption: cap }));
+  // Перегенерація бере текст із сервера — тож спершу зберігаємо ручні правки, щоб ШІ взяв саме їх за основу
+  const rewrite = (label: string, body: Record<string, unknown>) => act(label, async () => {
+    if (dirty) await api.patch(base, { slides: slides.map(({ headline, body: b, pos }) => ({ headline, body: b, pos })), caption });
+    return api.post(`${base}text/`, body);
+  });
   const s = slides[sel];
   const cur = c.slides[sel];
   const applyAdvice = (a: CarAdviceT) => {
@@ -2639,11 +2644,12 @@ function CarWorkspace({ c, blog, onChanged }: { c: CarouselT; blog: BlogT | unde
               <textarea className="cf-ta" style={{ minHeight: 110 }} value={s.body} onChange={(e) => setSlides(slides.map((x, n) => n === sel ? { ...x, body: e.target.value } : x))} aria-label="Текст (Enter — новий рядок)" />
               <div className="cf-field"><span>Де стоїть текст</span><Seg label="Позиція тексту" value={s.pos || "auto"} onChange={(v) => setSlides(slides.map((x, n) => n === sel ? { ...x, pos: v } : x))} opts={POS_OPTS} /></div>
               <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
-                <ProofBtn text={`${s.headline}\n${s.body}`} blogId={c.blog_id} onApply={(t) => { const [h, ...rest] = t.split("\n"); setSlides(slides.map((x, n) => n === sel ? { ...x, headline: h, body: rest.join("\n").trim() } : x)); }} />
+                <ProofBtn text={`${s.headline}\n${s.body}`} blogId={c.blog_id} onApply={(t) => { const [h, ...rest] = t.split("\n"); const xs = slides.map((x, n) => n === sel ? { ...x, headline: h, body: rest.join("\n").trim() } : x); setSlides(xs); saveText(xs); }} />
+                {cur?.has_prev && <button type="button" className="cf-btn ghost" disabled={!!busy} onClick={() => act("undo", () => api.post(`${base}text/`, { index: sel, op: "undo" }))}>↶ Повернути попередній текст</button>}
               </div>
               <div className="cf-set">
                 <input className="cf-in" value={wish} onChange={(e) => setWish(e.target.value)} placeholder="Побажання: коротше, з цифрою, простіше…" aria-label="Побажання до тексту" />
-                <button type="button" className="cf-btn ghost" disabled={!!busy || c.busy} onClick={() => act("rw1", () => api.post(`${base}text/`, { index: sel, op: "slide", wish }))}>{busy === "rw1" ? "Пишу…" : "Новий текст слайда · ≈$0.01"}</button>
+                <button type="button" className="cf-btn ghost" disabled={!!busy || c.busy} onClick={() => rewrite("rw1", { index: sel, op: "slide", wish })}>{busy === "rw1" ? "Пишу…" : "Новий текст слайда · ≈$0.01"}</button>
               </div>
             </section>
             <section>
@@ -2663,7 +2669,7 @@ function CarWorkspace({ c, blog, onChanged }: { c: CarouselT; blog: BlogT | unde
             <section>
               <h5>Уся карусель</h5>
               <Seg label="Дизайн" value={c.template} onChange={(v) => act("tpl", () => api.patch(base, { template: v }))} opts={[{ v: "photo", l: "Фото" }, { v: "plaster", l: "Штукатурка" }, { v: "graphite", l: "Графіт" }]} />
-              <button type="button" className="cf-btn ghost" disabled={!!busy || c.busy} onClick={() => act("rwall", () => api.post(`${base}text/`, { op: "all", wish }))}>{busy === "rwall" ? "Переписую…" : "Переписати всі тексти · ≈$0.03"}</button>
+              <button type="button" className="cf-btn ghost" disabled={!!busy || c.busy} onClick={() => rewrite("rwall", { op: "all", wish })}>{busy === "rwall" ? "Переписую…" : "Переписати всі тексти · ≈$0.03"}</button>
             </section>
           </div>
         </div>)}
@@ -2674,7 +2680,7 @@ function CarWorkspace({ c, blog, onChanged }: { c: CarouselT; blog: BlogT | unde
             <section>
               <h5>Підпис</h5>
               <textarea className="cf-ta" style={{ minHeight: 150 }} value={caption} onChange={(e) => setCaption(e.target.value)} aria-label="Підпис до допису" />
-              <div className="cf-acts" style={{ justifyContent: "flex-start" }}><ProofBtn text={caption} blogId={c.blog_id} onApply={setCaption} /></div>
+              <div className="cf-acts" style={{ justifyContent: "flex-start" }}><ProofBtn text={caption} blogId={c.blog_id} onApply={(t) => { setCaption(t); saveText(slides, t); }} /></div>
               {alt && <p className="cf-quiet">{alt} — вставте в «Розширені налаштування → Alt-текст».</p>}
             </section>
             {checks.length > 0 && <section><h5>Звірте перед публікацією</h5><ul className="cf-list warn">{checks.map((f, i) => <li key={i}>{f.replace(/^Перевірити:\s*/, "")}</li>)}</ul></section>}
@@ -2705,7 +2711,7 @@ function CarWorkspace({ c, blog, onChanged }: { c: CarouselT; blog: BlogT | unde
       {dirty && (
         <div className="cf-savebar">
           <b>Є незбережені зміни</b>
-          <button type="button" className="cf-btn gold" disabled={busy === "save"} onClick={saveText}>Зберегти й перемалювати</button>
+          <button type="button" className="cf-btn gold" disabled={busy === "save"} onClick={() => saveText()}>Зберегти й перемалювати</button>
           <button type="button" className="cf-btn ghost" onClick={() => { setSlides(c.slides); setCaption(c.caption); }}>Скасувати</button>
         </div>)}
       {c.error && <div className="cf-msg err">{c.error}</div>}

@@ -1160,7 +1160,7 @@ def _carousel(request, c):
         "facts": c.facts, "created_at": _iso(c.created_at),
         "slides": [{"headline": s.get("headline", ""), "body": s.get("body", ""), "hint": s.get("hint", ""),
                     "image_kind": (s.get("image") or {}).get("kind", "none"),
-                    "image_prompt": (s.get("image") or {}).get("prompt", ""), "pos": s.get("pos") or "auto",
+                    "image_prompt": (s.get("image") or {}).get("prompt", ""), "pos": s.get("pos") or "auto", "has_prev": bool(s.get("prev")),
                     "png_url": _link_url(request, s["rendered_id"]) if s.get("rendered_id") else ""} for s in c.slides],
     }
 
@@ -1261,6 +1261,8 @@ class CarouselView(_Base):
             try:
                 if data.get("op") == "all":
                     carsvc.rewrite_all(c, wish=str(data.get("wish") or "")[:300])
+                elif data.get("op") == "undo":
+                    carsvc.undo_slide(c, int(data.get("index")))
                 else:
                     idx = int(data.get("index"))
                     if not 0 <= idx < len(c.slides):
