@@ -118,8 +118,11 @@ export default function DialogReview() {
     setBusy("fb");
     try {
       await api.post(`/api/dialog-reviews/${open.id}/issue_feedback/`, { conv_id: convId, verdict, note });
-      await openOne(open.id); setNote("");
-      flash(true, verdict === "wrong" ? "Записав: розбір неправильний. Аналітик врахує." : "Розбір підтверджено.");
+      await openOne(open.id);
+      setNote(""); setChat(null);
+      flash(true, verdict === "wrong"
+        ? "Записав: розбір неправильний — аналітик врахує це в наступних. Діалог перенесено в «Розібрані»."
+        : "Розбір підтверджено. Діалог перенесено в «Розібрані».");
     } finally { setBusy(""); }
   }
   async function askRop(convId: number) {
@@ -169,8 +172,11 @@ export default function DialogReview() {
     for (const it of issues) for (const t of it.tags || []) c[t] = (c[t] || 0) + 1;
     return Object.entries(c).sort((a, b) => b[1] - a[1]);
   }, [issues]);
-  const shown = issues.filter((it) =>
-    (!fWho || people(it.who).includes(fWho)) && (!fTag || (it.tags || []).includes(fTag)));
+  const isHandled = (it: Issue) => !!(it.feedback?.verdict || it.applied?.kb_id);
+  const matches = (it: Issue) =>
+    (!fWho || people(it.who).includes(fWho)) && (!fTag || (it.tags || []).includes(fTag));
+  const shown = issues.filter((it) => !isHandled(it) && matches(it));
+  const handled = issues.filter(isHandled);
 
   const conv = st.dialogs ? Math.round((st.payments / st.dialogs) * 100) : 0;
   const chip = (active: boolean): React.CSSProperties => ({
@@ -359,7 +365,10 @@ export default function DialogReview() {
       {open && issues.length > 0 && (
         <div style={CARD}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <div style={H}>Діалоги із зауваженнями · {issues.length}</div>
+            <div style={H}>
+              Діалоги із зауваженнями · {issues.length - handled.length}
+              {handled.length > 0 && <span style={{ fontWeight: 400, color: "#15803d", fontSize: 13 }}> · розібрано {handled.length}</span>}
+            </div>
             <button className="btn" style={{ marginLeft: "auto" }} onClick={() => setShowDialogs(!showDialogs)}>
               {showDialogs ? "Згорнути" : "Показати всі"}
             </button>
@@ -374,6 +383,11 @@ export default function DialogReview() {
                   </span>
                 ))}
               </div>
+              {shown.length === 0 && (
+                <div style={{ color: "#15803d", fontSize: 13.5, padding: "6px 0" }}>
+                  Усі діалоги цієї дати розібрані 👍
+                </div>
+              )}
               {shown.map((it) => (
                 <div key={it.conv_id} style={{ borderTop: "1px solid #f1f5f9", padding: "13px 0" }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -427,6 +441,28 @@ export default function DialogReview() {
                   </div>
                 </div>
               ))}
+              {handled.length > 0 && (
+                <details style={{ marginTop: 14 }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13.5, color: "#15803d" }}>
+                    Розібрані за цю дату · {handled.length}
+                  </summary>
+                  {handled.map((it) => (
+                    <div key={it.conv_id} style={{ borderTop: "1px solid #f1f5f9", padding: "9px 0", fontSize: 13 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <a href={`/inbox?c=${it.conv_id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>
+                          {it.contact || `Чат #${it.conv_id}`}
+                        </a>
+                        {it.when && <span style={{ fontSize: 12, color: "#94a3b8" }}>🕘 {it.when}</span>}
+                        {it.applied?.kb_id && <span style={{ color: "#15803d", fontSize: 12.5 }}>✓ правило #{it.applied.kb_id}</span>}
+                        {it.feedback?.verdict === "ok" && <span style={{ color: "#15803d", fontSize: 12.5 }}>✓ розбір підтверджено</span>}
+                        {it.feedback?.verdict === "wrong" && <span style={{ color: "#b45309", fontSize: 12.5 }}>✎ розбір неправильний</span>}
+                        <button className="btn" style={{ marginLeft: "auto" }} onClick={() => showChat(it.conv_id)}>діалог</button>
+                      </div>
+                      {it.feedback?.note && <div style={{ color: "#64748b", marginTop: 3 }}>{it.feedback.note}</div>}
+                    </div>
+                  ))}
+                </details>
+              )}
             </>
           )}
         </div>
