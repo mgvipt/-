@@ -666,10 +666,20 @@ def _make_kit_offer(conv, order):
                       % (NOTE_PREFIX, recent.id))
                 return
             url = "https://crm.wallcovdec.com.ua/p/%s/" % pl.code
+            # 26.09.2026 (Олег): посилання вже в чаті — не дублюємо його. Нагадуємо, що воно вище,
+            # і пропонуємо реквізити. Якщо клієнт просив саме реквізити — їх надсилає _maybe_requisites.
+            already = Message.objects.filter(conversation=conv, direction="out", internal=False,
+                                             text__contains=pl.code).exists()
             try:
-                _send(conv, "%s — %s грн\n💳 Оплатити онлайн 👉 %s" % (prod.name, _money(recent.amount), url))
-                _note(conv, "%s: замовлення вже оформлене (сделка #%s) — надіслав те саме посилання %s"
-                      % (NOTE_PREFIX, recent.id, url))
+                if already:
+                    _send(conv, "Оплатити можна за посиланням, яке надіслала вище — %s грн. "
+                                "Якщо зручніше за реквізитами, скажіть, надішлю 💛" % _money(recent.amount))
+                    _note(conv, "%s: замовлення вже оформлене (сделка #%s) — нагадав про посилання, "
+                                "повторно не надсилав." % (NOTE_PREFIX, recent.id))
+                else:
+                    _send(conv, "%s — %s грн\n💳 Оплатити онлайн 👉 %s" % (prod.name, _money(recent.amount), url))
+                    _note(conv, "%s: замовлення вже оформлене (сделка #%s) — надіслав посилання %s"
+                          % (NOTE_PREFIX, recent.id, url))
             except Exception as e:
                 _note(conv, "%s: замовлення вже оформлене (сделка #%s), посилання %s — надіслати не вдалося (%s)."
                       % (NOTE_PREFIX, recent.id, url, str(e)[:150]))
