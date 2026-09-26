@@ -555,3 +555,21 @@ class PhotoScore(models.Model):
     score = models.FloatField(default=0)
     note = models.CharField(max_length=200, blank=True)
     scored_at = models.DateTimeField(auto_now=True)
+
+
+class AgentChat(models.Model):
+    """Чат з агентом заводу (26.09.2026): власник дає завдання ШІ як маркетологу, SMM, аналітику, продюсеру.
+    messages — [{who: me|agent, text, at, role, model, cost?, kb?}]. Модель і роль можна міняти посеред чату."""
+    title = models.CharField(max_length=200, blank=True)
+    blog = models.ForeignKey(Blog, null=True, blank=True, on_delete=models.SET_NULL, related_name="agent_chats")
+    role = models.CharField(max_length=20, default="marketer")
+    model = models.CharField(max_length=60, default="claude-sonnet-4-6")
+    messages = models.JSONField(default=list, blank=True)
+    cost_usd = models.FloatField(default=0)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+

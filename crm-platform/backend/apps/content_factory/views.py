@@ -44,6 +44,7 @@ from . import assist as assistsvc
 from . import learn as learnsvc
 from . import visual as visualsvc
 from . import marketing as mktsvc
+from . import agent as agentsvc
 from .models import (AnalystReport, AnalystSettings, Blog, BlogFact, Carousel, ContentMemory, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
                      QuestionMention, QuestionSettings, QuestionTopic, ReelDraft, ReelStyle, SourceAsset, SourceChat,
                      TgPost, TgSettings, VideoScene, parse_channel_link)
@@ -1249,7 +1250,10 @@ class ReelStylesView(_Base):
 
 # ── 25.09: блоги, їхня база знань і майстер-промт ────────────────────────────────────────────────
 
-def _blog(b, full=False):
+FACTS_PAGE = 300
+
+
+def _blog(b, full=False, q=""):
     chans = [{"id": c.id, "platform": c.platform, "handle": c.handle, "url": c.url}
              for c in b.channels.filter(role=ContentChannel.Role.OWN).order_by("platform", "handle")]
     out = {"id": b.id, "slug": b.slug, "name": b.name, "kind": b.kind, "kind_display": b.get_kind_display(),
@@ -1259,10 +1263,16 @@ def _blog(b, full=False):
            "reels": b.reels.count(), "carousels": b.carousels.count(),
            "open_promises": b.memory.filter(promise_done=False).exclude(promise="").count()}
     if full:
+        facts = b.facts.all()
+        if q:
+            from django.db.models import Q
+            facts = facts.filter(Q(title__icontains=q) | Q(text__icontains=q))
         out.update({"visual": b.visual, "ref_images": [dict(r, url=_link_url(None, r.get("id"))) for r in (b.ref_images or [])],
                     "master_prompt": b.master_prompt, "goal": b.goal, "cta": b.cta, "template": blogsvc.TEMPLATE,
+                    # 26.09.2026: бази знань мають тисячі записів (18 МБ на відкриття) — віддаємо до 300, решта через пошук ?q=
                     "facts": [{"id": f.id, "kind": f.kind, "kind_display": f.get_kind_display(), "title": f.title,
-                               "text": f.text, "active": f.active} for f in b.facts.all()],
+                               "text": f.text, "active": f.active} for f in facts[:FACTS_PAGE]],
+                    "facts_total": b.facts.count(), "facts_found": facts.count(), "facts_q": q,
                     "kinds": BlogFact.Kind.choices})
     return out
 
@@ -1290,7 +1300,7 @@ class BlogsView(_Base):
 
 class BlogView(_Base):
     def get(self, request, pk):
-        return Response(_blog(get_object_or_404(Blog, pk=pk), full=True))
+        return Response(_blog(get_object_or_404(Blog, pk=pk), full=True, q=(request.query_params.get("q") or "").strip()[:100]))
 
     def patch(self, request, pk):
         if not request.user.is_superuser:
@@ -1822,3 +1832,57 @@ class WriteView(_Base):
                                          current=str(data.get("current") or "")[:4000]))
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
+
+
+# ── Агент заводу (26.09.2026): чат із ШІ-маркетологом / SMM / аналітиком / продюсером ──────────────
+
+def _agent_chat(c, full=False):
+    out = {"id": c.id, "title": c.title or "Новий чат", "role": c.role, "model": c.model, "blog_id": c.blog_id,
+           "cost_usd": round(c.cost_usd or 0, 4), "updated_at": _iso(c.updated_at), "n": len(c.messages or [])}
+    if full:
+        out["messages"] = c.messages or []
+    return out
+
+
+class AgentView(_Base):
+    def get(self, request):
+        from .models import AgentChat
+        return Response({
+            "models": [{"id": k, "name": v[0], "provider": v[1], "price": ("безкоштовно" if not v[2] else f"${v[2]:g}/${v[3]:g} за 1M"), "hint": v[4]}
+                       for k, v in agentsvc.MODELS.items()],
+            "default_model": agentsvc.DEFAULT_MODEL,
+            "roles": [{"id": k, "name": v[0]} for k, v in agentsvc.ROLES.items()],
+            "chats": [_agent_chat(c) for c in AgentChat.objects.all()[:50]],
+            "spent_month_usd": round(agentsvc.month_spent(), 3), "cap_usd": agentsvc.MONTH_CAP_USD,
+        })
+
+    def post(self, request):
+        from .models import AgentChat
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        d = request.data or {}
+        text = str(d.get("text") or "").strip()[:6000]
+        if not text:
+            return Response({"error": "Напишіть завдання."}, status=400)
+        chat = (get_object_or_404(AgentChat, pk=d["chat_id"]) if d.get("chat_id")
+                else AgentChat(created_by=request.user))
+        blog = Blog.objects.filter(pk=d.get("blog_id")).first() if d.get("blog_id") else None
+        try:
+            agentsvc.reply(chat, text, str(d.get("role") or "marketer"), str(d.get("model") or agentsvc.DEFAULT_MODEL), blog)
+        except agentsvc.AgentError as e:
+            return Response({"error": str(e)}, status=400)
+        return Response({**_agent_chat(chat, full=True), "spent_month_usd": round(agentsvc.month_spent(), 3)})
+
+
+class AgentChatView(_Base):
+    def get(self, request, pk):
+        from .models import AgentChat
+        return Response(_agent_chat(get_object_or_404(AgentChat, pk=pk), full=True))
+
+    def delete(self, request, pk):
+        from .models import AgentChat
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        get_object_or_404(AgentChat, pk=pk).delete()
+        return Response({"ok": True})
+

@@ -99,4 +99,6 @@ urlpatterns += [
     path("api/content-factory/reels/<int:pk>/versions/", views.ReelView.as_view(), {"action": "versions"}),
     path("api/content-factory/reels/<int:pk>/adapt/", views.ReelView.as_view(), {"action": "adapt"}),
     path("api/content-factory/carousels/<int:pk>/adapt/", views.CarouselView.as_view(), {"action": "adapt"}),
+    path("api/content-factory/agent/", views.AgentView.as_view()),
+    path("api/content-factory/agent/<int:pk>/", views.AgentChatView.as_view()),
 ]
