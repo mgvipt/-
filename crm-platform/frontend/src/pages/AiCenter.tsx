@@ -1,6 +1,8 @@
 /* AI ЦЕНТР — единый раздел про ИИ: Витрати · База знань · Невідомі питання · Налаштування.
    Витрати и Налаштування — существующие компоненты БЕЗ изменений (обёрнуты во вкладки). */
 import { useEffect, useState, useCallback } from "react";
+import DialogReview from "./DialogReview";
+import Assistant from "./Assistant";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -153,6 +155,8 @@ function KbQuestions() {
 
 const TABS: [string, string, string][] = [
   ["costs", "Витрати", "Витрати"],
+  ["review", "Разбор диалогов", "Розбір діалогів"],
+  ["assistant", "Ассистент", "Асистент"],
   ["knowledge", "База знаний ✓", "База знань ✓"],
   ["kb", "Старая база (архив)", "Стара база (архів)"],
   ["q", "Невідомі питання", "Невідомі питання"],
@@ -180,6 +184,8 @@ export default function AiCenter() {
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 24 }}>
         {tab === "costs" && <AiCosts />}
+        {tab === "review" && <DialogReview />}
+        {tab === "assistant" && <Assistant />}
         {tab === "knowledge" && <KnowledgeBase />}
         {tab === "kb" && <KbBase />}
         {tab === "q" && <KbQuestions />}

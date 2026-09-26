@@ -7,7 +7,7 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny, I
 from rest_framework.views import APIView
 from apps.common.permissions import HasPermCode
 from django.http import HttpResponseRedirect, HttpResponseNotFound
-from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task, AgentConfig
+from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task, AgentConfig, DialogReview
 from .serializers import (
     CompanySerializer, ContactSerializer, ContactDetailSerializer, FunnelSerializer, StageSerializer,
     LeadSerializer, DealSerializer, DealDetailSerializer, PaymentSerializer,
@@ -946,6 +946,74 @@ def _route_deal_funnel(deal, user=None):
     return True
 
 
+class DialogReviewViewSet(viewsets.ReadOnlyModelViewSet):
+    """Нічний розбір діалогів і тижневий аудит — сторінка «ШІ-РОП: розбір діалогів» (26.09.2026, Олег).
+    Читають ті, хто бачить аналітику; правила підтверджує власник."""
+    queryset = DialogReview.objects.all()
+    permission_classes = [IsAuthenticated]
+    serializer_class = None
+
+    def _row(self, r, full=False):
+        d = {"id": r.id, "kind": r.kind, "period_start": r.period_start, "period_end": r.period_end,
+             "created_at": r.created_at, "summary": r.summary, "metrics": r.metrics,
+             "issues_count": len(r.issues or []), "proposals": r.proposals or [], "cost_usd": r.cost_usd}
+        if full:
+            d["issues"] = r.issues or []
+        return d
+
+    def list(self, request):
+        qs = self.queryset
+        kind = (request.query_params.get("kind") or "").strip()
+        if kind:
+            qs = qs.filter(kind=kind)
+        return Response({"results": [self._row(r) for r in qs[:60]]})
+
+    def retrieve(self, request, pk=None):
+        r = self.get_object()
+        return Response(self._row(r, full=True))
+
+    @action(detail=True, methods=["post"])
+    def proposal(self, request, pk=None):
+        """Олег підтверджує або відхиляє правило. Підтверджене одразу лягає в базу знань —
+        і його бачать УСІ агенти (Юля IG і TikTok, продавець CRM, ШІ-РОП, помічник у чаті)."""
+        r = self.get_object()
+        n = int(request.data.get("n") or 0)
+        status_ = (request.data.get("status") or "").strip()
+        if status_ not in ("approved", "declined"):
+            return Response({"detail": "status: approved | declined"}, status=400)
+        props = list(r.proposals or [])
+        target = next((p for p in props if int(p.get("n") or 0) == n), None)
+        if target is None:
+            return Response({"detail": "правило не знайдено"}, status=404)
+        from django.utils import timezone as _tz
+        target["status"] = status_
+        target["decided_at"] = _tz.now().isoformat()
+        target["decided_by"] = request.user.get_full_name() or request.user.username
+        if status_ == "approved" and not target.get("kb_id"):
+            try:
+                from apps.knowledge.models import KnowledgeItem
+                it = KnowledgeItem.objects.create(
+                    title=("Правило продажів: %s (%s)" % (target.get("title"), r.period_start.strftime("%d.%m.%Y")))[:200],
+                    text=(target.get("rule") or "").strip(),
+                    topic="process", status="approved", kind="rule",
+                    audience=["funnel_agent", "rop_hint", "compose_assist", "analyst", "yulia_web"],
+                    source="ШІ-РОП: нічний розбір %s" % r.period_start)
+                target["kb_id"] = it.id
+            except Exception as e:
+                target["kb_error"] = str(e)[:200]
+        r.proposals = props
+        r.save(update_fields=["proposals"])
+        return Response({"ok": True, "proposal": target})
+
+    @action(detail=False, methods=["post"])
+    def run(self, request):
+        """Запустити розбір руками (кнопка на сторінці)."""
+        from apps.crm import dialog_review as dr
+        weekly = bool(request.data.get("weekly"))
+        rev = dr.run_weekly(send_tg=False) if weekly else dr.run_daily(send_tg=False)
+        return Response(self._row(rev, full=True))
+
+
 def requisites_text(deal, amount=None):
     """Текст «Оплата за реквізитами» — ОДИН на всю CRM: кнопка менеджера і ШІ у каналах
     беруть його звідси, тому клієнт завжди бачить однакові реквізити і призначення платежу
@@ -983,6 +1051,10 @@ def send_requisites(deal, conv=None, user=None, sender_name=""):
     if amount <= 0:
         amount = float(deal.amount or 0)
     iban, text = requisites_text(deal, (("%.0f" % amount) if abs(amount - round(amount)) < 0.01 else ("%.2f" % amount)))
+    # 26.09.2026: без картки клієнта чат НЕ шукаємо — інакше filter(contact_id=None) ловив
+    # анонімні чати «Гість сайту» і реквізити летіли незнайомій людині.
+    if conv is None and not deal.contact_id:
+        return {"ok": False, "amount": amount, "text": "", "msg": "немає картки клієнта"}
     convs = [conv] if conv is not None else list(
         Conversation.objects.filter(contact_id=deal.contact_id, status="open").select_related("channel").order_by("-last_message_at"))
     sent = False
@@ -6601,6 +6673,79 @@ class ManagerStagesView(APIView):
                         "is_won": st.is_won, "is_lost": st.is_lost} for st in stages],
             "rows": out_rows, "ai_pct": stage_pct,
         })
+
+
+def kp_public_parts(request, code):
+    """Клієнт натиснув у накладній «Оплатити частинами» — створюємо посилання LiqPay з розстрочкою
+    (до 10 платежів, Приват «Оплата частинами») і віддаємо його (26.09.2026, Олег)."""
+    from django.conf import settings as _s
+    from django.http import JsonResponse
+    from .liqpay import build_checkout_url
+    from .models import KpLink, PayLink, log_activity
+    if request.method != "POST":
+        return JsonResponse({"ok": False}, status=405)
+    link = KpLink.objects.filter(code=code).select_related("deal").first()
+    if not link or not link.deal_id:
+        return JsonResponse({"ok": False, "msg": "Документ не знайдено"}, status=404)
+    deal = link.deal
+    pub, prv = getattr(_s, "LIQPAY_PUBLIC_KEY", ""), getattr(_s, "LIQPAY_PRIVATE_KEY", "")
+    if not (pub and prv):
+        return JsonResponse({"ok": False, "msg": "Напишіть нам у чат — надішлемо посилання на частини"})
+    paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
+    amount = float(deal.amount or 0) - paid
+    if amount <= 0:
+        amount = float(deal.amount or 0)
+    base = "https://crm.wallcovdec.com.ua"
+    scode = _short_code()
+    while PayLink.objects.filter(code=scode).exists():
+        scode = _short_code()
+    full = build_checkout_url(pub, prv, amount, "WCCRM-%s-%s" % (deal.id, scode),
+                              "Замовлення Wallcov #%s" % deal.id,
+                              server_url=base + "/api/crm/liqpay/callback/", result_url=base,
+                              paytypes="paypart,moment_part,card")
+    PayLink.objects.create(code=scode, deal=deal, target=full)
+    log_activity("deal", deal.id, "Накладна: клієнт обрав оплату частинами", "%s грн" % amount, None, "Клієнт")
+    return JsonResponse({"ok": True, "url": "%s/p/%s/" % (base, scode)})
+
+
+def kp_public_requisites(request, code):
+    """Клієнт натиснув у накладній «Оплачу за реквізитами» — CRM надсилає йому в чат ТОЙ САМИЙ текст,
+    що й кнопка менеджера (26.09.2026, Олег). Банківських диплінків не робимо: у клієнта може бути
+    не Приват, і він заплутається."""
+    from datetime import timedelta
+
+    from django.http import JsonResponse
+    from django.utils import timezone
+    from apps.inbox.models import Conversation, Message
+    from .models import KpLink, log_activity
+    if request.method != "POST":
+        return JsonResponse({"ok": False}, status=405)
+    link = KpLink.objects.filter(code=code).select_related("deal").first()
+    if not link or not link.deal_id:
+        return JsonResponse({"ok": False, "msg": "Документ не знайдено"}, status=404)
+    deal = link.deal
+    conv = (Conversation.objects.filter(contact_id=deal.contact_id)
+            .order_by("-last_message_at").first()) if deal.contact_id else None
+    # захист від подвійного натискання: один раз на 10 хвилин
+    if conv is not None and Message.objects.filter(
+            conversation=conv, direction="out", internal=False, text__contains="IBAN",
+            created_at__gte=timezone.now() - timedelta(minutes=10)).exists():
+        return JsonResponse({"ok": True, "msg": "Реквізити вже надіслали у ваш чат"})
+    if conv is None:
+        return JsonResponse({"ok": False, "msg": "Реквізити нижче в документі — або напишіть нам у чат 🙌"})
+    res = send_requisites(deal, conv=conv, user=None, sender_name="CRM")
+    if conv is not None:
+        try:
+            Message.objects.create(conversation=conv, direction="out", internal=True, sender_name="CRM",
+                                   text="Клієнт натиснув у накладній «Оплачу за реквізитами» — "
+                                        "реквізити надіслані автоматично.")
+        except Exception:
+            pass
+    log_activity("deal", deal.id, "Накладна: клієнт обрав оплату за реквізитами",
+                 "%s грн" % res.get("amount"), None, "Клієнт")
+    return JsonResponse({"ok": bool(res.get("ok")),
+                         "msg": ("Надіслали реквізити у ваш чат ✅" if res.get("ok")
+                                 else "Реквізити нижче в документі — або напишіть нам у чат 🙌")})
 
 
 def render_kp_public(request, code):

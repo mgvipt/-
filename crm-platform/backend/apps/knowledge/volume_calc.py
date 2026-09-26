@@ -13,12 +13,15 @@ import re
 from decimal import ROUND_CEILING, Decimal
 
 PRIMER_DEEP = 1927        # Primer Deep 1 (UPr XZ 1001_100) — ґрунт-концентрат, пакет 100 г
+PRIMER_DEEP_L = 1574      # той самий ґрунт у літрі — на великі площі виходить дешевше
+PRIMER_BIG_FROM_M2 = 40   # Олег 26.09.2026: «все, що більше 40 м², — літровий, щоб клієнт не переплачував»
 QUARTZ = 1582             # Quartz Primer 2 — ґрунт з кварцом під фактурні
 FONDO = 1572              # Fondo Decoro — грунт-фарба під Velvet Luna
 SECOND_LAYER = 1583       # Second Layer — основа під тонкошарові
 
 # як називати позицію клієнту (щоб ШІ не назвав ґрунт «захистом»)
-ROLE = {PRIMER_DEEP: "ґрунт глибокого проникнення", QUARTZ: "ґрунт з кварцом",
+ROLE = {PRIMER_DEEP: "ґрунт глибокого проникнення", PRIMER_DEEP_L: "ґрунт глибокого проникнення (літр)",
+        QUARTZ: "ґрунт з кварцом",
         FONDO: "ґрунт-фарба під вельвет", SECOND_LAYER: "основа під тонкошарове покриття"}
 # сторінка кольорів — кодом, а не «з памʼяті» ШІ
 COLORS = {"facture": "https://wallcov.com.ua/p/pattera/", "velvet_luna": "https://wallcov.com.ua/p/velvet-luna/"}
@@ -102,6 +105,9 @@ def estimate(material_id, base, area):
     """Розрахунок «пирога» на площу — лише з карток каталогу."""
     from apps.warehouse.models import Product
     ids = [material_id] + list(BASE.get(base) or ())
+    if float(area or 0) > PRIMER_BIG_FROM_M2 and PRIMER_DEEP in ids:
+        # 100 м²: 17 пакетиків × 80 = 1360 грн проти 2 л × 450 = 900 грн
+        ids[ids.index(PRIMER_DEEP)] = PRIMER_DEEP_L
     prods = {p.id: p for p in Product.objects.filter(id__in=ids, is_active=True)}
     lines, missing = [], []
     for i, pid in enumerate(ids):
@@ -131,6 +137,22 @@ def short_name(name):
     return (s or name or "")[:40]
 
 
+def _underlay_note(calc):
+    """Підкладку можна не брати, якщо стіна вже готова (Олег 26.09.2026) — рахуємо, скільки тоді вийде."""
+    und = next((l for l in calc.get("lines") or [] if l.get("product_id") == SECOND_LAYER), None)
+    if not und:
+        return ""
+    taras = [l for l in (calc.get("tara_lines") or [])]
+    # без підкладки не потрібна і тара під неї
+    saved = und["total"]
+    if taras:
+        per = tara_lines([l for l in calc["lines"] if l.get("product_id") != SECOND_LAYER])
+        saved += sum((l["total"] for l in taras), Decimal("0")) - sum((l["total"] for l in per), Decimal("0"))
+    return ("ПІДКЛАДКУ (%s) МОЖНА ПРИБРАТИ, якщо стіна вже підготовлена під тонкошарове покриття — "
+            "тоді разом %s грн замість %s грн. Скажи про це клієнту одним рядком, не нав\u02bcязуй.\n"
+            % (und["short"], _g(calc["total"] - saved), _g(calc["total"])))
+
+
 def prompt_block(calc):
     """Текст для продавця: точні цифри, які він називає клієнту (сам не рахує)."""
     if not calc or not calc.get("ok"):
@@ -145,9 +167,11 @@ def prompt_block(calc):
            "Разом: %s грн (≈ %s грн за 1 м² з усіма шарами). Лише декоративний матеріал: %s грн. "
            "Ґрунти й основа разом: %s грн. Тара під розлив: %s грн.\n"
            "Жодних інших сум не складай і не рахуй — називай лише цифри з цього блоку.\n"
-           "Захисного покриття в розрахунку НЕМАЄ — не називай ґрунти «захистом»."
+           "Захисного покриття в розрахунку НЕМАЄ — не називай ґрунти «захистом».\n"
+           "%s"
            % (_g(calc["area"]), "\n".join(rows), _g(calc["total"]), _g(calc["total"] / Decimal(str(calc["area"]))),
-              _g(mat["total"]), _g(calc["total"] - mat["total"] - tara_total), _g(tara_total)))
+              _g(mat["total"]), _g(calc["total"] - mat["total"] - tara_total), _g(tara_total),
+              _underlay_note(calc)))
     t = calc.get("tint") or tint_estimate(calc, None)
     if t and not t["need_color"]:
         out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг, тара: %s): послуга %s грн + колорант %s мл × 6 грн = %s грн. "

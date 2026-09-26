@@ -24,6 +24,7 @@ import ContentAudience from "./pages/ContentAudience";
 import MetaMarketing from "./pages/MetaMarketing";
 import AiCosts from "./pages/AiCosts";
 import AiCenter from "./pages/AiCenter";
+import DialogReview from "./pages/DialogReview";
 import WhatsNew from "./pages/WhatsNew";
 import Reviews from "./pages/Reviews";
 import ContentFactory from "./pages/ContentFactory";
@@ -87,6 +88,7 @@ function Shell() {
           <Route path="/tiktok" element={<Navigate to="/analytics" replace />} />
           <Route path="/marketing/meta" element={<MetaMarketing />} />
           <Route path="/ai-costs" element={<AiCenter />} />
+          <Route path="/dialog-review" element={<DialogReview />} />
           <Route path="/whats-new" element={<WhatsNew />} />
           <Route path="/reviews" element={<Reviews />} />
           <Route path="/content-factory" element={<Guard perm="content_factory.access"><ContentFactory /></Guard>} />

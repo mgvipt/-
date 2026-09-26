@@ -4,6 +4,7 @@ import { api, Paginated } from "../api";
 import { SourceChip } from "../ui";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
+import Partners from "./Partners";
 
 interface MaterialOption { id: number; name: string; }
 interface SelectOption { value: string; label: string; }
@@ -242,11 +243,29 @@ function AddSupplier({ onClose, onSaved }: { onClose: () => void; onSaved: (id: 
   );
 }
 
+function TopTabs({ top, setTop, t }: { top: string; setTop: (v: any) => void; t: any }) {
+  const item = (k: string, label: string) => (
+    <button key={k} onClick={() => setTop(k)}
+      style={{
+        border: "none", background: "none", cursor: "pointer", padding: "8px 14px", fontSize: 13.5,
+        fontWeight: top === k ? 700 : 500, color: top === k ? "var(--brand)" : "#64748b",
+        borderBottom: "2px solid " + (top === k ? "var(--brand)" : "transparent"), marginBottom: -1,
+      }}>{label}</button>
+  );
+  return (
+    <div style={{ display: "flex", gap: 6, borderBottom: "1px solid #e2e8f0", marginBottom: 10 }}>
+      {item("contacts", t("Контрагенты", "Контрагенти"))}
+      {item("partners", t("Партнёры", "Партнери"))}
+    </div>
+  );
+}
+
+
 export default function Clients() {
   const { t } = useLang();
   const nav = useNavigate();
   // ── ПРАВА НА ВКЛАДКИ: показуємо лише дозволені сегменти (список приходить з /api/me/) ──
-  const { me } = useAuth();
+  const { me, can } = useAuth();
   const _ak = me?.allowed_contact_kinds;                 // null/undefined = усі (суперадмін)
   const visibleKinds = _ak == null ? KINDS : KINDS.filter(([k]) => _ak.includes(k));
   const canSupplierTab = _ak == null || _ak.includes("supplier");
@@ -263,6 +282,10 @@ export default function Clients() {
   const [ordering, setOrdering] = useState("-created_at");
   const [kind, setKind] = useState("");        // "" = всі сегменти
   const [addSup, setAddSup] = useState(false);  // форма «Додати постачальника»
+  // 26.09.2026 (Олег): партнерська програма живе тут вкладкою, а не окремим пунктом меню.
+  // Видно лише тим, у кого є право partners.view (поки що — тільки власнику).
+  const canPartners = can("partners.view");
+  const [top, setTop] = useState<"contacts" | "partners">("contacts");
 
   function load(p = page) {
     const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize), ordering });
@@ -292,8 +315,17 @@ export default function Clients() {
   function apply() { setPage(1); load(1); }
   function go(p: number) { setPage(p); load(p); }
 
+  if (canPartners && top === "partners") {
+    return (
+      <div className="scroll pad fade">
+        <TopTabs top={top} setTop={setTop} t={t} />
+        <Partners />
+      </div>
+    );
+  }
   return (
     <div className="scroll pad fade">
+      {canPartners && <TopTabs top={top} setTop={setTop} t={t} />}
       {/* ── СЕГМЕНТИ ── */}
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <button onClick={() => setKind("")}

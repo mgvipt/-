@@ -764,6 +764,23 @@ class DialogAnalysis(models.Model):
 
 
 
+class DialogReview(models.Model):
+    """Нічний розбір діалогів і тижневий аудит (Олег 26.09.2026: «РОП має перевіряти і виправляти»).
+    issues — конкретні діалоги із зауваженнями, proposals — правила, які чекають «да» Олега."""
+    kind = models.CharField(max_length=10, default="daily", help_text="daily / weekly")
+    period_start = models.DateField(db_index=True)
+    period_end = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    summary = models.TextField(blank=True, default="")
+    metrics = models.JSONField(blank=True, default=dict)
+    issues = models.JSONField(blank=True, default=list)
+    proposals = models.JSONField(blank=True, default=list)
+    cost_usd = models.FloatField(default=0)
+
+    class Meta:
+        ordering = ["-id"]
+
+
 class AiUsage(models.Model):
     """Лог кожного виклику Claude — для детального звіту витрат по днях/механіках."""
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

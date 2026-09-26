@@ -314,6 +314,27 @@ def _maybe_base_photos(conv, text):
         _note(conv, "%s: не вдалося надіслати фото базового кольору (%s)." % (NOTE_PREFIX, str(e)[:150]))
 
 
+WRONG_PAGE_RX = re.compile(r"https?://[^\s]*wallcov\.com\.ua/p/(orac|cezar)/?", re.I)
+
+
+def _fix_pages(text, msgs):
+    """26.09.2026 (Олег): «були випадки, коли скидалось посилання на модель Orac як на каталог матеріалу».
+    Orac Decor і плінтуси Cezar — це ліпнина, а не покриття. Якщо в розмові йдеться про декоративний
+    матеріал, а в тексті проскочила їхня сторінка — підміняємо на сторінку цього матеріалу."""
+    if not WRONG_PAGE_RX.search(text or ""):
+        return text
+    low = " ".join(m.get("text") or "" for m in (msgs or []))[-1500:].lower()
+    if any(w in low for w in ("ліпнин", "липнин", "плінтус", "плинтус", "молдинг", "orac", "cezar")):
+        return text                      # клієнт сам про ліпнину — лишаємо як є
+    try:
+        from apps.knowledge.volume_calc import COLORS, COLORS_BY_ID, find_material
+        mat = find_material([m.get("text") or "" for m in (msgs or [])])
+        url = (COLORS_BY_ID.get(mat[0]) or COLORS.get(mat[1], "")) if mat else ""
+    except Exception:
+        url = ""
+    return WRONG_PAGE_RX.sub(url or "https://wallcov.com.ua/p/", text)
+
+
 def _requisites_text():
     """Затверджений запис бази знань з реквізитами ФОП (редагується в AI ЦЕНТРІ)."""
     from apps.knowledge.models import KnowledgeItem
@@ -547,6 +568,7 @@ def reply_now(conv_id):
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
                    context=ctx, context_query=ad_q)
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
+        text = _fix_pages(text, msgs)
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         note = ("%s передав менеджеру: %s. Записи: %s." % (NOTE_PREFIX, r.get("handoff_reason") or "—", used)
                 if r.get("handoff") else
@@ -570,6 +592,7 @@ def reply_now(conv_id):
         _first_presentation(conv, msgs, ad_q, text)
     if _takeover_channel(conv.channel):
         hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
+    _maybe_volume_doc(conv, calc, r.get("order"))
     if r.get("order") and r["order"].get("volume"):
         from apps.knowledge.volume_calc import shown_to_client
         if shown_to_client(msgs, calc):
@@ -606,6 +629,44 @@ def _volume_calc(msgs, extra=""):
         return for_dialog(msgs, extra)
     except Exception:
         return None
+
+
+DOC_MIN_M2 = 10           # менше — це тест-набір, накладну не робимо
+
+
+def _maybe_volume_doc(conv, calc, order):
+    """26.09.2026 (Олег): «ШІ тут не надіслав накладну — краще одразу скидати накладну,
+    щоб клієнт побачив». Клієнт питає ціну на площу → CRM збирає сделку з позиціями
+    і надсилає ОДНЕ посилання на накладну. Оплату не нав\u02bcязуємо: кнопка є в самому документі."""
+    try:
+        if order and order.get("volume"):
+            return                       # клієнт уже погодився — оформлює _make_volume_offer
+        if not calc or not calc.get("ok") or not conv.contact_id:
+            return
+        if float(calc.get("area") or 0) < DOC_MIN_M2:
+            return
+        from apps.crm.models import Deal, Funnel
+        from apps.crm.views import make_offer
+        mat_id = calc["material"]["product_id"]
+        if Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False,
+                               created_at__gte=timezone.now() - timedelta(hours=24),
+                               items__product_id=mat_id).exists():
+            return                       # накладна на цей матеріал уже є
+        f = Funnel.objects.filter(name__istartswith="21 Основний").first()
+        st = f.stages.order_by("order").first() if f else None
+        if not (f and st):
+            return
+        deal = Deal.objects.create(title="Прорахунок %s м² · %s" % (_money(calc["area"]), str(conv.contact)[:40]),
+                                   funnel=f, stage=st, contact_id=conv.contact_id, owner=conv.assigned_to)
+        items = [{"name": l["name"], "qty": l["qty"]} for l in calc["lines"] + (calc.get("tara_lines") or [])]
+        res = make_offer(deal, items, send_pay=True, as_invoice=True)
+        if res.get("ok"):
+            _note(conv, "%s: клієнт питав ціну на %s м² — зібрав накладну %s (сделка #%s, %s ₴)."
+                  % (NOTE_PREFIX, _money(calc["area"]), res.get("doc_url") or "—", deal.id, res.get("amount")))
+        else:
+            deal.delete()
+    except Exception as e:
+        _note(conv, "%s: накладну на обʼєм не зробив (%s)." % (NOTE_PREFIX, str(e)[:160]))
 
 
 def _make_volume_offer(conv, calc, order):

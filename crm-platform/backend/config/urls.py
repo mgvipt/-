@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.views.decorators.csrf import csrf_exempt
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
@@ -50,6 +51,7 @@ router.register("global-rules", crm_views.GlobalRuleViewSet)
 router.register("kb-entries", crm_views.KbEntryViewSet)
 router.register("kb-questions", crm_views.KbUnknownQuestionViewSet)
 router.register("tasks", crm_views.TaskViewSet)
+router.register("dialog-reviews", crm_views.DialogReviewViewSet)
 router.register("roles", acc_views.RoleViewSet)
 router.register("users", acc_views.UserViewSet)
 router.register("departments", acc_views.DepartmentViewSet)
@@ -195,6 +197,8 @@ urlpatterns = [
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
     path("api/analytics/funnel-daily/", crm_views.FunnelDailyView.as_view()),
     path("d/<str:code>/", crm_views.render_kp_public),
+    path("d/<str:code>/reqs/", csrf_exempt(crm_views.kp_public_requisites)),
+    path("d/<str:code>/parts/", csrf_exempt(crm_views.kp_public_parts)),
     path("api/analytics/manager-actions/", crm_views.ManagerActionsView.as_view()),
     path("api/analytics/weekly-review/", crm_views.WeeklyReviewView.as_view()),
     path("api/analytics/manager-stages/", crm_views.ManagerStagesView.as_view()),
