@@ -2656,7 +2656,7 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: bool
 
 const BLOG_COLORS = ["#e3b85f", "#f2a33a", "#7fb0d4", "#d7f24a", "#c9ccd0", "#b89d78", "#6cc08f", "#5fb3c9", "#b07fd4", "#e07a6e"];
 
-function BlogEditor({ id, onChanged, kb }: { id: number; onChanged: () => void; kb?: boolean }) {
+function BlogEditor({ id, onChanged, kb, onReel }: { id: number; onChanged: () => void; kb?: boolean; onReel?: (refs: RefPick[]) => void }) {
   const [b, setB] = useState<BlogFull | null>(null);
   const [form, setForm] = useState<Partial<BlogFull>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -2779,6 +2779,7 @@ function BlogEditor({ id, onChanged, kb }: { id: number; onChanged: () => void; 
             </div>
           </li>))}</ul>
       </div>
+      {!kb && <BlogActive blogId={b.id} onReel={onReel} />}
       {!kb && <BlogVisual blog={b} onDone={load} />}
       <BlogLearn blog={b} onDone={load} />
       {!kb && <BlogMemory blogId={b.id} />}
@@ -2951,7 +2952,7 @@ function BlogMemory({ blogId }: { blogId: number }) {
   );
 }
 
-function Blogs({ blogs, blogId, setBlogId, reload }: { blogs: BlogT[]; blogId: number | null; setBlogId: (id: number) => void; reload: () => void }) {
+function Blogs({ blogs, blogId, setBlogId, reload, go }: { blogs: BlogT[]; blogId: number | null; setBlogId: (id: number) => void; reload: () => void; go?: (t: string) => void }) {
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
   const cur = blogs.find((b) => b.id === blogId) || blogs[0];
@@ -2980,7 +2981,7 @@ function Blogs({ blogs, blogId, setBlogId, reload }: { blogs: BlogT[]; blogId: n
           {err && <span className="cf-msg err">{err}</span>}
         </div>
       </div>
-      {cur && <BlogEditor key={cur.id} id={cur.id} onChanged={reload} />}
+      {cur && <BlogEditor key={cur.id} id={cur.id} onChanged={reload} onReel={go ? (refs) => { handRefs(refs, false); go("reels"); } : undefined} />}
     </>
   );
 }
@@ -3038,6 +3039,54 @@ function VoicePlay({ id }: { id: string }) {
   return (
     <button type="button" className="cf-btn ghost" style={{ height: 38 }} onClick={go} aria-label="Прослухати голос">
       <Icon n={state === "play" ? "pause" : "play"} size={14} /> {state === "load" ? "Завантажую…" : state === "play" ? "Стоп" : state === "err" ? "Не вдалося" : "Прослухати"}</button>
+  );
+}
+
+/** «Активні зараз» у профілі блогу (27.09): найпопулярніші ролики власних акаунтів блогу → основа для нових рилсів. */
+type ActiveT = { accounts: { platform: string; handle: string; url: string; in_virale: boolean }[]; median_views: number;
+  items: { id: number; username: string; platform: string; url: string; preview_url: string; caption: string; views: number | null;
+    likes: number | null; comments: number | null; x: number | null; published_at: string | null }[] };
+
+function BlogActive({ blogId, onReel }: { blogId: number; onReel?: (refs: RefPick[]) => void }) {
+  const [d, setD] = useState<ActiveT | null>(null);
+  const [days, setDays] = useState(90);
+  const [sel, setSel] = useState<string[]>([]);
+  const [links, setLinks] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { api.get<ActiveT>(`/api/content-factory/blogs/${blogId}/active/?days=${days}`).then(setD).catch(() => setMsg("Не вдалося завантажити ролики.")); }, [blogId, days]);
+  const sync = async () => { try { const r: any = await api.post("/api/content-factory/feed/"); setMsg(r.note || "Оновлюю…"); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } };
+  const toggle = (u: string) => setSel((s) => (s.includes(u) ? s.filter((x) => x !== u) : s.length >= 3 ? s : [...s, u]));
+  const pasted = links.split(/\s+/).filter((x) => /^https?:\/\//.test(x)).slice(0, 3);
+  const go = (refs: RefPick[]) => onReel && refs.length && onReel(refs);
+  return (
+    <div className="cf-card">
+      <h3><Icon n="flame" size={14} /> Активні зараз · ролики акаунтів блогу</h3>
+      <p className="cf-quiet">Найпопулярніші ролики ваших акаунтів за період (дані Virale, оновлюються раз на добу або кнопкою). Виберіть до 3 —
+        майстер рилса візьме їхній прийом, темп і гачок і зробить новий ролик із вашим змістом.</p>
+      {d && <div className="cf-chips">{d.accounts.map((a) => (
+        <a key={a.handle} className="cf-chip" href={a.url} target="_blank" rel="noreferrer">{PLATFORM_MARK[a.platform] || a.platform} @{a.handle}{a.in_virale ? "" : " · ще не відстежується"}</a>))}
+        {!d.accounts.length && <span className="cf-quiet">У блогу немає власних акаунтів — додайте їх вище в «Акаунти блогу» з типом «Наша».</span>}</div>}
+      <div className="cf-set">
+        <div className="cf-chips">{[30, 90, 365].map((n) => <button key={n} type="button" className={"cf-chip" + (days === n ? " on" : "")} onClick={() => setDays(n)}>{n === 365 ? "рік" : `${n} днів`}</button>)}</div>
+        <button type="button" className="cf-btn ghost" onClick={sync}><Icon n="refresh" size={13} /> Оновити з Virale</button>
+        {!!sel.length && <button type="button" className="cf-btn gold" onClick={() => go(sel.map((u) => { const i = d?.items.find((x) => x.url === u); return { url: u, thumb: i?.preview_url, title: i?.caption }; }))}>
+          Зробити рилс на основі вибраних · {sel.length}</button>}
+      </div>
+      {msg && <span className="cf-msg">{msg}</span>}
+      {!d ? <span className="cf-kv">Завантажую…</span> : d.items.length ? (
+        <div className="cf-ref-grid">{d.items.map((i) => (
+          <button key={i.id} type="button" className={sel.includes(i.url) ? "on" : ""} onClick={() => toggle(i.url)}
+            title={`${i.caption}\n${(i.views || 0).toLocaleString("uk-UA")} переглядів${i.published_at ? " · " + i.published_at.slice(0, 10) : ""}`}>
+            {i.preview_url ? <img src={i.preview_url} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span />}
+            <em>{(i.views || 0).toLocaleString("uk-UA")}{i.x && i.x >= 1.5 ? ` · ×${i.x}` : ""}</em></button>))}</div>
+      ) : (
+        <div className="cf-note" style={{ display: "grid", gap: 8 }}>
+          <span>Роликів цих акаунтів у базі ще немає. Якщо акаунт щойно додано у Virale — дані зʼявляться після обробки (кнопка «Оновити з Virale»).
+            Поки можна вставити посилання на свої ролики вручну (до 3):</span>
+          <textarea className="cf-ta" style={{ minHeight: 56 }} value={links} onChange={(e) => setLinks(e.target.value)} placeholder="https://www.tiktok.com/@.stiny_v_shotsi/video/…" aria-label="Посилання на ролики" />
+          <div><button type="button" className="cf-btn gold" disabled={!pasted.length} onClick={() => go(pasted.map((u) => ({ url: u })))}>Зробити рилс на основі · {pasted.length}</button></div>
+        </div>)}
+    </div>
   );
 }
 
@@ -4257,7 +4306,7 @@ export default function ContentFactory() {
           : section.id === "analyst" ? <Analyst key={blog?.id} blog={blog} />
           : section.id === "reels" ? <Reels key={blog?.id} blog={blog} allBlogs={realBlogs} />
           : section.id === "carousels" ? <Carousels key={blog?.id} blog={blog} allBlogs={realBlogs} />
-          : section.id === "blogs" ? <Blogs blogs={realBlogs} blogId={blog?.id ?? null} setBlogId={setBlogId} reload={loadBlogs} />
+          : section.id === "blogs" ? <Blogs blogs={realBlogs} blogId={blog?.id ?? null} setBlogId={setBlogId} reload={loadBlogs} go={go} />
           : <Soon s={section} />}
         </div>
       </main>

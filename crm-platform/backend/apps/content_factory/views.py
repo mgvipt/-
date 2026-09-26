@@ -1940,3 +1940,28 @@ class AgentChatView(_Base):
         get_object_or_404(AgentChat, pk=pk).delete()
         return Response({"ok": True})
 
+
+class BlogActiveView(_Base):
+    """GET ?days=90 — «Активні зараз» (27.09): ролики ВЛАСНИХ акаунтів блогу з Virale, найпопулярніші першими.
+    На їх основі в майстрі рилса робиться новий ролик (референс → той самий прийом, наш зміст)."""
+    def get(self, request, pk):
+        b = get_object_or_404(Blog, pk=pk)
+        try:
+            days = max(7, min(int(request.GET.get("days", 90)), 365))
+        except ValueError:
+            days = 90
+        own = list(ContentChannel.objects.filter(blog=b, role=ContentChannel.Role.OWN, is_active=True))
+        names = {c.handle.lower() for c in own} | {c.handle.lower().lstrip(".") for c in own}  # TikTok «@.нік» Virale пише без крапки
+        since = timezone.now() - timedelta(days=days)
+        qs = FeedItem.objects.filter(username__in=names, published_at__gte=since).exclude(status=FeedItem.Status.HIDDEN)
+        items = sorted(qs, key=lambda i: -(i.views or 0))[:24]
+        med = sorted(i.views or 0 for i in qs)
+        mid = med[len(med) // 2] if med else 0
+        return Response({
+            "accounts": [{"platform": c.platform, "handle": c.handle, "url": c.url, "in_virale": c.in_virale} for c in own],
+            "median_views": mid,
+            "items": [{"id": i.id, "username": i.username, "platform": i.platform, "url": i.url, "preview_url": i.preview_url,
+                       "caption": (i.caption or "")[:200], "views": i.views, "likes": i.likes, "comments": i.comments,
+                       "x": round((i.views or 0) / mid, 1) if mid else None, "published_at": _iso(i.published_at)} for i in items],
+        })
+
