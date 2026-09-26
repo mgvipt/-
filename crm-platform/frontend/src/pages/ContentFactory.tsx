@@ -3572,8 +3572,9 @@ const beatPayload = (bs: Beat[]) => bs.map(({ text, scene_id, seconds, image_id,
   ({ text, scene_id, seconds, image_id, ai, prompt, orig_scene_id, fx, ok, say }));
 
 // Перегляд кадрів на весь екран: гортати ←/→, затвердити, перемалювати (25.09 — Олег: «немає можливості перевірити й затвердити»)
-function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, busy }: { beats: Beat[]; index: number; onIndex: (i: number) => void; onClose: () => void;
-  onApprove: (i: number, ok: boolean) => void; onRedraw?: (i: number, draft: boolean) => void; busy?: boolean }) {
+function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, onColor, busy, msg }: { beats: Beat[]; index: number; onIndex: (i: number) => void; onClose: () => void;
+  onApprove: (i: number, ok: boolean) => void; onRedraw?: (i: number, draft: boolean) => void; onColor?: (i: number) => void; busy?: boolean;
+  msg?: { ok: boolean; text: string } | null }) {
   const b = beats[index];
   useEffect(() => {
     const k = (e: globalThis.KeyboardEvent) => {
@@ -3597,10 +3598,13 @@ function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, busy
             {b.ref_url && <img className="refpip" src={b.ref_url} alt="Кадр референсу" title="Кадр референсу" />}</div>
           <button type="button" className="nav" disabled={index === beats.length - 1} onClick={() => onIndex(index + 1)} aria-label="Наступний">›</button>
         </div>
-        <p className="cf-fv-what">{b.image_id ? (b.ai === "draft" ? "Чернетка ШІ" : "ШІ-кадр") : "Справжній кадр"} · {b.seconds} с{b.what || b.prompt ? ` · ${b.what || b.prompt}` : ""}</p>
+        <p className="cf-fv-what">{b.image_id ? frameKind(b.ai, true) : "Справжній кадр"} · {b.seconds} с{b.what || b.prompt ? ` · ${b.what || b.prompt}` : ""}</p>
+        {busy && <p className="cf-fv-what"><span className="cf-spin" aria-hidden="true" /> Команда працює над кадром — картинка оновиться сама (до хвилини).</p>}
+        {msg && !busy && <p className={"cf-msg " + (msg.ok ? "ok" : "err")} style={{ textAlign: "center", margin: 0 }} role="status">{msg.text}</p>}
         <div className="cf-acts" style={{ justifyContent: "center" }}>
           {b.ok ? <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onApprove(index, false)}>Зняти затвердження</button>
             : <button type="button" className="cf-btn gold" disabled={busy || (!b.image_id && !b.scene_id)} onClick={() => { onApprove(index, true); if (index < beats.length - 1) onIndex(index + 1); }}>✓ Затвердити</button>}
+          {onColor && (b.image_id || b.scene_id) && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onColor(index)} title="Без ШІ: баланс білого, рівні, різкість — фактура не змінюється">Корекція кольору · безкоштовно</button>}
           {onRedraw && b.image_id && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onRedraw(index, true)}>Чернетка · безкоштовно</button>}
           {onRedraw && (b.image_id || !b.scene_id) && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onRedraw(index, false)}>Перемалювати якісно · ≈$0.07</button>}
         </div>
@@ -3886,8 +3890,8 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
           </div>
         </div>)}
       {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
-      {viewer !== null && <FrameViewer beats={beats} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} onApprove={approve} busy={!!busy || locked}
-        onRedraw={(i, draft) => frame(draft ? "draft" : "regenerate", i, beats[i].prompt || beats[i].text)} />}
+      {viewer !== null && <FrameViewer beats={beats} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} onApprove={approve} busy={!!busy || locked} msg={msg}
+        onRedraw={(i, draft) => frame(draft ? "draft" : "regenerate", i, beats[i].what || beats[i].text || beats[i].prompt || "")} onColor={(i) => frame("color", i)} />}
     </div>
   );
 }

@@ -476,13 +476,17 @@ def frame_bytes(reel, idx):
 REAL_KINDS = ("photo", "color")
 
 
-def _set_frame(reel, idx, data, mime, kind, prompt=""):
+def _set_frame(reel, idx, data, mime, kind, prompt="", note=""):
     from . import aiimage
     link = aiimage.save(data, mime, f"reel-{reel.id}-{idx}")
     b = dict(reel.beats[idx])
     if not b.get("orig_scene_id") and b.get("scene_id"):
         b["orig_scene_id"] = b["scene_id"]  # щоб можна було повернути справжній кадр
-    b.update({"image_id": link.id, "ai": kind, "prompt": prompt[:600]})
+    b.update({"image_id": link.id, "ai": kind})
+    if prompt is not None:  # фото/корекція кольору не затирають опис кадру — по ньому ШІ потім перемальовує (27.09)
+        b["prompt"] = prompt[:600]
+    if note:
+        b["note"] = note[:200]
     b.pop("ok", None)  # новий кадр — треба затвердити знову
     beats = list(reel.beats)
     beats[idx] = b
@@ -505,7 +509,7 @@ def color_frame(reel, idx):
     from .photofix import color_fix
     data, _ = frame_bytes(reel, idx)
     out, mime = color_fix(data)
-    return _set_frame(reel, idx, out, mime, "color", "корекція кольору")
+    return _set_frame(reel, idx, out, mime, "color", None, "корекція кольору")
 
 
 def photo_frame(reel, idx, lib_id):
@@ -514,7 +518,7 @@ def photo_frame(reel, idx, lib_id):
     m = MediaLibraryItem.objects.filter(pk=lib_id, kind="image").select_related("file").first()
     if not m or not m.file_id or not m.file.data:
         raise ReelError("Такого фото в бібліотеці немає.")
-    return _set_frame(reel, idx, bytes(m.file.data), m.file.content_type or "image/jpeg", "photo", f"фото з бібліотеки: {m.title}"[:200])
+    return _set_frame(reel, idx, bytes(m.file.data), m.file.content_type or "image/jpeg", "photo", None, f"фото з бібліотеки: {m.title}")
 
 
 def fetch_ref_image(url):
@@ -543,7 +547,11 @@ def regenerate_frame(reel, idx, prompt, draft=False, composition=None):
     if reel.blog and reel.blog.label_ai:  # Wallcov: нова сцена, але фактура — зі справжнього кадру або найкращого фото матеріалу
         from .material_specs import find_material
         b = reel.beats[idx]
-        texture = frame_bytes(reel, idx) if (b.get("scene_id") or b.get("image_id")) else _texture(reel)[0]
+        # 27.09: зразок фактури — ЛИШЕ справжній кадр (наше відео, фото бібліотеки, корекція кольору). Якщо в кадрі вже
+        # ШІ-картинка, беремо найкраще реальне фото матеріалу: інакше кожне перемалювання «пливе» (вийшов інший декор).
+        real_now = b.get("ai") in REAL_KINDS or (b.get("scene_id") and not b.get("image_id"))
+        texture = frame_bytes(reel, idx) if real_now else (_texture(reel)[0] or (frame_bytes(reel, idx) if b.get("image_id") else None))
+        prompt = re.sub(r"^(фото з бібліотеки:.*|корекція кольору|покращено ШІ)$", "", prompt).strip() or b.get("what") or b.get("text") or reel.title
         data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture,
                                         material=find_material(f"{reel.material} {reel.title}"), composition=comp)
     else:
