@@ -534,6 +534,46 @@ def fetch_ref_image(url):
     return data
 
 
+ART_DIRECTOR = """Ти — арт-директор інтерʼєрної зйомки для Instagram і TikTok. Склади опис ОДНОГО вертикального кадру 9:16 англійською
+для генератора гіперреалістичних зображень.
+Матеріал декоративної стіни: {material} (саму фактуру генератор візьме з фото-зразка — не описуй візерунок вигадано).
+Задум ролика: {topic}. Кадр {n} з {total}.{hook} Текст на екрані в цьому кадрі: «{text}».
+Побажання або старий опис кадру: {wish}
+Вимоги:
+- гіперреалістичний оформлений житловий інтерʼєр рівня дизайн-журналу (не будмайданчик, не порожня кімната, не голий кут);
+- декоративна стіна — головний герой, займає 40–70% кадру, добре видно її блиск і фактуру;
+- стилізація (меблі, текстиль, лампи, рослини, декор) пасує до матеріалу й до жінки 28–50, що робить ремонт;
+- світло відповідає тексту: «ввечері/тепле світло» — теплі лампи ввечері, «вранці/вдень» — мʼяке денне світло з вікна;
+- гачок (кадр 1) — найефектніший загальний або середній план; крупний план лише якщо текст саме про деталь фактури, і тоді з предметом
+  інтерʼєру на передньому плані або бічним світлом, що ковзає по стіні;
+- верхні 14% і нижні 35% кадру спокійні (там текст і кнопки соцмережі) — без облич і важливих деталей;
+- матеріал — це декоративна фарба/штукатурка НА СТІНІ (назви «вельвет», «шовк», «пісок» — лише ефект, НЕ тканина й НЕ пісок):
+  пиши «decorative {{ефект}}-effect paint/plaster finish on the wall»;
+- ракурс: {angle}.
+Відповідай ЛИШЕ JSON: {{"prompt":"опис англійською до 90 слів"}}"""
+ANGLES = ["загальний план кімнати з кута, стіна по діагоналі", "середній план: стіна і меблі біля неї", "бічний ракурс вздовж стіни, світло ковзає",
+          "фронтальний середній план з декором на передньому плані", "загальний план з дверного прорізу"]
+
+
+def art_prompt(reel, idx, wish):
+    """ШІ-арт-директор (27.09, Олег: «перемальовує як дизайн інтерʼєру»): з тексту кадру, задуму й побажання — сцена для генератора.
+    Haiku ≈$0.002. Якщо не вдалось — лишаємо побажання як є."""
+    from apps.crm.ai import claude_json
+    from .material_specs import find_material
+    b = reel.beats[idx]
+    brief = reel.brief or {}
+    try:
+        r = claude_json(ART_DIRECTOR.format(
+            material=find_material(f"{reel.material} {reel.title}") or reel.material or "декоративна штукатурка",
+            topic=brief.get("title") or reel.title, n=idx + 1, total=len(reel.beats), hook=" Це гачок ролика." if idx == 0 else "",
+            text=b.get("text", ""), wish=wish or "—", angle=ANGLES[idx % len(ANGLES)]),
+            model="claude-haiku-4-5", max_tokens=400, source=PLAN_SOURCE)
+        p = str((r or {}).get("prompt") or "").strip()
+        return p if len(p) > 20 else wish
+    except Exception:
+        return wish
+
+
 def regenerate_frame(reel, idx, prompt, draft=False, composition=None):
     from . import aiimage
     prompt = (prompt or "").strip() or (reel.beats[idx].get("prompt") or reel.beats[idx].get("text") or reel.title)
@@ -552,6 +592,8 @@ def regenerate_frame(reel, idx, prompt, draft=False, composition=None):
         real_now = b.get("ai") in REAL_KINDS or (b.get("scene_id") and not b.get("image_id"))
         texture = frame_bytes(reel, idx) if real_now else (_texture(reel)[0] or (frame_bytes(reel, idx) if b.get("image_id") else None))
         prompt = re.sub(r"^(фото з бібліотеки:.*|корекція кольору|покращено ШІ)$", "", prompt).strip() or b.get("what") or b.get("text") or reel.title
+        if not draft:  # якісно: сцену складає арт-директор
+            prompt = art_prompt(reel, idx, prompt)
         data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture, material=find_material(f"{reel.material} {reel.title}"),
                                         composition=comp, model=None if draft else aiimage.MODEL_PRO)  # якісно — Pro (27.09)
     else:

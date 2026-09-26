@@ -12,7 +12,7 @@
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
 import { api } from "../api";
 import { Icon } from "../Icon";
 
@@ -210,6 +210,13 @@ const CSS = `
 .cf-fact-search .cf-quiet{grid-column:1/-1}
 .cf-designer{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .cf-pick-grid button.on{outline:3px solid var(--cf-gold);outline-offset:-3px}
+.cf-safe{position:absolute;inset:0;pointer-events:none}
+.cf-safe i{position:absolute;background:rgba(224,122,110,.18);display:block}
+.cf-safe i.t{top:0;left:0;right:0;border-bottom:1px dashed rgba(255,255,255,.55)}
+.cf-safe i.b{bottom:0;left:0;right:0;border-top:1px dashed rgba(255,255,255,.55)}
+.cf-safe i.l{top:0;bottom:0;left:0;background:rgba(224,122,110,.10)}.cf-safe i.r{top:0;bottom:0;right:0;background:rgba(224,122,110,.10)}
+.cf-safe span{position:absolute;left:6px;font-size:10px;color:#fff;text-shadow:0 1px 2px #000;opacity:.85}
+.cf-safe i.t span{bottom:3px}.cf-safe i.b span{top:3px}
 .cf-scope{display:flex;flex-direction:column;gap:2px;padding-bottom:6px}
 .cf-scope + .cf-scope{border-top:1px solid var(--cf-line);margin-top:6px}
 .cf-scope.blog{background:linear-gradient(180deg,rgba(227,184,95,.05),transparent 60%);border-radius:10px}
@@ -402,7 +409,7 @@ const CSS = `
 .cf-tl button.on{border-color:var(--cf-gold);color:var(--cf-ink);background:rgba(227,184,95,.12)}
 .cf-tl button b{font-variant-numeric:tabular-nums;color:var(--cf-gold);font-size:11px}
 .cf-tl button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cf-edit{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:start;background:var(--cf-panel2);border-radius:9px;padding:10px}
+.cf-edit{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;background:var(--cf-panel2);border-radius:9px;padding:10px}
 .cf-edit img{width:96px;height:128px;object-fit:cover;border-radius:6px;background:#0b1118}
 .cf-scenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:6px;max-height:300px;overflow:auto}
 .cf-scenes button{all:unset;cursor:pointer;position:relative;border-radius:6px;overflow:hidden;border:2px solid transparent;background:#0b1118;aspect-ratio:3/4}
@@ -687,7 +694,8 @@ const CSS = `
   .cf-pub > :nth-child(5){grid-column:1/-1;width:100%}
   .cf-reel{grid-template-columns:1fr;padding:10px}
   .cf-reel video{width:100%;max-width:300px;justify-self:center}
-  .cf-edit{grid-template-columns:72px minmax(0,1fr)}
+  .cf-edit{grid-template-columns:auto minmax(0,1fr)}
+  .cf-edit-big img{width:110px;height:196px}
   .cf-edit img{width:72px;height:96px}
   .cf-tl{overflow-x:auto;scrollbar-width:thin}
   .cf-tl button{min-width:56px}
@@ -854,7 +862,7 @@ const CSS = `
 .cf-fv-stage{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:8px;align-items:center}
 .cf-fv-stage .nav{all:unset;cursor:pointer;height:64px;border-radius:10px;display:grid;place-items:center;font-size:34px;color:var(--cf-ink);background:var(--cf-panel2)}
 .cf-fv-stage .nav:disabled{opacity:.3;cursor:default}
-.cf-fv-stage .pic{position:relative;justify-self:center;height:min(66vh,760px);aspect-ratio:9/16;max-width:100%;border-radius:12px;overflow:hidden;background:#0b1118}
+.cf-fv-stage .pic{container-type:size;position:relative;justify-self:center;height:min(66vh,760px);aspect-ratio:9/16;max-width:100%;border-radius:12px;overflow:hidden;background:#0b1118}
 .cf-fv-stage .pic img{width:100%;height:100%;object-fit:cover;display:block}
 .cf-fv-stage .cap{position:absolute;left:10px;right:10px;bottom:14px;text-align:center;font-weight:700;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.8);font-size:15px}
 .cf-fv-stage .ok{position:absolute;top:10px;left:10px;font-style:normal;font-size:12px;font-weight:700;background:var(--cf-green,#3f8f63);color:#fff;padding:3px 8px;border-radius:999px}
@@ -3644,10 +3652,40 @@ const beatPayload = (bs: Beat[]) => bs.map(({ text, scene_id, seconds, image_id,
   ({ text, scene_id, seconds, image_id, ai, prompt, orig_scene_id, fx, ok, say }));
 
 // Перегляд кадрів на весь екран: гортати ←/→, затвердити, перемалювати (25.09 — Олег: «немає можливості перевірити й затвердити»)
-function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, onColor, busy, msg }: { beats: Beat[]; index: number; onIndex: (i: number) => void; onClose: () => void;
+/* Текст на кадрі в перегляді — так само, як його ставить монтаж (styles.drawtext + platform_rules.SAFE, кадр 1080×1920). */
+const SAFE_IG = { top: 269, bottom: 672, left: 65, right: 65 };
+const STYLE_DEFAULT = { size: 68, position: 0.7, color: "#ffffff", stroke: 0, stroke_color: "#000000", box: true, box_color: "#000000", box_opacity: 0.45, upper: false, weight: "Bold", font: "DejaVu Sans" };
+function capStyle(st?: Partial<StyleT> | null): { box: CSSProperties; text: CSSProperties } {
+  const s = { ...STYLE_DEFAULT, ...(st || {}) } as typeof STYLE_DEFAULT;
+  const lo = SAFE_IG.top / 1920, hi = 1 - SAFE_IG.bottom / 1920;
+  const pos = Math.min(hi, Math.max(lo, s.position || 0.7));
+  const hexA = (h: string, a: number) => { const n = parseInt((h || "#000000").slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+  return {
+    box: { position: "absolute", left: `${SAFE_IG.left / 10.8}%`, right: `${SAFE_IG.right / 10.8}%`, top: `${pos * 100}%`, transform: "translateY(-50%)", textAlign: "center", pointerEvents: "none" },
+    text: { display: "inline", fontSize: `${(s.size / 1920) * 100}cqh`, lineHeight: 1.25, fontWeight: /black|extra/i.test(s.weight) ? 900 : /bold/i.test(s.weight) ? 700 : 500,
+      fontFamily: `"${s.font}", Montserrat, "DejaVu Sans", system-ui, sans-serif`, color: s.color, textTransform: s.upper ? "uppercase" : "none",
+      WebkitTextStroke: s.stroke ? `${(s.stroke / 1920) * 100 * 0.6}cqh ${s.stroke_color}` : undefined, paintOrder: "stroke fill",
+      background: s.box ? hexA(s.box_color, s.box_opacity) : undefined, padding: s.box ? "0.1em 0.35em" : undefined,
+      boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone", textShadow: !s.box && !s.stroke ? "0.05em 0.05em 0.1em rgba(0,0,0,.65)" : undefined } as CSSProperties,
+  };
+}
+
+function SafeGrid() {
+  return (
+    <div className="cf-safe" aria-hidden="true">
+      <i className="t" style={{ height: `${SAFE_IG.top / 19.2}%` }}><span>верх: ніки й статус</span></i>
+      <i className="b" style={{ height: `${SAFE_IG.bottom / 19.2}%` }}><span>низ: підпис, музика, кнопки Instagram</span></i>
+      <i className="l" style={{ width: `${SAFE_IG.left / 10.8}%` }} /><i className="r" style={{ width: `${SAFE_IG.right / 10.8}%` }} />
+    </div>
+  );
+}
+
+function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, onColor, busy, msg, st }: { beats: Beat[]; index: number; onIndex: (i: number) => void; onClose: () => void;
   onApprove: (i: number, ok: boolean) => void; onRedraw?: (i: number, draft: boolean) => void; onColor?: (i: number) => void; busy?: boolean;
-  msg?: { ok: boolean; text: string } | null }) {
+  msg?: { ok: boolean; text: string } | null; st?: Partial<StyleT> | null }) {
   const b = beats[index];
+  const [grid, setGrid] = useState(true);
+  const cap = capStyle(st);
   useEffect(() => {
     const k = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -3662,11 +3700,13 @@ function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, onCo
     <div className="cf-fv" role="dialog" aria-modal="true" aria-label="Перегляд кадрів" onClick={onClose}>
       <div className="cf-fv-box" onClick={(e) => e.stopPropagation()}>
         <div className="cf-fv-top"><b>Кадр {index + 1} з {beats.length}</b><span>затверджено {okN} з {beats.length}</span>
+          <button type="button" className="cf-btn ghost" aria-pressed={grid} onClick={() => setGrid(!grid)} title="Безпечні зони Instagram Reels: там, де ніки, підпис і кнопки, текст не ставимо">{grid ? "Сховати сітку" : "Сітка соцмережі"}</button>
           <button type="button" className="cf-btn ghost" onClick={onClose} aria-label="Закрити">✕</button></div>
         <div className="cf-fv-stage">
           <button type="button" className="nav" disabled={index === 0} onClick={() => onIndex(index - 1)} aria-label="Попередній">‹</button>
           <div className="pic">{b.thumb_url ? <img src={b.thumb_url} alt={`Кадр ${index + 1}`} /> : <div className="cf-beat-ph big">кадр ще не намальований</div>}
-            {b.text && <span className="cap">{b.text}</span>}{b.ok && <i className="ok">✓ затверджено</i>}
+            {grid && <SafeGrid />}
+            {b.text && <div style={cap.box}><span style={cap.text}>{b.text}</span></div>}{b.ok && <i className="ok">✓ затверджено</i>}
             {b.ref_url && <img className="refpip" src={b.ref_url} alt="Кадр референсу" title="Кадр референсу" />}</div>
           <button type="button" className="nav" disabled={index === beats.length - 1} onClick={() => onIndex(index + 1)} aria-label="Наступний">›</button>
         </div>
@@ -3730,6 +3770,11 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
   const studio = (label: string, op: string) => act(label, async () => { await saveIfDirty(); return api.post(`${base}studio/`, { op }); });
   const frame = (op: string, index = sel, p = prompt, extra: Record<string, unknown> = {}) => act("frame", async () => { await saveIfDirty(); return api.post(`${base}frame/`, { index, op, prompt: p, ...extra }); });
   const [pickLib, setPickLib] = useState(false);
+  const [reelStyle, setReelStyle] = useState<StyleT | null>(null);
+  useEffect(() => { // стиль тексту ролика — щоб перегляд показував текст так, як його змонтує завод
+    if (!r.style_id) { setReelStyle(null); return; }
+    api.get<StylesData>("/api/content-factory/reels/styles/").then((d) => setReelStyle(d.styles.find((x) => x.id === r.style_id) || null)).catch(() => setReelStyle(null));
+  }, [r.style_id]);
   const [pickWeb, setPickWeb] = useState(false);
   const upd = (i: number, patch: Partial<Beat>) => setBeats((bs) => bs.map((b, n) => (n === i ? { ...b, ...patch } : b)));
   const setFx = (i: number, k: "transition" | "motion", v: string) => setBeats((bs) => bs.map((b, n) => (n === i ? { ...b, fx: { ...(b.fx || {}), [k]: v } } : b)));
@@ -3963,7 +4008,7 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
           </div>
         </div>)}
       {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
-      {viewer !== null && <FrameViewer beats={beats} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} onApprove={approve} busy={!!busy || locked} msg={msg}
+      {viewer !== null && <FrameViewer beats={beats} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} onApprove={approve} busy={!!busy || locked} msg={msg} st={reelStyle}
         onRedraw={(i, draft) => frame(draft ? "draft" : "regenerate", i, beats[i].what || beats[i].text || beats[i].prompt || "")} onColor={(i) => frame("color", i)} />}
     </div>
   );

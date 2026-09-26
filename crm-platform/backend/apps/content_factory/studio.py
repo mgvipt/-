@@ -619,6 +619,9 @@ def fill_missing(reel, limit=6, draft=False):
         if free:
             data, mime = free
         elif texture:  # Wallcov: стіну малюємо лише за реальним фото фактури
+            if not draft:
+                from .reels import art_prompt
+                prompt = art_prompt(reel, i, prompt)
             data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture, material=material, composition=comp,
                                             model=None if draft else aiimage.MODEL_PRO)
         else:
