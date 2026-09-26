@@ -84,7 +84,7 @@ type ReelT = {
   beats: { text: string; scene_id?: number; seconds: number; what: string; source: string; thumb_url?: string;
     image_id?: number; ai?: string; prompt?: string; orig_scene_id?: number; ok?: boolean; say?: string; say_tts?: string; fixes?: string[]; vo_id?: number; vo_url?: string; ref_url?: string; fx?: { transition?: string; motion?: string } }[];
   published?: { instagram?: { permalink?: string; at?: string }; tiktok?: { share_id?: string; at?: string } }; can_publish?: boolean; voice_id?: string;
-  voice_mode?: string; narration?: string; narration_tts?: string; vo_whole_url?: string;
+  voice_mode?: string; narration?: string; narration_tts?: string; vo_whole_url?: string; learned?: { word: string; spoken: string } | null;
 };
 type StyleT = {
   id: number; name: string; origin: string; origin_display: string; font: string; weight: string; size: number; color: string;
@@ -220,6 +220,15 @@ const CSS = `
 .cf-safe span{position:absolute;left:6px;font-size:10px;color:#fff;text-shadow:0 1px 2px #000;opacity:.85}
 .cf-safe i.t span{bottom:3px}.cf-safe i.b span{top:3px}
 .cf-narr{display:grid;gap:8px}
+.cf-voicehelp{background:var(--cf-bg);border:1px solid var(--cf-line);border-radius:8px;padding:8px 10px;font-size:12.5px}
+.cf-voicehelp summary{cursor:pointer;display:flex;align-items:center;gap:6px;color:var(--cf-ink2);font-weight:600}
+.cf-voicehelp dl{display:grid;gap:6px;margin:8px 0}
+.cf-voicehelp dt{font-weight:700;color:var(--cf-ink)}
+.cf-voicehelp dd{margin:0;color:var(--cf-ink2)}
+.cf-voicehelp i{color:var(--cf-ink3)}
+.cf-vw{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.cf-vw span{display:inline-flex;align-items:center;gap:6px;background:var(--cf-panel2);border-radius:99px;padding:3px 4px 3px 10px}
+.cf-vw button{all:unset;cursor:pointer;color:var(--cf-ink3);padding:0 6px}
 .cf-scen{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
 .cf-scen button{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:4px;padding:10px 12px;border-radius:10px;border:1px solid var(--cf-line);background:var(--cf-panel2)}
 .cf-scen button b{display:flex;align-items:center;gap:6px;font-size:13.5px;color:var(--cf-ink)}
@@ -3131,6 +3140,51 @@ function BlogActive({ blogId, onReel }: { blogId: number; onReel?: (refs: RefPic
   );
 }
 
+/* ── Голос: памʼятка, як писати виправлення, і словник вимови (27.09) ── */
+const VOICE_HELP: { t: string; how: string; ex: string }[] = [
+  { t: "Наголос", how: "Напишіть слово, де наголос, — або прямо в тексті озвучки зробіть наголошену голосну великою літерою", ex: "«у слові краю наголос на у» або в тексті: крАю → звучить кра́ю" },
+  { t: "Тон у кінці слова чи фрази", how: "Скажіть, куди має йти голос, — ШІ поставить потрібний знак", ex: "«до краю — голос донизу, спокійно» (крапка) · «питання — голос угору» (?) · «з натиском» (!)" },
+  { t: "Пауза", how: "Скажіть, після якого слова зупинка", ex: "«пауза після світло» → «Бічне світло… і жодного шва»" },
+  { t: "Темп", how: "Скажіть, що читати повільніше чи швидше", ex: "«повільніше на слові Галатея» → ШІ розбʼє фразу комами" },
+  { t: "Іншомовні назви", how: "Напишіть, як читати по-українськи", ex: "«Galatea читати Галатея», «Mio Gloss — Міо Глос»" },
+  { t: "Числа й одиниці", how: "Напишіть словами, як сказати", ex: "«2000 — дві тисячі», «м² — квадратних метрів»" },
+];
+
+function VoiceHelp() {
+  return (
+    <details className="cf-voicehelp">
+      <summary><Icon n="info" size={13} /> Як писати, що виправити в голосі</summary>
+      <dl>{VOICE_HELP.map((h) => (<div key={h.t}><dt>{h.t}</dt><dd>{h.how}. <i>Приклад: {h.ex}</i></dd></div>))}</dl>
+      <p className="cf-quiet">Виправлення наголосу чи вимови слова CRM запамʼятовує у «Словнику вимови» — воно діятиме в усіх наступних озвучках, будь-яким голосом.
+        Тон, паузи й темп стосуються лише цієї фрази.</p>
+    </details>
+  );
+}
+
+function VoiceWords() {
+  const [d, setD] = useState<{ id: number; word: string; spoken: string; note: string }[] | null>(null);
+  const [w, setW] = useState({ word: "", spoken: "" });
+  const [err, setErr] = useState("");
+  const load = () => api.get<{ words: { id: number; word: string; spoken: string; note: string }[] }>("/api/content-factory/studio/voicewords/").then((x) => setD(x.words)).catch(() => setD([]));
+  useEffect(() => { load(); }, []);
+  const add = async () => { setErr(""); try { const x = await api.post<{ words: any[] }>("/api/content-factory/studio/voicewords/", w); setD(x.words); setW({ word: "", spoken: "" }); } catch (e: any) { setErr(e?.data?.error || "Не вдалося."); } };
+  const del = async (id: number) => { try { const x = await api.del<{ words: any[] }>(`/api/content-factory/studio/voicewords/?id=${id}`); setD(x.words); } catch { setErr("Не вдалося."); } };
+  return (
+    <details className="cf-voicehelp">
+      <summary><Icon n="list" size={13} /> Словник вимови · {d ? d.length : "…"} — діє в усіх озвучках</summary>
+      <div className="cf-vw">{(d || []).map((x) => (
+        <span key={x.id} title={x.note}><b>{x.word}</b> → {x.spoken}<button type="button" aria-label={`Прибрати ${x.word}`} onClick={() => del(x.id)}>✕</button></span>))}
+        {d && !d.length && <span className="cf-quiet">Поки порожньо — правила додаються самі, коли ви виправляєте наголос у слові.</span>}</div>
+      <div className="cf-set">
+        <input className="cf-in" style={{ width: 160 }} value={w.word} onChange={(e) => setW({ ...w, word: e.target.value })} placeholder="слово: краю" aria-label="Слово" />
+        <input className="cf-in" style={{ width: 200 }} value={w.spoken} onChange={(e) => setW({ ...w, spoken: e.target.value })} placeholder="як звучить: крАю" aria-label="Як звучить" />
+        <button type="button" className="cf-btn ghost" style={{ height: 38 }} disabled={!w.word.trim() || !w.spoken.trim()} onClick={add}>Додати</button>
+        {err && <span className="cf-msg err">{err}</span>}
+      </div>
+    </details>
+  );
+}
+
 function LibPicker({ material, onPick }: { material: string; onPick: (id: number) => void }) {
   const [mat, setMat] = useState(material);
   const [data, setData] = useState<{ items: TgPhoto[]; materials: string[] } | null>(null);
@@ -4005,8 +4059,10 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
               <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
                 {narr !== (r.narration || "") && <button type="button" className="cf-btn ghost" disabled={!!busy} onClick={() => act("narr", () => api.patch(base, { narration: narr }))}>Зберегти текст</button>}
                 <button type="button" className="cf-btn ghost" disabled={!!busy || locked} onClick={() => studio("narr", "narration")}>{busy === "narr" ? "Пишу…" : "Написати озвучку заново · ≈$0.002"}</button>
-                <span className="cf-quiet">Голос іде суцільно поверх усіх кадрів. Якщо розповідь довша за кадри — останній кадр трохи довше стоїть.</span>
+                <span className="cf-quiet">Голос іде суцільно поверх усіх кадрів. Якщо розповідь довша за кадри — останній кадр трохи довше стоїть.
+                  Наголос можна поставити прямо тут: наголошена голосна великою літерою — «крАю».</span>
               </div>
+              <VoiceHelp />
             </div>)}
           {r.voice_id && !whole && <div className="cf-say">{beats.map((x, i) => (
             <label key={i}><span>{i + 1}. голос каже</span>
@@ -4042,6 +4098,9 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
                   <audio src={r.vo_whole_url} controls preload="none" style={{ width: "100%" }} />
                   <small>{r.narration_tts || r.narration}</small>
                   <p className="cf-quiet">Напишіть, що не так («у слові краю наголос на у», «в кінці «до краю» — голос донизу, спокійно»). Безкоштовний ШІ перепише текст для голосу — на екрані нічого не зміниться.</p>
+                  {r.learned && <p className="cf-msg ok">Запамʼятав для всіх наступних озвучок: {r.learned.word} → {r.learned.spoken}</p>}
+                  <VoiceHelp />
+                  <VoiceWords />
                   <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
                     <input className="cf-in" value={fixes[-1] || ""} onChange={(e) => setFixes({ ...fixes, [-1]: e.target.value })} placeholder="Що виправити у вимові…" aria-label="Виправлення вимови в озвучці" />
                     <button type="button" className="cf-btn ghost" disabled={!!busy || locked || (fixes[-1] || "").trim().length < 3}
@@ -4052,6 +4111,8 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
                 <div className="cf-card cf-voicefix">
                   <h3>Озвучка — послухайте й виправте вимову</h3>
                   <p className="cf-quiet">Напишіть словами, що не так («наголос у слові шовк на о», «повільніше на слові Галатея»). Безкоштовний ШІ перепише текст для голосу, і перезвучиться лише ця репліка.</p>
+                  <VoiceHelp />
+                  <VoiceWords />
                   {beats.map((x, i) => x.vo_url ? (
                     <div key={i} className="row">
                       <span className="n">{i + 1}</span>

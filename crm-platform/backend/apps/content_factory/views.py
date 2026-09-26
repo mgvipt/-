@@ -815,7 +815,7 @@ def _reel(request, r):
         "notes": studiosvc.editor_notes(r) if r.stage in ("script", "material", "style") else [],
         "published": r.published or {}, "can_publish": pubsvc.can_publish(r.blog), "voice_id": (r.brief or {}).get("voice_id", ""),
         "voice_mode": (r.brief or {}).get("voice_mode", "whole"), "narration": (r.brief or {}).get("narration", ""),
-        "narration_tts": (r.brief or {}).get("narration_tts", ""),
+        "narration_tts": (r.brief or {}).get("narration_tts", ""), "learned": (r.brief or {}).get("learned"),
         "vo_whole_url": _link_url(request, (r.brief or {}).get("vo_whole_id")) if (r.brief or {}).get("vo_whole_id") else "",
         "variants": {k: _link_url(request, v) for k, v in (r.variants or {}).items()},
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
@@ -2019,4 +2019,30 @@ class BlogTiktokView(_Base):
                     res[cc.handle] = str(e)[:200]
             return Response({"result": res})
         return Response({"error": "Невідома дія."}, status=400)
+
+
+class VoiceWordsView(_Base):
+    """Словник вимови (27.09): GET — усі правила; POST {word, spoken} — додати/змінити; DELETE ?id= — прибрати."""
+    def get(self, request):
+        from .models import VoiceWord
+        return Response({"words": [{"id": w.id, "word": w.word, "spoken": w.spoken, "note": w.note} for w in VoiceWord.objects.all()]})
+
+    def post(self, request):
+        from .models import VoiceWord
+        from .freeai import speech_prepare
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        word = str((request.data or {}).get("word") or "").strip().lower()[:80]
+        spoken = speech_prepare(str((request.data or {}).get("spoken") or "").strip())[:160]  # «крАю» → «кра́ю»
+        if len(word) < 2 or not spoken:
+            return Response({"error": "Вкажіть слово і як воно має звучати."}, status=400)
+        VoiceWord.objects.update_or_create(word=word, defaults={"spoken": spoken, "note": "додано вручну"})
+        return self.get(request)
+
+    def delete(self, request):
+        from .models import VoiceWord
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        VoiceWord.objects.filter(pk=request.GET.get("id") or 0).delete()
+        return self.get(request)
 

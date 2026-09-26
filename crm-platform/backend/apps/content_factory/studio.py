@@ -928,12 +928,13 @@ def fix_speech(reel, idx, instruction):
     instruction = (instruction or "").strip()
     if not base or len(instruction) < 3:
         raise ValueError("Напишіть, що саме звучить неправильно.")
-    out = freeai.groq_chat(SPEECH_FIX, f"Репліка: {base}\nЩо виправити: {instruction}")
+    out = freeai.groq_chat(SPEECH_FIX, f"Репліка: {base}\nЩо виправити: {instruction}", max_tokens=1500)
     if not out:
         raise ValueError("Безкоштовний ШІ зараз не відповів — спробуйте ще раз за хвилину.")
     out = out.strip().strip("«»\"'")[:400]
     b["say_tts"] = out
     b.setdefault("fixes", []).append(instruction[:200])
+    learn_word(base, instruction)
     beats = list(reel.beats)
     beats[idx] = b
     reel.beats = beats
@@ -949,13 +950,38 @@ def fix_narration(reel, instruction):
     instruction = (instruction or "").strip()
     if not base or len(instruction) < 3:
         raise ValueError("Напишіть, що саме звучить неправильно.")
-    out = freeai.groq_chat(SPEECH_FIX, f"Репліка: {base}\nЩо виправити: {instruction}", max_tokens=900)
+    out = freeai.groq_chat(SPEECH_FIX, f"Репліка: {base}\nЩо виправити: {instruction}", max_tokens=1500)
     if not out:
         raise ValueError("Безкоштовний ШІ зараз не відповів — спробуйте ще раз за хвилину.")
     brief["narration_tts"] = out.strip().strip("«»\"'")[:1200]
+    rule = learn_word(base, instruction)
+    if rule:
+        brief["learned"] = rule
     brief.setdefault("narration_fixes", []).append(instruction[:200])
     reel.brief = brief
     reel.save(update_fields=["brief"])
     return brief["narration_tts"]
 
 IDEA_TASK = IDEA_TASK + "\n\nГачок ідеї — це майбутній ЗАГОЛОВОК рилса. " + _HEADLINE  # 27.09
+
+
+RULE_EXTRACT = """Власник виправляє вимову в озвучці ElevenLabs (українська). З його вказівки витягни ПРАВИЛО ДЛЯ СЛОВНИКА, якщо воно про
+вимову чи наголос КОНКРЕТНОГО слова (щоб так звучало в усіх майбутніх роликах). Наголос — знак U+0301 після наголошеної голосної.
+Якщо вказівка про інтонацію, паузу, темп чи всю фразу — правила немає.
+Відповідай ЛИШЕ JSON: {"word":"слово як пишеться або порожньо","spoken":"як має звучати (напр. кра́ю) або порожньо"}"""
+
+
+def learn_word(text, instruction):
+    """Якщо виправлення стосується наголосу/вимови слова — запамʼятати в словнику (VoiceWord). Повертає правило або None."""
+    from . import freeai
+    from .models import VoiceWord
+    out = freeai.groq_chat(RULE_EXTRACT, f"Текст: {text}\nВказівка: {instruction}", max_tokens=900)
+    try:
+        d = json.loads(out[out.find("{"):out.rfind("}") + 1]) if out else {}
+    except ValueError:
+        return None
+    word, spoken = str(d.get("word") or "").strip().lower()[:80], str(d.get("spoken") or "").strip()[:160]
+    if len(word) < 2 or not spoken or ("\u0301" not in spoken and spoken.lower() == word):
+        return None  # правила немає або воно нічого не змінює
+    VoiceWord.objects.update_or_create(word=word, defaults={"spoken": spoken, "note": instruction[:200]})
+    return {"word": word, "spoken": spoken}

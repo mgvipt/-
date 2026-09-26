@@ -574,3 +574,15 @@ class AgentChat(models.Model):
     class Meta:
         ordering = ["-updated_at"]
 
+
+class VoiceWord(models.Model):
+    """Словник вимови (27.09.2026): як читати слово в УСІХ озвучках заводу. CRM підставляє перед відправкою в ElevenLabs,
+    тож правило діє для всіх голосів і всіх наступних рилсів. Напр. «краю» → «кра́ю», «Galatea» → «Галатея»."""
+    word = models.CharField(max_length=80, unique=True, help_text="Як пишеться (без урахування регістру)")
+    spoken = models.CharField(max_length=160, help_text="Як має звучати: з наголосом (кра́ю) або фонетично")
+    note = models.CharField(max_length=200, blank=True, help_text="Звідки правило: виправлення власника")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["word"]
+

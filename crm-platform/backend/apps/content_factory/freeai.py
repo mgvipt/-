@@ -185,10 +185,35 @@ def eleven_voices():
     return out
 
 
+ACUTE = "\u0301"
+_VOWELS = "аеєиіїоуюяАЕЄИІЇОУЮЯ"
+
+
+def speech_prepare(text):
+    """27.09: текст перед ElevenLabs — (1) словник вимови CRM (VoiceWord) для всіх озвучок; (2) «крАю» — велика голосна
+    всередині малого слова = наголос → «кра́ю»."""
+    text = text or ""
+    try:
+        from .models import VoiceWord
+        for w in VoiceWord.objects.all():
+            text = re.sub(r"(?<![\w\u0301])" + re.escape(w.word) + r"(?![\w\u0301])", w.spoken, text, flags=re.IGNORECASE)
+    except Exception:
+        pass
+
+    def caps(m):
+        word = m.group(0)
+        ups = [i for i, ch in enumerate(word) if ch.isupper()]
+        if len(ups) == 1 and ups[0] > 0 and word[ups[0]] in _VOWELS and len(word) > 2:
+            i = ups[0]
+            return word[:i] + word[i].lower() + ACUTE + word[i + 1:]
+        return word
+    return re.sub(r"[А-Яа-яІіЇїЄєҐґ']+", caps, text)
+
+
 def eleven_tts(text, voice_id, source="content_factory.voice"):
-    """Озвучка тексту (mp3). Кожен символ — з місячного ліміту ElevenLabs."""
+    """Озвучка тексту (mp3). Кожен символ — з місячного ліміту ElevenLabs. Словник вимови й наголоси — speech_prepare()."""
     key = os.environ.get("ELEVENLABS_API_KEY")
-    text = (text or "").strip()
+    text = speech_prepare((text or "").strip())
     if not key or not text or not voice_id:
         return None
     body = json.dumps({"text": text[:800], "model_id": "eleven_multilingual_v2",
