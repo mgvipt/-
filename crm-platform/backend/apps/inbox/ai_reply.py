@@ -74,6 +74,10 @@ HANDOFF_RX = re.compile(
     r"менеджер\w*\s+(?:\S+\s+){0,2}(надішл|пришл|отправ|підтверд|подтверд|зв|свяж|подключ|підключ|оформ|"
     r"підготу|подготов)|зв.?яж[уе]\s+(вас\s+)?з\s+менеджер|свяж\w*\s+(вас\s+)?с\s+менеджер|"
     r"оформлюю\s+(ваше\s+)?замовлення|оформля\w*\s+(ваш\s+)?заказ", re.I)
+# 26.09.2026 (Олег): клієнт передумав щодо комплектації набору — «можна без дощечки», «з тонуванням»
+KIT_CHANGE_RX = re.compile(
+    r"без\s+дощечк|з\s+дощечк|із\s+дощечк|без\s+тонуван|з\s+тонуван|із\s+тонуван|"
+    r"не\s+потрібн\w*\s+дощечк|дощечк\w*\s+не\s+потр|(інш|друг)\w*\s+(набір|комплект|варіант)", re.I)
 # клієнт сам показав готовність купити
 BUY_RX = re.compile(
     r"\bберу\b|беремо|оформ(ляйте|люйте|ляємо|ити|ляти)|готов[аий]*\s+(купити|оплатити|замовити)|"
@@ -177,7 +181,17 @@ def should_reply(conv, incoming):
         return False          # живий менеджер у чаті — ШІ мовчить (і в CRM, і далі)
     if _takeover_channel(ch) and not _took_over(conv, incoming):
         return False          # діалог поки веде Юля з ChatPlace — не заважаємо
-    return not _throttled(conv, max_per_day)
+    if not _throttled(conv, max_per_day):
+        return True
+    # 26.09.2026 (Олег, чат johnwayne2621): ліміт спрацював саме там, де клієнт просив змінити набір
+    # і дати рахунок — і агент замовк. Питання про гроші й комплектацію пропускаємо навіть за лімітом,
+    # але не безмежно: подвійний ліміт — це вже точно щось не так, там мовчимо.
+    t = _recent_client_text(conv, incoming)
+    critical = bool(BUY_RX.search(t) or REQ_ASK.search(t) or KIT_CHANGE_RX.search(t))
+    if critical and not _throttled(conv, max_per_day * 2):
+        _note(conv, "%s: добовий ліміт вичерпано, але клієнт пише про замовлення — відповідаю." % NOTE_PREFIX)
+        return True
+    return False
 
 
 def _note(conv, text):
@@ -314,6 +328,124 @@ def _maybe_requisites(conv, incoming):
     return True
 
 
+# ── 26.09.2026 (Олег): клієнт передумав щодо комплектації вже оформленого набору ──
+# У каталозі назви наборів однакові за будовою:
+#   «… (без дощечки для нанесення без тонування)» 220 ₴
+#   «… (без дощечки для нанесення з тонуванням)»  335 ₴
+#   «… (з дощечкою для нанесення без тонування)»  280 ₴
+#   «… (з дощечкою для нанесення та тонуванням)»  395 ₴
+# Тому варіант шукаємо не «на око», а за тією самою назвою до дужки + потрібними ознаками.
+_W = r"(?<![А-Яа-яЇїІіЄєҐґA-Za-z])"          # «без дощечки» містить «з дощечки» — беремо тільки окреме слово
+BOARD_YES = re.compile(_W + r"(з|із)\s+дощечк", re.I)
+BOARD_NO = re.compile(r"без\s+дощечк|не\s+потрібн\w*\s+дощечк|дощечк\w*\s+не\s+потр", re.I)
+TINT_YES = re.compile(_W + r"(з|із|та)\s+тонуван", re.I)
+TINT_NO = re.compile(r"без\s+тонуван", re.I)
+
+
+def _kit_flags(name):
+    """Що саме в цьому наборі: дощечка і тонування."""
+    part = name[name.find("(") + 1:] if "(" in name else name
+    return bool(BOARD_YES.search(part) and not BOARD_NO.search(part)), bool(TINT_YES.search(part))
+
+
+def _kit_wanted(text, cur_board, cur_tint):
+    """Що просить клієнт. Повертає (дощечка, тонування) або None, якщо нічого не змінює."""
+    t = text or ""
+    board, tint = cur_board, cur_tint
+    changed = False
+    if BOARD_NO.search(t):
+        board, changed = False, True
+    elif BOARD_YES.search(t):
+        board, changed = True, True
+    if TINT_NO.search(t):
+        tint, changed = False, True
+    elif TINT_YES.search(t):
+        tint, changed = True, True
+    return (board, tint) if changed and (board, tint) != (cur_board, cur_tint) else None
+
+
+def _find_kit_variant(cur_name, board, tint):
+    """Той самий набір, але з іншою комплектацією."""
+    from apps.warehouse.models import Product
+    base = cur_name.split("(")[0].strip()
+    if not base:
+        return None
+    best = None
+    for p in Product.objects.filter(is_active=True, name__istartswith=base, price__gt=0):
+        b, ti = _kit_flags(p.name)
+        if (b, ti) == (board, tint):
+            if best is None or float(p.price) < float(best.price):
+                best = p
+    return best
+
+
+def _recent_client_text(conv, incoming):
+    """Усе, що клієнт написав підряд, поки ми мовчали: він часто ділить думку на кілька повідомлень
+    («дайте рахунок без посилання» + «можна без дощечки») — читати лише останнє означає губити половину."""
+    from .models import Message
+    last_out = (Message.objects.filter(conversation=conv, direction="out", internal=False)
+                .order_by("-id").values_list("id", flat=True).first() or 0)
+    texts = list(Message.objects.filter(conversation=conv, direction="in", internal=False, id__gt=last_out)
+                 .order_by("id").values_list("text", flat=True))
+    if not texts:
+        texts = [incoming.text or ""]
+    return "\n".join(t for t in texts if t)
+
+
+def _switch_kit(conv, incoming):
+    """Перескладає вже оформлену (але не оплачену) сделку під нову комплектацію.
+    True — зробили, далі звичайна відповідь не потрібна."""
+    from apps.crm.models import Deal
+    from apps.crm.views import make_offer
+    said = _recent_client_text(conv, incoming)
+    if not conv.contact_id or not KIT_CHANGE_RX.search(said):
+        return False
+    deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
+            .filter(items__product__name__icontains="тестовий набір")
+            .order_by("-created_at").distinct().first())
+    if deal is None:
+        return False
+    paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
+    if paid > 0:
+        _note(conv, "%s: клієнт просить змінити комплектацію, але по сделці #%s уже є оплата — "
+                    "перескладіть, будь ласка, вручну." % (NOTE_PREFIX, deal.id))
+        return False
+    item = deal.items.filter(product__name__icontains="тестовий набір").select_related("product").first()
+    if item is None or not item.product_id:
+        return False
+    cur = item.product.name
+    cur_board, cur_tint = _kit_flags(cur)
+    want = _kit_wanted(said, cur_board, cur_tint)
+    if not want:
+        return False
+    prod = _find_kit_variant(cur, want[0], want[1])
+    if prod is None:
+        _note(conv, "%s: клієнт просить «%s», але такого варіанту набору немає в номенклатурі "
+                    "(було «%s») — підкажіть, будь ласка, вручну."
+              % (NOTE_PREFIX, said[:60], cur[:60]))
+        return False
+    old_amount = _money(deal.amount)
+    try:
+        wants_invoice = bool(REQ_ASK.search(said))   # просив рахунок — посилання не нав'язуємо
+        res = make_offer(deal, [{"name": prod.name, "qty": item.quantity or 1}], replace=True,
+                         send_pay=not wants_invoice)
+    except Exception as e:
+        _note(conv, "%s: не вдалося перескласти сделку #%s (%s) — зробіть вручну."
+              % (NOTE_PREFIX, deal.id, str(e)[:150]))
+        return False
+    if not res.get("ok"):
+        _note(conv, "%s: сделка #%s — перескласти не вийшло (%s)." % (NOTE_PREFIX, deal.id, res.get("msg") or "—"))
+        return False
+    _note(conv, "%s: клієнт змінив комплектацію — сделка #%s перескладена: «%s» замість «%s», було %s ₴ → %s ₴."
+          % (NOTE_PREFIX, deal.id, prod.name[:60], cur[:60], old_amount, res.get("amount")))
+    if wants_invoice:
+        try:
+            _maybe_requisites(conv, incoming)   # просив рахунок без посилання — надсилаємо реквізити
+        except Exception as e:
+            _note(conv, "%s: реквізити не надіслані (%s)." % (NOTE_PREFIX, str(e)[:150]))
+    return True
+
+
 def reply_now(conv_id):
     """Відповідь клієнту (виконується у окремому потоці)."""
     from apps.knowledge.answer import HANDOFF_TEXT, answer
@@ -327,6 +459,15 @@ def reply_now(conv_id):
     incoming = conv.messages.filter(direction="in", internal=False).order_by("-id").first()
     if incoming is None:
         return
+    try:
+        # 26.09.2026: спершу дивимось, чи не просить клієнт змінити комплектацію набору —
+        # інакше агент відповідав текстом, а сделка лишалась зі старим набором і старою сумою.
+        if _switch_kit(conv, incoming):
+            if _takeover_channel(conv.channel):
+                hold_chat(conv)
+            return
+    except Exception as e:
+        _note(conv, "%s: не вдалося змінити комплектацію (%s)." % (NOTE_PREFIX, str(e)[:200]))
     try:
         if _maybe_requisites(conv, incoming):
             if _takeover_channel(conv.channel):

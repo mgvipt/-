@@ -1013,16 +1013,23 @@ def send_requisites(deal, conv=None, user=None, sender_name=""):
     return {"ok": sent, "amount": amount, "text": text}
 
 
-def make_offer(deal, items_spec, user=None, send_pay=True):
-    """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату»."""
+def make_offer(deal, items_spec, user=None, send_pay=True, replace=False):
+    """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату».
+    replace=True (26.09.2026, Олег): клієнт передумав щодо комплектації («можна без дощечки») —
+    перескладаємо ТУ САМУ сделку, якщо по ній ще немає оплати. З оплатою нічого не міняємо."""
     from django.conf import settings as _s
     from apps.inbox.models import Conversation
     from apps.inbox.services import send_message
     from .models import DealItem, log_activity, PayLink
     from .liqpay import build_checkout_url
+    paid_before = sum(float(p.amount) for p in deal.payments.all() if p.is_paid) if deal.pk else 0.0
+    if replace:
+        if paid_before > 0:
+            return {"ok": False, "msg": "по сделці вже є оплата — комплектацію міняє менеджер"}
+        deal.items.all().delete()
     if deal.items.exists():
         return {"ok": False, "msg": "товари вже є — оффер не повторюємо"}
-    if deal.stage_id and deal.stage.order >= 2:
+    if deal.stage_id and deal.stage.order >= 2 and not replace:
         return {"ok": False, "msg": "сделка вже на оплаті/далі"}
     added, missing = [], []
     for spec in (items_spec or []):
