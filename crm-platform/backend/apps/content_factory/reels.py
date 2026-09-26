@@ -299,7 +299,7 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
             with open(img, "wb") as f:
                 f.write(bytes(link.data))
             vf = ("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,"
-                  + motion + drawtext(style, tf, platform) + label)
+                  + motion + drawtext(style, tf, platform) + ("" if b.get("ai") in REAL_KINDS else label))
             _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-framerate", "30", "-t", secs, "-i", img,
                   "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
         else:
@@ -472,6 +472,10 @@ def frame_bytes(reel, idx):
         shutil.rmtree(folder, ignore_errors=True)
 
 
+# Кадри-картинки, що НЕ є ШІ: справжнє фото з бібліотеки й корекція кольору без ШІ — без мітки «ШІ-візуалізація» (27.09)
+REAL_KINDS = ("photo", "color")
+
+
 def _set_frame(reel, idx, data, mime, kind, prompt=""):
     from . import aiimage
     link = aiimage.save(data, mime, f"reel-{reel.id}-{idx}")
@@ -496,7 +500,37 @@ def improve_frame(reel, idx):
     return _set_frame(reel, idx, out, omime, "improved", "покращено ШІ")
 
 
-def regenerate_frame(reel, idx, prompt, draft=False):
+def color_frame(reel, idx):
+    """Корекція кольору без ШІ (безкоштовно): баланс білого, рівні, яскравість, різкість. Фактура не змінюється."""
+    from .photofix import color_fix
+    data, _ = frame_bytes(reel, idx)
+    out, mime = color_fix(data)
+    return _set_frame(reel, idx, out, mime, "color", "корекція кольору")
+
+
+def photo_frame(reel, idx, lib_id):
+    """Поставити в кадр справжнє фото з бібліотеки CRM (нерухоме, з повільним наближенням). Безкоштовно, без мітки ШІ."""
+    from apps.inbox.models import MediaLibraryItem
+    m = MediaLibraryItem.objects.filter(pk=lib_id, kind="image").select_related("file").first()
+    if not m or not m.file_id or not m.file.data:
+        raise ReelError("Такого фото в бібліотеці немає.")
+    return _set_frame(reel, idx, bytes(m.file.data), m.file.content_type or "image/jpeg", "photo", f"фото з бібліотеки: {m.title}"[:200])
+
+
+def fetch_ref_image(url):
+    """Картинка з інтернету як ОБРАЗЕЦ композиції для ШІ (саме фото в ролик не ставимо — лише ракурс і настрій)."""
+    if not re.match(r"^https?://", url or ""):
+        raise ReelError("Потрібне посилання на картинку.")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) wallcov-crm/1.0"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        ctype = r.headers.get("Content-Type", "")
+        data = r.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024 or not ctype.startswith("image/"):
+        raise ReelError("За посиланням не картинка або вона завелика.")
+    return data
+
+
+def regenerate_frame(reel, idx, prompt, draft=False, composition=None):
     from . import aiimage
     prompt = (prompt or "").strip() or (reel.beats[idx].get("prompt") or reel.beats[idx].get("text") or reel.title)
     if draft and not (reel.blog and reel.blog.label_ai):  # чернетка безкоштовно (Cloudflare FLUX); якісно — Gemini
@@ -505,7 +539,7 @@ def regenerate_frame(reel, idx, prompt, draft=False):
         if free:
             return _set_frame(reel, idx, free[0], free[1], "draft", prompt)
     from .studio import _link_bytes, _texture
-    comp = _link_bytes(reel.beats[idx].get("ref_frame"))  # ремейк: ракурс із кадру референсу
+    comp = composition or _link_bytes(reel.beats[idx].get("ref_frame"))  # ремейк: ракурс із кадру референсу або з інтернету
     if reel.blog and reel.blog.label_ai:  # Wallcov: нова сцена, але фактура — зі справжнього кадру або найкращого фото матеріалу
         from .material_specs import find_material
         b = reel.beats[idx]

@@ -56,6 +56,7 @@ urlpatterns += [
     path("api/content-factory/studio/ideas/", views.StudioView.as_view(), {"action": "ideas"}),
     path("api/content-factory/studio/search/", views.StudioView.as_view(), {"action": "search"}),
     path("api/content-factory/studio/voices/", views.StudioView.as_view(), {"action": "voices"}),
+    path("api/content-factory/studio/images/", views.StudioView.as_view(), {"action": "images"}),
     path("api/content-factory/reels/<int:pk>/studio/", views.ReelView.as_view(), {"action": "studio"}),
     path("api/content-factory/reels/<int:pk>/publish/", views.ReelView.as_view(), {"action": "publish"}),
     path("api/content-factory/carousels/<int:pk>/publish/", views.CarouselView.as_view(), {"action": "publish"}),

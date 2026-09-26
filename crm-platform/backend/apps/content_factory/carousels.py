@@ -166,7 +166,7 @@ def _texture_for(c, idx):
     """Wallcov: фото-зразок фактури для ШІ — поточне фото слайда або найкраще реальне фото матеріалу каруселі."""
     from .material_specs import find_material
     cur = c.slides[idx].get("image") or {}
-    got = _image_bytes(cur.get("from") or cur) if cur.get("kind") == "ai" else _image_bytes(cur)
+    got = _image_bytes(cur.get("from") or cur) if cur.get("kind") == "ai" else _image_bytes(cur)  # «color» — справжнє фото, береться як є
     material = find_material(f"{c.topic} {c.title}") or ""
     if not got and material:
         from apps.inbox.models import MediaLibraryItem
@@ -263,13 +263,28 @@ def improve_image(c, idx):
     render(c)
 
 
+def color_image(c, idx):
+    """Корекція кольору фото слайда без ШІ (27.09): безкоштовно, фактура не змінюється, мітки «ШІ» немає."""
+    from .photofix import color_fix
+    cur = c.slides[idx].get("image") or {}
+    got = _image_bytes(cur.get("from") or cur) if cur.get("kind") == "color" else _image_bytes(cur)
+    if not got:
+        raise ValueError("На цьому слайді немає фото для корекції.")
+    data, mime = color_fix(got[0])
+    link = aiimage.save(data, mime, f"carousel-{c.id}-{idx}-color")
+    _remember_image(c.slides[idx])
+    prev = c.slides[idx]["image"]
+    c.slides[idx]["image"] = {"kind": "color", "link_id": link.id, "prompt": "корекція кольору", "from": prev}
+    render(c)
+
+
 def _image_bytes(img):
     from apps.inbox.models import MediaLibraryItem, SharedLink
     if img.get("kind") == "library" and img.get("lib_id"):
         m = MediaLibraryItem.objects.filter(pk=img["lib_id"]).select_related("file").first()
         if m and m.file_id and m.file.data:
             return bytes(m.file.data), m.file.content_type
-    if img.get("kind") == "ai" and img.get("link_id"):
+    if img.get("kind") in ("ai", "color") and img.get("link_id"):
         link = SharedLink.objects.filter(pk=img["link_id"]).first()
         if link:
             return bytes(link.data), link.content_type

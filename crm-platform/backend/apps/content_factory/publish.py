@@ -107,7 +107,7 @@ def tiktok_reel(reel, video_link_id=None):
         raise PublishError("TikTok не підключено (Контакт-центр → TikTok · Direct).")
     token = tt.valid_token(ch)
     biz = (ch.config or {}).get("business_id")
-    ai = any(b.get("image_id") for b in reel.beats)
+    ai = any(b.get("image_id") and b.get("ai") not in ("photo", "color") for b in reel.beats)  # фото й корекція кольору — не ШІ
     body = {"business_id": biz, "video_url": _link(video_link_id or reel.file_id),
             "post_info": {"caption": (reel.caption or reel.title)[:2200], "is_ai_generated": ai,
                           "disable_comment": False, "disable_duet": False, "disable_stitch": False}}

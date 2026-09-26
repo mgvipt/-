@@ -387,7 +387,12 @@ class TelegramMediaView(_Base):
             qs = qs.filter(tags__icontains=tgsvc.REAL_TAG)
         if request.GET.get("material"):
             qs = qs.filter(material__iexact=request.GET["material"])
-        ids = list(qs.order_by("material", "sort", "id").values_list("id", flat=True)[:120])
+        ids = list(qs.order_by("material", "sort", "id").values_list("id", flat=True)[:400])
+        if kind == "image":  # 27.09: найкращі за оцінкою (світло/різкість/композиція) — першими
+            from .models import PhotoScore
+            score = dict(PhotoScore.objects.filter(lib_id__in=ids).values_list("lib_id", "score"))
+            ids = [i for i in sorted(ids, key=lambda i: -score.get(i, 5.5)) if score.get(i, 5.5) > 1]
+        ids = ids[:120]
         materials = sorted(set(MediaLibraryItem.objects.filter(is_active=True, kind=kind).filter(
             **({"tags__icontains": tgsvc.REAL_TAG} if kind == "image" else {})).values_list("material", flat=True)))
         return Response({"items": _photos(request, ids), "materials": materials})
@@ -865,6 +870,17 @@ class StudioView(_Base):
     """Майстер рилса: POST /studio/ideas/ — 5 ідей; GET /studio/search/?q= — пошук Shorts на YouTube;
     POST /studio/ {brief, blog_id, material, asset_ids, style_id} — створити рилс і скласти сценарій (у фоні)."""
     def get(self, request, action=None):
+        if action == "images":  # 27.09: картинки з інтернету — образець ракурсу для ШІ-кадру (Serper Images)
+            q = (request.GET.get("q") or "").strip()[:150]
+            if not q:
+                return Response({"items": []})
+            try:
+                d = studiosvc._serper("images", {"q": q, "gl": "ua", "num": 30})
+            except Exception:
+                return Response({"items": [], "error": "Пошук картинок зараз недоступний."})
+            return Response({"items": [{"url": x.get("imageUrl", ""), "thumb": x.get("thumbnailUrl") or x.get("imageUrl", ""),
+                                        "title": (x.get("title") or "")[:120], "source": x.get("source") or x.get("domain") or ""}
+                                       for x in (d.get("images") or []) if x.get("imageUrl")]})
         if action == "voices":
             from . import freeai
             return Response({"voices": freeai.eleven_voices()})
@@ -1067,6 +1083,19 @@ class ReelView(_Base):
                 r.save(update_fields=["beats"])
             elif op == "review":
                 studiosvc.team_review(r)
+            elif op == "designer":
+                ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
+
+                def work():
+                    from . import designer as designsvc
+                    try:
+                        designsvc.pick(ReelDraft.objects.get(pk=r.pk))
+                    except Exception as e:
+                        ReelDraft.objects.filter(pk=r.pk).update(error=f"Дизайнер: {str(e)[:250]}")
+                    finally:
+                        ReelDraft.objects.filter(pk=r.pk).update(busy=False)
+                _bg(work)
+                return Response({"ok": True, "note": "Дизайнер переглядає кадри й фото бібліотеки — до хвилини."})
             elif op in ("script", "fill", "fill_draft"):
                 if op == "fill" and aisvc.spent_month() >= aisvc.MONTH_CAP:
                     return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
@@ -1128,9 +1157,9 @@ class ReelView(_Base):
             except (TypeError, ValueError, AssertionError):
                 return Response({"error": "Невідомий кадр."}, status=400)
             op = data.get("op")
-            if op not in ("improve", "regenerate", "revert", "edit", "draft"):
+            if op not in ("improve", "regenerate", "revert", "edit", "draft", "color", "photo", "webref"):
                 return Response({"error": "Невідома дія."}, status=400)
-            if op not in ("revert", "draft") and aisvc.spent_month() >= aisvc.MONTH_CAP:
+            if op not in ("revert", "draft", "color", "photo") and aisvc.spent_month() >= aisvc.MONTH_CAP:
                 return Response({"error": f"Досягнуто місячної стелі ШІ-картинок ${aisvc.MONTH_CAP:.0f}."}, status=402)
             if r.busy:
                 return Response({"error": "Цей ролик ще обробляється — зачекайте."}, status=409)
@@ -1141,6 +1170,12 @@ class ReelView(_Base):
                 try:
                     if op == "improve":
                         reelsvc.improve_frame(r, idx)
+                    elif op == "color":
+                        reelsvc.color_frame(r, idx)
+                    elif op == "photo":
+                        reelsvc.photo_frame(r, idx, int(data.get("lib_id") or 0))
+                    elif op == "webref":
+                        reelsvc.regenerate_frame(r, idx, prompt, composition=reelsvc.fetch_ref_image(str(data.get("url") or "")))
                     elif op in ("regenerate", "draft"):
                         reelsvc.regenerate_frame(r, idx, prompt, draft=(op == "draft"))
                     elif op == "edit":
@@ -1153,6 +1188,9 @@ class ReelView(_Base):
                     ReelDraft.objects.filter(pk=r.pk).update(busy=False)
             _bg(work)
             return Response({"ok": True, "note": {"improve": "Покращую кадр і перемонтовую — до хвилини.",
+                                                  "color": "Коригую колір (без ШІ, безкоштовно).",
+                                                  "photo": "Ставлю фото з бібліотеки.",
+                                                  "webref": "Малюю кадр у ракурсі картинки з інтернету з нашою фактурою — до хвилини.",
                                                   "regenerate": "Малюю новий кадр і перемонтовую — до хвилини.",
                                                   "draft": "Малюю чернетку безкоштовно — до хвилини.",
                                                   "edit": "Домальовую в кадр і перемонтовую — до хвилини.",
@@ -1595,6 +1633,12 @@ class CarouselView(_Base):
                 return Response({"error": "Такого фото в бібліотеці немає."}, status=400)
             carsvc.set_library_image(c, idx, data["lib_id"])
             return Response(_carousel(request, c))
+        if op == "color":  # корекція кольору без ШІ — безкоштовно, одразу
+            try:
+                carsvc.color_image(c, idx)
+            except ValueError as e:
+                return Response({"error": str(e)}, status=400)
+            return Response(_carousel(request, c))
         if op not in ("ai", "improve", "interior", "improve_all"):
             return Response({"error": "Невідома дія."}, status=400)
         if aisvc.spent_month() >= aisvc.MONTH_CAP:
@@ -1659,7 +1703,10 @@ class TelegramPhotoAIView(_Base):
         op, prompt = data.get("op"), str(data.get("prompt") or "").strip()[:800]
         blog = blogsvc.default_blog()
         try:
-            if op == "improve":
+            if op == "color":  # без ШІ: фото лишається справжнім
+                from .photofix import color_fix
+                out, mime = color_fix(bytes(m.file.data))
+            elif op == "improve":
                 out, mime = aisvc.improve(bytes(m.file.data), m.file.content_type, blog, aspect="4:5")
             elif op == "edit" and prompt:
                 keep = " Фактуру, колір і малюнок декоративного покриття НЕ змінюй." if blog.label_ai else ""
@@ -1669,9 +1716,11 @@ class TelegramPhotoAIView(_Base):
                 return Response({"error": "Невідома дія або порожнє завдання."}, status=400)
         except aisvc.ImageError as e:
             return Response({"error": str(e)}, status=402)
-        link = aisvc.save(out, mime, f"tg-{post.id}-{pid}-ai")
-        copy = MediaLibraryItem.objects.create(title=f"{m.title} · ШІ-обробка"[:160], kind="image", section=m.section,
-                                               material=m.material, tags="ШІ-обробка", file=link, is_active=False)
+        tag = "корекція кольору" if op == "color" else "ШІ-обробка"
+        link = aisvc.save(out, mime, f"tg-{post.id}-{pid}-{'color' if op == 'color' else 'ai'}")
+        copy = MediaLibraryItem.objects.create(title=f"{m.title} · {tag}"[:160], kind="image", section=m.section,
+                                               material=m.material, tags=tag if op != "color" else f"{tgsvc.REAL_TAG},{tag}",
+                                               file=link, is_active=False)
         post.photo_ids = [copy.id if i == pid else i for i in post.photo_ids]
         post.save(update_fields=["photo_ids"])
         return Response(_post(request, post))

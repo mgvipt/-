@@ -95,6 +95,7 @@ CHECKS = [
     ("Контент-завод: блоги", "owner", "/api/content-factory/blogs/", {200}, ["blogs", "kinds"]),
     ("Контент-завод: агент заводу (моделі, ролі, чати)", "owner", "/api/content-factory/agent/", {200}, ["models", "roles", "chats", "cap_usd"]),
     ("Контент-завод: агент — менеджеру закрито", "manager", "/api/content-factory/agent/", {403}, []),
+    ("Контент-завод: картинки з інтернету (порожній запит)", "owner", "/api/content-factory/studio/images/", {200}, ["items"]),
     ("Контент-завод: база знань — до 300 записів + пошук", "owner", "/api/content-factory/blogs/10/?q=offer", {200}, ["facts", "facts_total", "facts_found"]),
     ("Контент-завод: каруселі", "owner", "/api/content-factory/carousels/", {200}, ["carousels", "templates", "funnels", "kinds"]),
     ("Контент-завод: памʼять блогу", "owner", "/api/content-factory/blogs/1/memory/", {200}, ["recent", "open"]),

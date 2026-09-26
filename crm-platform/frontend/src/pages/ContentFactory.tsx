@@ -76,7 +76,8 @@ type ReelT = {
   duration: number | null; error: string; facts: string[]; created_at: string; video_url: string; style_id: number | null; style_name: string;
   variants?: Record<string, string>;
   blog_id: number | null; busy: boolean;
-  stage: string; brief: { pain?: string; title?: string; hook?: string; goal?: string; why?: string; shots?: string; fit?: string; source?: string };
+  stage: string; brief: { pain?: string; title?: string; hook?: string; goal?: string; why?: string; shots?: string; fit?: string; source?: string;
+    designer?: { beat: number; pick: string; why: string; lib_id?: number }[] };
   can_undo_texts: boolean; notes: { beat: number; kind: string; text: string }[];
   review: { verdict?: string; roles?: Record<string, { name: string; score: number | null; notes: { title: string; why: string; action: { type: string; beat: number; value: string | number } | null }[] }>;
     rules?: { role: string; title: string; why: string }[] };
@@ -207,6 +208,8 @@ const CSS = `
 @media (max-width:760px){.cf-ag{grid-template-columns:1fr}.cf-ag-list{position:static}.cf-ag-sel{grid-template-columns:1fr}}
 .cf-fact-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
 .cf-fact-search .cf-quiet{grid-column:1/-1}
+.cf-designer{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.cf-pick-grid button.on{outline:3px solid var(--cf-gold);outline-offset:-3px}
 .cf-scope{display:flex;flex-direction:column;gap:2px;padding-bottom:6px}
 .cf-scope + .cf-scope{border-top:1px solid var(--cf-line);margin-top:6px}
 .cf-scope.blog{background:linear-gradient(180deg,rgba(227,184,95,.05),transparent 60%);border-radius:10px}
@@ -1914,7 +1917,8 @@ function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; c
             <div className="cf-aitools">
               <span className="lbl">ШІ для вибраного фото · ≈$0.07 · оригінал у бібліотеці не зміниться</span>
               <div className="cf-set">
-                <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photo-ai/`, { photo_id: aiPhoto, op: "improve" }).then(() => setAiPhoto(null)), "Фото покращено")}>Покращити</button>
+                <button type="button" className="cf-btn ghost" disabled={busy} title="Баланс білого, рівні, яскравість, різкість — без ШІ, фото лишається справжнім" onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photo-ai/`, { photo_id: aiPhoto, op: "color" }).then(() => setAiPhoto(null)), "Колір скориговано")}>Корекція кольору · безкоштовно</button>
+                <button type="button" className="cf-btn ghost" disabled={busy} title="ШІ перемальовує фото повністю — це вже ШІ-візуалізація" onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photo-ai/`, { photo_id: aiPhoto, op: "improve" }).then(() => setAiPhoto(null)), "Фото перемальовано ШІ")}>Повністю ШІ · ≈$0.07</button>
                 <input className="cf-in" value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="Або що додати/змінити на фото" aria-label="Завдання для ШІ" />
                 <button type="button" className="cf-btn ghost" disabled={busy || !aiText.trim()} onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/photo-ai/`, { photo_id: aiPhoto, op: "edit", prompt: aiText }).then(() => setAiPhoto(null)), "Готово")}>Домалювати</button>
               </div>
@@ -2981,6 +2985,40 @@ function Blogs({ blogs, blogId, setBlogId, reload }: { blogs: BlogT[]; blogId: n
   );
 }
 
+/** Підпис кадру-картинки: справжнє фото й корекція кольору — не ШІ. */
+function frameKind(ai?: string, long = false) {
+  if (ai === "photo") return long ? "фото з бібліотеки" : "фото";
+  if (ai === "color") return long ? "корекція кольору" : "колір";
+  return long ? (ai === "improved" ? "ШІ повністю" : ai === "edited" ? "домальовано ШІ" : ai === "draft" ? "чернетка ШІ" : "ШІ-кадр") : "ШІ";
+}
+
+/** Картинки з інтернету (Google Images через Serper) — зразок ракурсу для ШІ-кадру; у ролик ставиться новий кадр з нашою фактурою. */
+function WebImagePicker({ q, onPick }: { q: string; onPick: (url: string) => void }) {
+  const [query, setQuery] = useState(q);
+  const [items, setItems] = useState<{ url: string; thumb: string; title: string; source: string }[] | null>(null);
+  const [err, setErr] = useState("");
+  const [sel, setSel] = useState("");
+  const search = useCallback(async (text: string) => {
+    setItems(null); setErr("");
+    try { const d = await api.get<{ items: { url: string; thumb: string; title: string; source: string }[]; error?: string }>(`/api/content-factory/studio/images/?q=${encodeURIComponent(text)}`); setItems(d.items); if (d.error) setErr(d.error); }
+    catch { setItems([]); setErr("Пошук не вдався."); }
+  }, []);
+  useEffect(() => { search(q); }, [q, search]);
+  return (
+    <div className="cf-picker">
+      <form className="cf-set" onSubmit={(e) => { e.preventDefault(); search(query); }}>
+        <input className="cf-in" style={{ flex: 1, minWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Що шукати в інтернеті" />
+        <button type="submit" className="cf-btn ghost" style={{ height: 38 }}><Icon n="search" size={14} /> Шукати</button>
+      </form>
+      <p className="cf-quiet">Чужа картинка в ролик не потрапляє: ШІ бере з неї лише ракурс і настрій і малює кадр заново з нашою справжньою фактурою (≈$0.07, мітка «ШІ-візуалізація»).</p>
+      {err && <span className="cf-msg err">{err}</span>}
+      <div className="cf-pick-grid">{!items ? <span className="cf-kv">Шукаю…</span> : items.length === 0 ? <span className="cf-kv">Нічого не знайдено</span>
+        : items.map((m) => <button key={m.url} type="button" className={sel === m.url ? "on" : ""} title={`${m.title} · ${m.source}`} onClick={() => setSel(m.url)}><img src={m.thumb} alt={m.title} loading="lazy" referrerPolicy="no-referrer" /></button>)}</div>
+      {sel && <div className="cf-acts" style={{ justifyContent: "flex-start" }}><button type="button" className="cf-btn gold" onClick={() => onPick(sel)}>Намалювати кадр у цьому ракурсі · ≈$0.07</button></div>}
+    </div>
+  );
+}
+
 function LibPicker({ material, onPick }: { material: string; onPick: (id: number) => void }) {
   const [mat, setMat] = useState(material);
   const [data, setData] = useState<{ items: TgPhoto[]; materials: string[] } | null>(null);
@@ -3178,7 +3216,8 @@ function CarWorkspace({ c, blog, onChanged, allBlogs }: { c: CarouselT; blog: Bl
               <h5>Картинка · {cur?.image_kind === "library" ? "реальне фото" : cur?.image_kind === "ai" ? "ШІ" : "немає"}</h5>
               <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
                 <button type="button" className="cf-btn ghost" onClick={() => setLib(!lib)}>{lib ? "Сховати бібліотеку" : "Фото з бібліотеки"}</button>
-                {cur?.image_kind !== "none" && <button type="button" className="cf-btn ghost" disabled={c.busy} onClick={() => act("imp", () => api.post(`${base}image/`, { index: sel, op: "improve" }))}>Покращити ШІ</button>}
+                {cur?.image_kind !== "none" && <button type="button" className="cf-btn ghost" disabled={c.busy} title="Без ШІ: баланс білого, рівні, різкість — фото лишається справжнім" onClick={() => act("col", () => api.post(`${base}image/`, { index: sel, op: "color" }))}>Корекція кольору · безкоштовно</button>}
+                {cur?.image_kind !== "none" && <button type="button" className="cf-btn ghost" disabled={c.busy} title="ШІ перемальовує фото — на слайді буде мітка «ШІ-візуалізація»" onClick={() => act("imp", () => api.post(`${base}image/`, { index: sel, op: "improve" }))}>Повністю ШІ · ≈$0.07</button>}
                 {cur?.image_kind !== "none" && <button type="button" className="cf-btn ghost" onClick={() => act("none", () => api.post(`${base}image/`, { index: sel, op: "none" }))}>Прибрати</button>}
                 {cur?.image_kind === "library" && <button type="button" className="cf-btn ghost" disabled={c.busy} onClick={() => act("int", () => api.post(`${base}image/`, { index: sel, op: "interior" }))} title="ШІ малює кімнату зі стіною саме цієї фактури">Інтерʼєр з цією фактурою · ≈$0.07</button>}
                 {cur?.has_image_prev && <button type="button" className="cf-btn ghost" disabled={c.busy} onClick={() => act("iundo", () => api.post(`${base}image/`, { index: sel, op: "undo" }))}>↶ Повернути попередню картинку</button>}
@@ -3613,7 +3652,9 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
   const saveIfDirty = async () => { if (dirty) await save(); };
   const go = (k: string) => act("go", async () => { await saveIfDirty(); if (stepIdx(k) > stepIdx(r.stage)) await api.patch(base, { stage: k }); setView(k); });
   const studio = (label: string, op: string) => act(label, async () => { await saveIfDirty(); return api.post(`${base}studio/`, { op }); });
-  const frame = (op: string, index = sel, p = prompt) => act("frame", async () => { await saveIfDirty(); return api.post(`${base}frame/`, { index, op, prompt: p }); });
+  const frame = (op: string, index = sel, p = prompt, extra: Record<string, unknown> = {}) => act("frame", async () => { await saveIfDirty(); return api.post(`${base}frame/`, { index, op, prompt: p, ...extra }); });
+  const [pickLib, setPickLib] = useState(false);
+  const [pickWeb, setPickWeb] = useState(false);
   const upd = (i: number, patch: Partial<Beat>) => setBeats((bs) => bs.map((b, n) => (n === i ? { ...b, ...patch } : b)));
   const setFx = (i: number, k: "transition" | "motion", v: string) => setBeats((bs) => bs.map((b, n) => (n === i ? { ...b, fx: { ...(b.fx || {}), [k]: v } } : b)));
   const total = beats.reduce((a, b) => a + (Number(b.seconds) || 0), 0);
@@ -3670,25 +3711,36 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
           <div className="cf-beat-strip" role="tablist" aria-label="Кадри">{beats.map((x, i) => (
             <button key={i} type="button" role="tab" aria-selected={i === sel} className={(i === sel ? "on" : "") + (!x.image_id && !x.scene_id ? " miss" : "") + (x.ok ? " ok" : "")}
               onClick={() => (i === sel ? setViewer(i) : setSel(i))} title="Клік — вибрати, ще клік — на весь екран">
-              {thumb(x)}<em>{i + 1}{x.image_id ? " · ШІ" : ""}{x.ok ? " ✓" : ""}</em></button>))}</div>
+              {thumb(x)}<em>{i + 1}{x.image_id ? " · " + frameKind(x.ai) : ""}{x.ok ? " ✓" : ""}</em></button>))}</div>
           <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
             <button type="button" className="cf-btn gold" onClick={() => setViewer(sel)}>Переглянути кадри на весь екран</button>
             <span className="cf-quiet">затверджено {okN} з {beats.length}</span>
             {okN < beats.length && missing === 0 && <button type="button" className="cf-btn ghost" disabled={!!busy} onClick={approveAll}>Затвердити всі</button>}
           </div>
+          <div className="cf-designer">
+            <button type="button" className="cf-btn gold" disabled={locked || !!busy} onClick={() => studio("designer", "designer")}
+              title="ШІ-дизайнер дивиться поточні кадри й найкращі справжні фото матеріалу і ставить у кожен кадр найкраще (≈$0.01)">
+              <Icon n="sparkles" size={14} /> {busy === "designer" ? "Дизайнер працює…" : "Дизайнер підбере кадри · ≈$0.01"}</button>
+            <span className="cf-quiet">Порівнює кадри з найкращими фото бібліотеки: світло, різкість, фактура, відповідність тексту й аудиторії.</span>
+          </div>
+          {!!r.brief?.designer?.length && (
+            <ul className="cf-list">{r.brief.designer.map((d, i) => <li key={i}>Кадр {d.beat + 1}: <b>{d.pick === "photo" ? "поставив фото" : "лишив"}</b> — {d.why}</li>)}</ul>)}
           {r.notes.length > 0 && <ul className="cf-list warn">{r.notes.map((n, i) => <li key={i}>Кадр {n.beat + 1}: {n.text}</li>)}</ul>}
           {b && (
             <div className="cf-edit">
               <div className="cf-pair">
-                <button type="button" className="cf-edit-img cf-edit-big" onClick={() => setViewer(sel)} aria-label="Переглянути кадр на весь екран">{thumb(b, true)}{b.image_id && <em>ШІ-кадр</em>}{b.ok && <i className="okb">✓</i>}</button>
+                <button type="button" className="cf-edit-img cf-edit-big" onClick={() => setViewer(sel)} aria-label="Переглянути кадр на весь екран">{thumb(b, true)}{b.image_id && <em>{frameKind(b.ai, true)}</em>}{b.ok && <i className="okb">✓</i>}</button>
                 {b.ref_url && <figure><img src={b.ref_url} alt="Кадр референсу" /><figcaption>референс: ракурс і дія</figcaption></figure>}
               </div>
               <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
                 <div className="cf-kv"><span>Текст: «{b.text}» · {b.seconds} с</span></div>
                 <div className="cf-kv"><span>У кадрі: {b.what || b.prompt || "—"}</span></div>
                 <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
-                  {blog?.real_footage && <button type="button" className="cf-btn ghost" onClick={() => setPickScene(!pickScene)}>{pickScene ? "Сховати наші кадри" : "Вибрати наш кадр"}</button>}
-                  {(b.scene_id || b.image_id) && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => frame("improve")}>Покращити ШІ · ≈$0.07</button>}
+                  {blog?.real_footage && <button type="button" className="cf-btn ghost" onClick={() => { setPickScene(!pickScene); setPickLib(false); setPickWeb(false); }}><Icon n="video" size={13} /> {pickScene ? "Сховати наші відео" : "Наше відео"}</button>}
+                  <button type="button" className="cf-btn ghost" onClick={() => { setPickLib(!pickLib); setPickScene(false); setPickWeb(false); }} title="Справжні фото з бібліотеки CRM, найкращі — першими. Безкоштовно, без мітки ШІ"><Icon n="image" size={13} /> {pickLib ? "Сховати фото" : "Фото з бібліотеки"}</button>
+                  <button type="button" className="cf-btn ghost" onClick={() => { setPickWeb(!pickWeb); setPickScene(false); setPickLib(false); }} title="Картинка з інтернету — лише як зразок ракурсу; ШІ малює кадр заново з нашою фактурою"><Icon n="search" size={13} /> {pickWeb ? "Сховати інтернет" : "З інтернету"}</button>
+                  {(b.scene_id || b.image_id) && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => frame("color")} title="Баланс білого, рівні, яскравість, різкість. Фактура не змінюється, мітки ШІ немає">Корекція кольору · безкоштовно</button>}
+                  {(b.scene_id || b.image_id) && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => frame("improve")} title="ШІ перемальовує кадр повністю — на кадрі буде мітка «ШІ-візуалізація»">Повністю ШІ · ≈$0.07</button>}
                   {b.orig_scene_id && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => frame("revert")}>Повернути справжній</button>}
                 </div>
                 {!(blog?.label_ai && b.scene_id) && (
@@ -3697,9 +3749,11 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
                     <button type="button" className="cf-btn ghost" style={{ height: 38 }} disabled={locked || !!busy || !prompt.trim()} onClick={() => frame("draft")} title="Cloudflare FLUX — безкоштовно, простіша якість">Чернетка · безкоштовно</button>
                     <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={locked || !!busy || !prompt.trim()} onClick={() => frame("regenerate")}>{b.image_id ? "Перемалювати" : "Намалювати"} якісно · ≈$0.07</button>
                   </div>)}
-                {blog?.label_ai && b.scene_id && <p className="cf-quiet">Правило блогу: справжню фактуру ШІ не перемальовує — можна лише покращити якість або замінити нашим кадром.</p>}
+                {blog?.label_ai && b.scene_id && <p className="cf-quiet">Правило блогу: справжню фактуру ШІ не перемальовує без мітки. «Корекція кольору» — без ШІ; «Повністю ШІ» ставить мітку «ШІ-візуалізація».</p>}
               </div>
             </div>)}
+          {pickLib && b && <LibPicker material={r.material} onPick={(id) => { setPickLib(false); frame("photo", sel, prompt, { lib_id: id }); }} />}
+          {pickWeb && b && <WebImagePicker q={`${r.material || ""} декоративна штукатурка інтерʼєр`.trim()} onPick={(url) => { setPickWeb(false); frame("webref", sel, prompt || b.text, { url }); }} />}
           {pickScene && b && <ScenePicker material={r.material} current={b.scene_id ?? 0}
             onPick={(s) => { upd(sel, { scene_id: s.id, what: s.what, thumb_url: s.thumb_url, source: s.source, image_id: undefined, ai: undefined, prompt: undefined, seconds: Math.min(b.seconds, s.seconds) }); setPickScene(false); }} />}
           <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
