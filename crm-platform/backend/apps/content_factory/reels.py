@@ -552,10 +552,10 @@ def regenerate_frame(reel, idx, prompt, draft=False, composition=None):
         real_now = b.get("ai") in REAL_KINDS or (b.get("scene_id") and not b.get("image_id"))
         texture = frame_bytes(reel, idx) if real_now else (_texture(reel)[0] or (frame_bytes(reel, idx) if b.get("image_id") else None))
         prompt = re.sub(r"^(фото з бібліотеки:.*|корекція кольору|покращено ШІ)$", "", prompt).strip() or b.get("what") or b.get("text") or reel.title
-        data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture,
-                                        material=find_material(f"{reel.material} {reel.title}"), composition=comp)
+        data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture, material=find_material(f"{reel.material} {reel.title}"),
+                                        composition=comp, model=None if draft else aiimage.MODEL_PRO)  # якісно — Pro (27.09)
     else:
-        data, mime = aiimage.regenerate(prompt, reel.blog, composition=comp)
+        data, mime = aiimage.regenerate(prompt, reel.blog, composition=comp, model=None if draft else aiimage.MODEL_PRO)
     return _set_frame(reel, idx, data, mime, "generated", prompt)
 
 

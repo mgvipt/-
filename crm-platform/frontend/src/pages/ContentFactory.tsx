@@ -3010,11 +3010,11 @@ function WebImagePicker({ q, onPick }: { q: string; onPick: (url: string) => voi
         <input className="cf-in" style={{ flex: 1, minWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Що шукати в інтернеті" />
         <button type="submit" className="cf-btn ghost" style={{ height: 38 }}><Icon n="search" size={14} /> Шукати</button>
       </form>
-      <p className="cf-quiet">Чужа картинка в ролик не потрапляє: ШІ бере з неї лише ракурс і настрій і малює кадр заново з нашою справжньою фактурою (≈$0.07, мітка «ШІ-візуалізація»).</p>
+      <p className="cf-quiet">Чужа картинка в ролик не потрапляє: ШІ бере з неї лише ракурс і настрій і малює кадр заново з нашою справжньою фактурою — гіперреалістично, як фото інтерʼєру (≈$0.19, мітка «ШІ-візуалізація»).</p>
       {err && <span className="cf-msg err">{err}</span>}
       <div className="cf-pick-grid">{!items ? <span className="cf-kv">Шукаю…</span> : items.length === 0 ? <span className="cf-kv">Нічого не знайдено</span>
         : items.map((m) => <button key={m.url} type="button" className={sel === m.url ? "on" : ""} title={`${m.title} · ${m.source}`} onClick={() => setSel(m.url)}><img src={m.thumb} alt={m.title} loading="lazy" referrerPolicy="no-referrer" /></button>)}</div>
-      {sel && <div className="cf-acts" style={{ justifyContent: "flex-start" }}><button type="button" className="cf-btn gold" onClick={() => onPick(sel)}>Намалювати кадр у цьому ракурсі · ≈$0.07</button></div>}
+      {sel && <div className="cf-acts" style={{ justifyContent: "flex-start" }}><button type="button" className="cf-btn gold" onClick={() => onPick(sel)}>Намалювати кадр у цьому ракурсі · ≈$0.19</button></div>}
     </div>
   );
 }
@@ -3606,7 +3606,7 @@ function FrameViewer({ beats, index, onIndex, onClose, onApprove, onRedraw, onCo
             : <button type="button" className="cf-btn gold" disabled={busy || (!b.image_id && !b.scene_id)} onClick={() => { onApprove(index, true); if (index < beats.length - 1) onIndex(index + 1); }}>✓ Затвердити</button>}
           {onColor && (b.image_id || b.scene_id) && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onColor(index)} title="Без ШІ: баланс білого, рівні, різкість — фактура не змінюється">Корекція кольору · безкоштовно</button>}
           {onRedraw && b.image_id && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onRedraw(index, true)}>Чернетка · безкоштовно</button>}
-          {onRedraw && (b.image_id || !b.scene_id) && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onRedraw(index, false)}>Перемалювати якісно · ≈$0.07</button>}
+          {onRedraw && (b.image_id || !b.scene_id) && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => onRedraw(index, false)}>Перемалювати якісно · ≈$0.19</button>}
         </div>
         <div className="cf-fv-strip">{beats.map((x, i) => (
           <button key={i} type="button" className={(i === index ? "on" : "") + (x.ok ? " ok" : "")} onClick={() => onIndex(i)} aria-label={`Кадр ${i + 1}`}>
@@ -3750,8 +3750,8 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
                 {!(blog?.label_ai && b.scene_id) && (
                   <div className="cf-set">
                     <input className="cf-in" style={{ flex: 1, minWidth: 200 }} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Опис кадру для художника" aria-label="Опис кадру" />
-                    <button type="button" className="cf-btn ghost" style={{ height: 38 }} disabled={locked || !!busy || !prompt.trim()} onClick={() => frame("draft")} title="Cloudflare FLUX — безкоштовно, простіша якість">Чернетка · безкоштовно</button>
-                    <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={locked || !!busy || !prompt.trim()} onClick={() => frame("regenerate")}>{b.image_id ? "Перемалювати" : "Намалювати"} якісно · ≈$0.07</button>
+                    <button type="button" className="cf-btn ghost" style={{ height: 38 }} disabled={locked || !!busy || !prompt.trim()} onClick={() => frame("draft")} title="Cloudflare FLUX — безкоштовно, простіша якість (для Wallcov — швидка модель ≈$0.10)">Чернетка · безкоштовно</button>
+                    <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={locked || !!busy || !prompt.trim()} onClick={() => frame("regenerate")}>{b.image_id ? "Перемалювати" : "Намалювати"} якісно · ≈$0.19</button>
                   </div>)}
                 {blog?.label_ai && b.scene_id && <p className="cf-quiet">Правило блогу: справжню фактуру ШІ не перемальовує без мітки. «Корекція кольору» — без ШІ; «Повністю ШІ» ставить мітку «ШІ-візуалізація».</p>}
               </div>
@@ -3762,7 +3762,7 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
             onPick={(s) => { upd(sel, { scene_id: s.id, what: s.what, thumb_url: s.thumb_url, source: s.source, image_id: undefined, ai: undefined, prompt: undefined, seconds: Math.min(b.seconds, s.seconds) }); setPickScene(false); }} />}
           <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
             {missing > 0 && !blog?.label_ai && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => studio("fill", "fill_draft")}>Чернетки всіх ({missing}) · безкоштовно</button>}
-            {missing > 0 && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => studio("fill", "fill")}>Намалювати всі якісно ({missing}) · ≈${(missing * 0.07).toFixed(2)}</button>}
+            {missing > 0 && <button type="button" className="cf-btn ghost" disabled={locked || !!busy} onClick={() => studio("fill", "fill")}>Намалювати всі якісно ({missing}) · ≈${(missing * 0.19).toFixed(2)}</button>}
             {dirty && <button type="button" className="cf-btn ghost" disabled={!!busy} onClick={() => act("save", () => save())}>Зберегти</button>}
             <button type="button" className="cf-btn gold" disabled={!!busy || locked || missing > 0 || okN < beats.length} onClick={() => go("style")}>
               {missing > 0 ? `Бракує кадрів: ${missing}` : okN < beats.length ? `Затвердіть кадри: ${okN} з ${beats.length}` : "Далі: стиль"}</button>

@@ -619,9 +619,10 @@ def fill_missing(reel, limit=6, draft=False):
         if free:
             data, mime = free
         elif texture:  # Wallcov: стіну малюємо лише за реальним фото фактури
-            data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture, material=material, composition=comp)
+            data, mime = aiimage.regenerate(prompt, reel.blog, texture=texture, material=material, composition=comp,
+                                            model=None if draft else aiimage.MODEL_PRO)
         else:
-            data, mime = aiimage.regenerate(prompt, reel.blog, composition=comp)
+            data, mime = aiimage.regenerate(prompt, reel.blog, composition=comp, model=None if draft else aiimage.MODEL_PRO)
         link = aiimage.save(data, mime, f"reel-{reel.id}-{i}")
         b.update({"image_id": link.id, "ai": "draft" if free else "generated"})
         beats[i] = b
