@@ -559,7 +559,8 @@ def fetch_ref_image(url):
 
 # 27.09: заголовок обовʼязковий + розмовна мова (правила з розбору нашого Instagram — content_rules.py)
 from .content_rules import HEADLINE_RULE as _HEADLINE, VOICE_RULES as _VOICE  # noqa: E402
-_HEAD_TASK = ("\n\nПЕРШИЙ КАДР (beats[0].text) — це ЗАГОЛОВОК рилса одного з типів нижче, 3–7 слів, не нейтральний опис.\n"
+from .content_rules import CLICHE_RULE as _CLICHE, TRIGGER_RULE as _TRIGGER  # noqa: E402
+_HEAD_TASK = ("\n\n" + _CLICHE + "\n\n" + _TRIGGER + "\n\nПЕРШИЙ КАДР (beats[0].text) — це ЗАГОЛОВОК рилса одного з типів нижче, 3–7 слів, не нейтральний опис.\n"
               + _HEADLINE + "\nТексти кадрів і підпис — розмовно:\n" + _VOICE)
 PLAN_SYSTEM += _HEAD_TASK
 PLAN_TASK_BLOG += _HEAD_TASK
@@ -699,12 +700,18 @@ NARRATION = """Напиши ОДНУ суцільну озвучку за кад
 def write_narration(reel):
     """Суцільна розмовна озвучка на весь рилс (Haiku ≈$0.002). Зберігається в brief.narration — власник може правити."""
     from apps.crm.ai import claude_json
-    from .content_rules import VOICE_RULES
+    from .content_rules import CLICHE_RULE, TRIGGER_RULE, VOICE_RULES
     sec = sum(float(b.get("seconds") or 0) for b in reel.beats) or 14
     r = claude_json(NARRATION.format(sec=round(sec), words=max(12, int(sec * 2.3)), topic=(reel.brief or {}).get("title") or reel.title,
                                      beats=" → ".join(f"«{b.get('text', '')}»" for b in reel.beats), caption=(reel.caption or "")[:400],
-                                     rules=VOICE_RULES[:2500]), model="claude-haiku-4-5", max_tokens=700, source=PLAN_SOURCE)
+                                     rules=VOICE_RULES[:2500] + "\n" + CLICHE_RULE + "\n" + TRIGGER_RULE),
+                     model="claude-haiku-4-5", max_tokens=700, source=PLAN_SOURCE)
     text = clean_text(str((r or {}).get("text") or (r or {}).get("suggestion") or "")).strip()
+    from .content_rules import CLICHE_RULE, has_cliche
+    if has_cliche(text):  # 27.09: ШІ-штамп проскочив — одна переписка
+        r = claude_json("Перепиши цю озвучку без ШІ-штампів і пафосу, тим самим розмовним тоном і тієї ж довжини. " + CLICHE_RULE
+                        + "\nТекст: " + text + '\nПоверни ЛИШЕ JSON: {"text":"..."}', model="claude-haiku-4-5", max_tokens=700, source=PLAN_SOURCE)
+        text = clean_text(str((r or {}).get("text") or text)).strip()
     if len(text) < 10:
         raise ReelError("Не вдалося написати озвучку — спробуйте ще раз.")
     reel.brief = dict(reel.brief or {}, narration=text[:1200])
