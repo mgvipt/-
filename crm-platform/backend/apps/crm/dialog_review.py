@@ -412,7 +412,10 @@ def ai_dialogs(items, model="claude-haiku-4-5"):
 def ai_summary(stats, issues, model="claude-sonnet-4-6"):
     """Підсумок дня: системні проблеми + пропозиції правил (Олег підтверджує кожне)."""
     from .ai import claude_json
-    body = json.dumps({"статистика": stats, "проблеми": issues[:40]}, ensure_ascii=False)[:14000]
+    short = [{"чат": i.get("conv_id"), "хто": i.get("agent_names"), "мітки": i.get("tags"),
+              "проблема": (i.get("problem") or "")[:220], "бракує": i.get("missing_in"),
+              "чинне правило": (i.get("existing_rule") or "")[:90]} for i in issues[:30]]
+    body = json.dumps({"статистика": stats, "проблеми": short}, ensure_ascii=False)[:9000]
     prompt = (
         "Ось розбір учорашніх діалогів Wallcov.\n%s\n\n"
         "Поверни JSON:\n"
@@ -426,11 +429,15 @@ def ai_summary(stats, issues, model="claude-sonnet-4-6"):
         "\"why\": \"на чому ґрунтується — скільки діалогів\", \"examples\": [номери діалогів]}]}\n"
         "Пропонуй максимум 3 правила і тільки те, що видно з даних. Якщо системних проблем немає — "
         "порожній список." % body)
-    try:
-        return claude_json(prompt, model=model, max_tokens=2600, system=ai_system(),
-                           source="ШІ-РОП: підсумок дня")
-    except Exception as e:
-        return {"summary": "Не вдалося зробити підсумок (%s)" % str(e)[:120], "systemic": [], "proposals": []}
+    for attempt in (1, 2):
+        try:
+            return claude_json(prompt, model=model, max_tokens=2600,
+                               system=ai_system() if attempt == 1 else SHORT_SYSTEM,
+                               source="ШІ-РОП: підсумок дня")
+        except Exception as e:
+            err = str(e)[:120]
+            time.sleep(2)
+    return {"summary": "Не вдалося зробити підсумок (%s)" % err, "systemic": [], "proposals": []}
 
 
 # ── денний розбір ─────────────────────────────────────────────────────────────────────
