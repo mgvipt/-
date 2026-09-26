@@ -27,7 +27,9 @@ TAGS = {
     "repeat": "агент повторив сам себе",
     "wrong_page": "дали сторінку ліпнини/загальний каталог замість матеріалу",
     "price_dump": "перелік із трьох і більше цін в одному повідомленні",
+    "send_failed": "наше повідомлення НЕ дійшло до клієнта",
 }
+BAD_STATUS = ("failed", "window_risk")
 PAY_RX = re.compile(r"crm\.wallcovdec\.com\.ua/p/", re.I)
 WRONG_PAGE_RX = re.compile(r"wallcov\.com\.ua/p/(orac|cezar)/|wallcov\.com\.ua/p/\s|wallcov\.com\.ua/p/$", re.I)
 PRICE_RX = re.compile(r"\d[\d\s]{1,6}\s?(?:грн|₴)", re.I)
@@ -48,9 +50,9 @@ def check_dialog(msgs, day_end):
     last = msgs[-1]
     last_out = ours[-1]
     if "?" not in (last_out["text"] or "") and last["dir"] == "out":
-        out.append(("no_question", (last_out["text"] or "")[-160:]))
+        out.append(("no_question", "[%s] %s" % (_stamp(last_out), (last_out["text"] or "")[-160:])))
     if last["dir"] == "out" and (day_end - last["at"]) > timedelta(hours=4) and theirs:
-        out.append(("silence", (last_out["text"] or "")[-160:]))
+        out.append(("silence", "[%s] %s" % (_stamp(last_out), (last_out["text"] or "")[-160:])))
     for c in theirs:
         nxt = next((m for m in ours if m["at"] > c["at"]), None)
         if nxt is None:
@@ -58,15 +60,17 @@ def check_dialog(msgs, day_end):
         if WORK_HOURS[0] <= timezone.localtime(c["at"]).hour < WORK_HOURS[1] and \
                 (nxt["at"] - c["at"]) > timedelta(minutes=30):
             mins = int((nxt["at"] - c["at"]).total_seconds() // 60)
-            out.append(("slow_reply", "чекав %s хв: «%s»" % (mins, (c["text"] or "")[:90])))
+            out.append(("slow_reply", "[%s] клієнт чекав %s хв: «%s» → відповіли [%s]"
+                        % (_stamp(c), mins, (c["text"] or "")[:90], _stamp(nxt))))
             break
     pays = [m for m in ours if PAY_RX.search(m["text"] or "")]
     if len(pays) > 1:
-        out.append(("dup_pay_link", (pays[-1]["text"] or "")[:160]))
+        out.append(("dup_pay_link", "посилання о %s і о %s" % (_stamp(pays[0]), _stamp(pays[-1]))))
     for i in range(1, len(ours)):
         a, b = _norm(ours[i - 1]["text"]), _norm(ours[i]["text"])
         if len(a) > 60 and difflib.SequenceMatcher(None, a, b).ratio() > 0.82:
-            out.append(("repeat", (ours[i]["text"] or "")[:160]))
+            out.append(("repeat", "[%s] і [%s]: «%s»" % (_stamp(ours[i - 1]), _stamp(ours[i]),
+                                                          (ours[i]["text"] or "")[:120])))
             break
     for m in ours:
         if WRONG_PAGE_RX.search(m["text"] or ""):
@@ -74,8 +78,12 @@ def check_dialog(msgs, day_end):
             break
     for m in ours:
         if len(PRICE_RX.findall(m["text"] or "")) >= 3:
-            out.append(("price_dump", (m["text"] or "")[:180]))
+            out.append(("price_dump", "[%s] %s" % (_stamp(m), (m["text"] or "")[:180])))
             break
+    dead = [m for m in msgs if m["dir"] == "out" and not m["internal"] and m.get("status") in BAD_STATUS]
+    if dead:
+        out.append(("send_failed", "%s повідомлень не дійшло, останнє [%s]: «%s»"
+                    % (len(dead), _stamp(dead[-1]), (dead[-1]["text"] or "")[:90])))
     return out
 
 
@@ -112,9 +120,11 @@ def collect(day_start, day_end, limit=150):
     out = []
     for conv in Conversation.objects.filter(id__in=ids).select_related("contact", "channel", "assigned_to")[:limit]:
         rows = list(Message.objects.filter(conversation=conv, created_at__lt=day_end)
-                    .order_by("id").values("direction", "text", "created_at", "internal", "sender_name")[:120])
+                    .order_by("id").values("direction", "text", "created_at", "internal",
+                                          "sender_name", "status")[:120])
         msgs = [{"dir": r["direction"], "text": r["text"], "at": r["created_at"],
-                 "internal": r["internal"], "sender": r["sender_name"] or ""} for r in rows]
+                 "internal": r["internal"], "sender": r["sender_name"] or "",
+                 "status": r["status"]} for r in rows]
         today = [m for m in msgs if m["at"] >= day_start]
         if not any(m["dir"] == "in" and not m["internal"] for m in today):
             continue
@@ -124,8 +134,17 @@ def collect(day_start, day_end, limit=150):
     return out
 
 
+def _stamp(m):
+    try:
+        return timezone.localtime(m["at"]).strftime("%d.%m %H:%M")
+    except Exception:
+        return ""
+
+
 def _dialog_text(msgs, limit=26):
-    return "\n".join(("Клієнт: " if m["dir"] == "in" else "Ми: ") + re.sub(r"\s+", " ", (m["text"] or ""))[:300]
+    """Кожен рядок із датою й часом — щоб аналітик міг точно вказати, де саме зламалось."""
+    return "\n".join("[%s] %s%s" % (_stamp(m), "Клієнт: " if m["dir"] == "in" else "Ми: ",
+                                     re.sub(r"\s+", " ", (m["text"] or ""))[:300])
                      for m in msgs[-limit:] if (m["text"] or "").strip() and not m["internal"])
 
 
@@ -222,7 +241,7 @@ def rules_index(ttl=1800):
     if _RULES_CACHE["text"] and now - _RULES_CACHE["at"] < ttl:
         return _RULES_CACHE["text"]
     text = ("ЧИННІ ПРАВИЛА ПРОДАВЦЯ CRM:\n%s\n\nЧИННІ ПРАВИЛА ЮЛІ CHATPLACE:\n%s"
-            % (_crm_rules(), _yulia_rules()))[:11000]
+            % (_crm_rules(), _yulia_rules()))[:6500]
     _RULES_CACHE.update({"at": now, "text": text})
     return text
 
@@ -276,12 +295,55 @@ def past_feedback(days=14, limit=12):
     return ("ПОПРАВКИ ВЛАСНИКА (не повторюй цих висновків):\n" + "\n".join(lines)) if lines else ""
 
 
+CLOSED_RX = re.compile(r"ознайомлю|заготовк|шаблонн\w* фраз|беру.{0,12}у роботу", re.I)
+
+
+def _clean_closed(d):
+    """Тема «менеджер узяв запит» закрита — правила вже оновлені. Якщо аналітик усе одно про неї
+    написав, прибираємо саме ці речення, а не весь розбір діалогу."""
+    for k in ("problem", "why", "fix", "better", "employee", "script"):
+        v = (d.get(k) or "").strip()
+        if not v:
+            continue
+        keep = [p for p in re.split(r"(?<=[.!?])\s+", v) if not CLOSED_RX.search(p)]
+        d[k] = " ".join(keep).strip()
+    d["steps"] = [x for x in (d.get("steps") or []) if not CLOSED_RX.search(str(x))]
+    return d
+
+
+def polish(rows, model="claude-sonnet-4-6"):
+    """Вичитка: Haiku інколи змішує українську з російською. Один дешевий прохід —
+    і всі тексти, які читає Олег і менеджери, чистою українською."""
+    from .ai import claude_json
+    items = [{"id": k, "problem": v.get("problem", ""), "better": v.get("better", ""),
+              "fix": v.get("fix", ""), "employee": v.get("employee", "")}
+             for k, v in rows.items()]
+    for i in range(0, len(items), 8):
+        chunk = items[i:i + 8]
+        try:
+            r = claude_json(
+                "Перепиши ці тексти ЧИСТОЮ УКРАЇНСЬКОЮ мовою, не міняючи змісту і не додаючи нічого. "
+                "Прибери русизми, помилкові форми й чужі слова. Поверни JSON "
+                "{\"items\": [{\"id\": …, \"problem\": …, \"better\": …, \"fix\": …, \"employee\": …}]}\n\n"
+                + json.dumps(chunk, ensure_ascii=False)[:9000],
+                model=model, max_tokens=2600, source="ШІ-РОП: вичитка")
+        except Exception:
+            continue
+        for it in (r.get("items") or []):
+            k = it.get("id")
+            if k in rows:
+                for f in ("problem", "better", "fix", "employee"):
+                    if (it.get(f) or "").strip():
+                        rows[k][f] = it[f]
+    return rows
+
+
 def ai_dialogs(items, model="claude-haiku-4-5"):
     """Розбір проблемних діалогів пачками. Повертає {conv_id: {...}}."""
     from .ai import claude_json
     res = {}
-    for i in range(0, len(items), 4):
-        chunk = items[i:i + 4]
+    for i in range(0, len(items), 5):
+        chunk = items[i:i + 5]
         blocks = []
         for it in chunk:
             who = [AGENT_LABEL[a] for a in actors(it.get("today") or it["msgs"])]
@@ -296,7 +358,8 @@ def ai_dialogs(items, model="claude-haiku-4-5"):
         prompt = ((extra + "\n\n" if extra else "")
                   + "Розбери кожен діалог. Для КОЖНОГО поверни JSON-обʼєкт у масиві \"dialogs\":\n"
                   "{\"id\": <номер діалогу>, \"problem\": \"що саме завадило продажу, 1 речення\", "
-                  "\"quote\": \"наша фраза, після якої стало гірше\", "
+                  "\"quote\": \"наша фраза, після якої стало гірше — ОБОВʼЯЗКОВО з часом у форматі "
+                  "[дд.мм гг:хх], як у переписці\", "
                   "\"better\": \"як треба було написати, готовий текст клієнту\", "
                   "\"why\": \"чому клієнт відреагував саме так — логіка з його боку, 1-2 речення\", "
                   "\"steps\": [\"2-4 конкретні наступні кроки саме в ЦЬОМУ чаті, по одному рядку, "
@@ -309,16 +372,21 @@ def ai_dialogs(items, model="claude-haiku-4-5"):
                   "дописати в його інструкцію, щоб такого більше не було\", "
                   "\"agents\": [\"crm\" і/або \"chatplace\" і/або \"human\" — кого саме вчимо, "
                   "виходячи з того, хто писав клієнту в цьому діалозі], "
+                  "\"employee\": \"якщо діалог вів ЖИВИЙ менеджер — що конкретно сказати цій людині "
+                  "(чому саме так краще, одним реченням); якщо тільки ШІ — порожній рядок\", "
+                  "\"script\": \"який наш шаблон/скрипт варто переписати через цей випадок — назви його "
+                  "своїми словами; якщо не про скрипт — порожній рядок\", "
                   "\"tag\": \"коротка категорія 1-3 слова\"}\n"
                   "Якщо діалог нормальний — problem: \"ок\".\n"
+                  "ВСІ поля пиши ЧИСТОЮ УКРАЇНСЬКОЮ — без російських та інших слів. "
+                  "У \"existing\" пиши коротко, до 12 слів: назву правила, яке порушено.\n"
                   "У системному блоці є ЧИННІ правила обох агентів. Спершу перевір, чи випадок уже "
                   "ними покритий: якщо так — це ПОРУШЕННЯ наявного правила, а не привід вигадувати нове "
                   "(напиши його в \"existing\"). Нове правило пропонуй лише коли в чинних його справді немає. "
                   "Наша мета — щоб продавець CRM умів усе те саме, що Юля ChatPlace, і Юлю можна було "
                   "вимкнути: якщо правило є у Юлі, але немає у продавця CRM — став \"crm\" у missing_in.\n"
-                  "Повідомлення «менеджер узяв ваш запит / ознайомлююсь» — це наше свідоме правило, "
-                  "не вважай його помилкою саме по собі; помилка лише якщо воно пішло ПІСЛЯ змістовної "
-                  "відповіді або повторилось.\n"
+                  "⛔ Про службову фразу «менеджер узяв ваш запит / ознайомлююсь / збираю інформацію» "
+                  "не пиши ВЗАГАЛІ — правила по ній уже оновлені, це закрите питання.\n"
                   "ВАЖЛИВО: ми поступово вчимо ПРОДАВЦЯ CRM, щоб згодом вимкнути Юлю ChatPlace. "
                   "Тому якщо помилку зробила Юля ChatPlace, а продавець CRM у цьому чаті теж працює — "
                   "став обох, щоб правило лягло і в нашого агента.\n\n" + "\n\n".join(blocks))
@@ -330,9 +398,14 @@ def ai_dialogs(items, model="claude-haiku-4-5"):
             continue
         for d in (data.get("dialogs") or []):
             try:
-                res[int(d.get("id"))] = d
+                res[int(d.get("id"))] = _clean_closed(d)
             except Exception:
                 continue
+    if res:
+        try:
+            res = polish(res)
+        except Exception:
+            pass
     return res
 
 
@@ -345,13 +418,16 @@ def ai_summary(stats, issues, model="claude-sonnet-4-6"):
         "Поверни JSON:\n"
         "{\"summary\": \"3-5 рядків простою мовою: що вчора заважало продавати. Без води.\",\n"
         " \"systemic\": [\"проблема, що повторилась у 3+ діалогах\"],\n"
+        " \"agents_plan\": [\"2-3 пункти: чого саме навчити ШІ-агентів, щоб конверсія зросла\"],\n"
+        " \"people_plan\": [\"2-3 пункти: що сказати живим менеджерам або який скрипт переписати\"],\n"
+        " \"delivery_note\": \"що робити з повідомленнями, які не дійшли (якщо такі були)\",\n"
         " \"proposals\": [{\"title\": \"коротка назва правила\", "
         "\"rule\": \"готовий текст правила для наших продавців, 1-3 речення, наказовий тон\", "
         "\"why\": \"на чому ґрунтується — скільки діалогів\", \"examples\": [номери діалогів]}]}\n"
         "Пропонуй максимум 3 правила і тільки те, що видно з даних. Якщо системних проблем немає — "
         "порожній список." % body)
     try:
-        return claude_json(prompt, model=model, max_tokens=1600, system=ai_system(),
+        return claude_json(prompt, model=model, max_tokens=2600, system=ai_system(),
                            source="ШІ-РОП: підсумок дня")
     except Exception as e:
         return {"summary": "Не вдалося зробити підсумок (%s)" % str(e)[:120], "systemic": [], "proposals": []}
@@ -361,15 +437,16 @@ def ai_summary(stats, issues, model="claude-sonnet-4-6"):
 GOOD_CACHE = {}
 
 
-def run_daily(day=None, send_tg=True, ai=True):
+def run_daily(day=None, send_tg=True, ai=True, days=1):
     from .models import DialogReview
     from django.db.models import Sum
     from apps.crm.models import AiUsage
     now = timezone.localtime()
     day = day or (now.date() - timedelta(days=1))
-    start = timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.min.time()))
-    end = start + timedelta(days=1)
-    items = collect(start, end)
+    days = max(1, int(days or 1))
+    end = timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.min.time())) + timedelta(days=1)
+    start = end - timedelta(days=days)
+    items = collect(start, end, limit=150 * days if days > 1 else 150)
     for it in items:
         it["tags"] = check_dialog(it["today"], end)
     bad = [it for it in items if it["tags"]]
@@ -390,10 +467,15 @@ def run_daily(day=None, send_tg=True, ai=True):
             "fix": (d.get("fix") or "")[:600],
             "why": (d.get("why") or "")[:500],
             "existing_rule": (d.get("existing") or "")[:300],
+            "employee": (d.get("employee") or "")[:400],
+            "script": (d.get("script") or "")[:300],
             "missing_in": [x for x in (d.get("missing_in") or []) if x in ("crm", "chatplace")],
             "steps": [str(x)[:220] for x in (d.get("steps") or [])][:4],
             "agents": ags,
             "agent_names": [AGENT_LABEL[a] for a in ags],
+            "when": ("%s — %s" % (_stamp((it.get("today") or it["msgs"])[0]),
+                                   _stamp((it.get("today") or it["msgs"])[-1]))) if (it.get("today") or it["msgs"]) else "",
+            "quote_at": (d.get("quote") or "")[:200],
             "conv_id": it["conv"].id,
             "contact": str(it["conv"].contact)[:60] if it["conv"].contact_id else "",
             "channel": it["conv"].channel.name if it["conv"].channel_id else "",
@@ -406,6 +488,7 @@ def run_daily(day=None, send_tg=True, ai=True):
             "ai_tag": (d.get("tag") or "")[:40],
         })
     stats = day_stats(start, end, items)
+    stats["delivery"] = delivery_stats(start, end)
     summ = ai_summary(stats, issues) if (ai and issues) else {"summary": "Проблемних діалогів не знайдено.",
                                                              "systemic": [], "proposals": []}
     props = []
@@ -414,13 +497,40 @@ def run_daily(day=None, send_tg=True, ai=True):
                       "why": (p.get("why") or "")[:300], "examples": p.get("examples") or [], "status": "new"})
     cost = (AiUsage.objects.filter(created_at__gte=now - timedelta(minutes=30),
                                    source__startswith="ШІ-РОП: ").aggregate(s=Sum("cost_usd")).get("s") or 0)
-    rev = DialogReview.objects.create(kind="daily", period_start=day, period_end=day,
+    rev = DialogReview.objects.create(kind="daily",
+                                      period_start=(day - timedelta(days=days - 1)), period_end=day,
                                       summary=(summ.get("summary") or "")[:4000],
-                                      metrics={"stats": stats, "systemic": (summ.get("systemic") or [])[:6]},
+                                      metrics={"stats": stats, "systemic": (summ.get("systemic") or [])[:6],
+                                               "agents_plan": (summ.get("agents_plan") or [])[:4],
+                                               "people_plan": (summ.get("people_plan") or [])[:4],
+                                               "delivery_note": (summ.get("delivery_note") or "")[:600]},
                                       issues=issues, proposals=props, cost_usd=round(float(cost), 4))
     if send_tg:
         notify_owner(rev)
     return rev
+
+
+def delivery_stats(start, end):
+    """Де наші повідомлення не дійшли до клієнта (Олег 26.09.2026).
+    failed — канал не прийняв (найчастіше Instagram поза вікном 24 год або відмова ChatPlace);
+    window_risk — ми знали, що вікно ось-ось закриється."""
+    from apps.inbox.models import Message
+    rows = list(Message.objects.filter(created_at__gte=start, created_at__lt=end, direction="out",
+                                       internal=False, status__in=BAD_STATUS)
+                .select_related("conversation", "conversation__contact", "conversation__channel")
+                .order_by("-id")[:60])
+    by_channel, by_kind, samples = {}, {}, []
+    for m in rows:
+        ch = m.conversation.channel.name if m.conversation.channel_id else "—"
+        by_channel[ch] = by_channel.get(ch, 0) + 1
+        by_kind[m.status] = by_kind.get(m.status, 0) + 1
+        if len(samples) < 8:
+            samples.append({"conv_id": m.conversation_id, "status": m.status, "channel": ch,
+                            "contact": str(m.conversation.contact)[:40] if m.conversation.contact_id else "",
+                            "text": (m.text or "")[:120],
+                            "kind": "фото/каталог" if ("📷" in (m.text or "") or "/f/" in (m.text or ""))
+                                    else "текст"})
+    return {"total": len(rows), "by_channel": by_channel, "by_kind": by_kind, "samples": samples}
 
 
 def day_stats(start, end, items):

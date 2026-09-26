@@ -996,9 +996,9 @@ class DialogReviewViewSet(viewsets.ReadOnlyModelViewSet):
                 it = KnowledgeItem.objects.create(
                     title=("Правило продажів: %s (%s)" % (target.get("title"), r.period_start.strftime("%d.%m.%Y")))[:200],
                     text=(target.get("rule") or "").strip(),
-                    topic="process", status="approved", kind="rule",
-                    audience=["funnel_agent", "rop_hint", "compose_assist", "analyst", "yulia_web"],
-                    source="ШІ-РОП: нічний розбір %s" % r.period_start)
+                    status="approved", kind="rule", source="reviewer",
+                    source_ref=("ШІ-РОП: нічний розбір %s" % r.period_start)[:120],
+                    audience=["funnel_agent", "rop_hint", "compose_assist", "analyst", "yulia_web"])
                 target["kb_id"] = it.id
             except Exception as e:
                 target["kb_error"] = str(e)[:200]
@@ -1060,9 +1060,9 @@ class DialogReviewViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"ok": True, "kb_id": it["applied"]["kb_id"], "msg": "вже додано"})
         kb = KnowledgeItem.objects.create(
             title=("Правило з розбору %s · чат #%s" % (r.period_start.strftime("%d.%m.%Y"), conv_id))[:200],
-            text=text, topic="process", status="approved", kind="rule",
-            audience=["funnel_agent", "rop_hint", "compose_assist", "analyst", "yulia_web"],
-            source="ШІ-РОП: розбір діалогів %s" % r.period_start)
+            text=text, status="approved", kind="rule", source="reviewer",
+            source_ref=("ШІ-РОП: розбір %s, чат #%s" % (r.period_start, conv_id))[:120],
+            audience=["funnel_agent", "rop_hint", "compose_assist", "analyst", "yulia_web"])
         it["applied"] = {"kb_id": kb.id, "at": _tz.now().isoformat(),
                          "by": request.user.get_full_name() or request.user.username}
         r.issues = issues
@@ -1095,7 +1095,8 @@ class DialogReviewViewSet(viewsets.ReadOnlyModelViewSet):
         """Запустити розбір руками (кнопка на сторінці)."""
         from apps.crm import dialog_review as dr
         weekly = bool(request.data.get("weekly"))
-        rev = dr.run_weekly(send_tg=False) if weekly else dr.run_daily(send_tg=False)
+        days = int(request.data.get("days") or 1)
+        rev = dr.run_weekly(send_tg=False) if weekly else dr.run_daily(send_tg=False, days=days)
         return Response(self._row(rev, full=True))
 
 
