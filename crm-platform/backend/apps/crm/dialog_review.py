@@ -13,6 +13,7 @@
 import difflib
 import json
 import re
+import time
 from datetime import timedelta
 
 from django.utils import timezone
@@ -78,6 +79,31 @@ def check_dialog(msgs, day_end):
     return out
 
 
+# хто писав клієнту: за підписом повідомлення видно, який саме агент помилився
+AGENT_LABEL = {"chatplace": "Юля ChatPlace", "crm": "Продавець CRM", "human": "Менеджер"}
+
+
+def actors(msgs):
+    """Хто вів діалог з нашого боку: Юля ChatPlace (echo «ai_assistant»), продавець CRM
+    («ШІ у каналі …»), живий менеджер. Від цього залежить, кого саме вчимо."""
+    out = []
+    for m in msgs:
+        if m["dir"] != "out" or m["internal"] or not (m["text"] or "").strip():
+            continue
+        who = (m["sender"] or "").strip()
+        if who.startswith("ai_assistant"):
+            kind = "chatplace"
+        elif who.startswith("ШІ у каналі") or who.startswith("CRM"):
+            kind = "crm"
+        elif who and who != "operator":
+            kind = "human"
+        else:
+            continue
+        if kind not in out:
+            out.append(kind)
+    return out
+
+
 def collect(day_start, day_end, limit=150):
     """Діалоги з клієнтами за період: хронологія повідомлень + хто вів."""
     from apps.inbox.models import Conversation, Message
@@ -103,34 +129,202 @@ def _dialog_text(msgs, limit=26):
                      for m in msgs[-limit:] if (m["text"] or "").strip() and not m["internal"])
 
 
-AI_SYSTEM = (
-    "Ти — РОП Wallcov (декоративні покриття). Розбираєш вчорашні переписки продавців — це і люди, "
-    "і наші ШІ-агенти. Пишеш українською, коротко, по суті, без загальних порад типу «будьте уважніші». "
-    "Твоя мета — знайти, що конкретно завадило продажу, і як це виправити одним реченням правила."
+def ai_system():
+    """Персона аналітика = ТОЙ САМИЙ ШІ-РОП, що підказує менеджерам у чаті (єдина роль і єдина
+    модель продажу — golden pattern, заборона вигадувати цифри, робота із запереченнями),
+    плюс завдання саме нічного розбору."""
+    try:
+        from .coach_prompt import COACH_SYSTEM
+        base = COACH_SYSTEM
+    except Exception:
+        base = ""
+    return (base + "\n\n---\n\n## РЕЖИМ: НІЧНИЙ РОЗБІР (26.09.2026)\n"
+            "Зараз ти працюєш у РЕЖИМІ 2 — АНАЛІТИК. Читаєш учорашні переписки (і людей, і наших "
+            "ШІ-агентів) і шукаєш, що конкретно завадило продажу. Звіряєшся з нашою моделлю продажу "
+            "(golden pattern з 11 кроків вище) і з еталонними діалогами, які реально закінчились "
+            "оплатою. Пишеш українською, коротко, без загальних порад типу «будьте уважніші»: "
+            "тільки конкретна причина, цитата і готова краща фраза.")
+
+
+AI_SYSTEM = ""   # сумісність зі старим кодом; справжня персона — в ai_system()
+
+SHORT_SYSTEM = (
+    "Ти — РОП Wallcov (декоративні покриття: мокрий шовк, Галатея, Патера, Вельвет Луна). "
+    "Читаєш переписки продавців — і людей, і наших ШІ-агентів — і шукаєш, що завадило продажу.\n"
+    "НАША МОДЕЛЬ ПРОДАЖУ (звіряйся з нею):\n"
+    "1) один матеріал і одна ціна-якір замість переліку 4 опцій; 2) фото/відео матеріалу обовʼязково; "
+    "3) кваліфікація через РОЗРАХУНКОВІ дані (площа, приміщення), і лише коли клієнт уже готовий; "
+    "4) точна цифра з каталогу — ніколи не вигадана; 5) один чіткий наступний крок і питання в кінці "
+    "КОЖНОГО повідомлення; 6) готовий купити → накладна/реквізити, а не нова кваліфікація; "
+    "7) заперечення → конкретне відпрацювання, не знижка (максимум 10%); "
+    "8) від тригера до оплати у наших кращих діалогах — 20 хв до 3 годин.\n"
+    "ЗАБОРОНЕНО в наших відповідях: прайс-дамп із 3+ цін, повтор тієї самої фрази, «звертайтесь, коли "
+    "визначитесь», «уточню у Олега», вигадані цифри, дублювання посилання на оплату.\n"
+    "Пиши українською, коротко, конкретно: причина, цитата, готова краща фраза. Без порад «будьте уважніші»."
 )
+
+
+IG_BOT = "647e28e9-73fd-4f06-81cc-5970409a7381"
+TT_BOT = "4aab5db8-4efa-46aa-a0bf-56fc20610b35"
+_RULES_CACHE = {"at": 0, "text": ""}
+
+
+def _crm_rules():
+    """Чинні правила продавця CRM: майстер-промт + затверджені правила бази знань."""
+    import re as _re
+    out = []
+    try:
+        from apps.knowledge.seller_prompt import MASTER
+        for line in MASTER.split("\n"):
+            t = line.strip()
+            if t.startswith("•") and len(t) > 25:
+                out.append("  " + t[:150])
+            elif t and t == t.upper() and 8 < len(t) < 80:
+                out.append("· " + t)
+    except Exception:
+        pass
+    try:
+        from apps.knowledge.models import KnowledgeItem
+        for it in (KnowledgeItem.objects.filter(status="approved")
+                   .order_by("-updated_at").values_list("title", flat=True)[:40]):
+            out.append("  • [база знань] %s" % (it or "")[:110])
+    except Exception:
+        pass
+    return "\n".join(out[:90])
+
+
+def _yulia_rules():
+    """Чинні правила Юлі ChatPlace: загальні правила + тематичні (читаємо просто з ChatPlace)."""
+    import re as _re
+    from apps.inbox import chatplace as cp
+    out = []
+    try:
+        rules = (cp._mcp("ai_agent_topic_rules_list", {"botId": IG_BOT}) or {}).get("items") or []
+        for r in rules:
+            out.append("  • [тематичне] %s — %s" % (r.get("name"), (r.get("description") or "")[:110]))
+    except Exception:
+        pass
+    try:
+        st = cp._mcp("ai_agent_status", {"botId": IG_BOT}) or {}
+        gr = st.get("globalRules") or ""
+        for chunk in _re.split(r"\n(?=\d{1,2}[.)] )", gr):
+            t = _re.sub(r"\s+", " ", chunk).strip()
+            if len(t) > 20:
+                out.append("  • " + t[:150])
+    except Exception as e:
+        out.append("  (не вдалося прочитати загальні правила: %s)" % str(e)[:80])
+    return "\n".join(out[:90])
+
+
+def rules_index(ttl=1800):
+    """Скорочений список ЧИННИХ правил обох агентів — щоб аналітик не пропонував те, що вже є."""
+    now = time.time()
+    if _RULES_CACHE["text"] and now - _RULES_CACHE["at"] < ttl:
+        return _RULES_CACHE["text"]
+    text = ("ЧИННІ ПРАВИЛА ПРОДАВЦЯ CRM:\n%s\n\nЧИННІ ПРАВИЛА ЮЛІ CHATPLACE:\n%s"
+            % (_crm_rules(), _yulia_rules()))[:11000]
+    _RULES_CACHE.update({"at": now, "text": text})
+    return text
+
+
+def good_dialogs(days=30, limit=3):
+    """Еталони: діалоги, що закінчились ОПЛАТОЮ — щоб аналітик рівнявся на наш реальний успіх,
+    а не на абстрактну теорію (Олег 26.09.2026: «у нього мають бути дані про якісні діалоги»)."""
+    from apps.crm.models import Payment
+    from apps.inbox.models import Conversation
+    since = timezone.now() - timedelta(days=days)
+    out = []
+    seen = set()
+    for p in (Payment.objects.filter(is_paid=True, created_at__gte=since)
+              .select_related("deal").order_by("-id")[:60]):
+        cid = getattr(p.deal, "contact_id", None)
+        if not cid or cid in seen:
+            continue
+        conv = (Conversation.objects.filter(contact_id=cid).order_by("-last_message_at").first())
+        if conv is None:
+            continue
+        rows = list(conv.messages.filter(internal=False, created_at__lte=p.created_at)
+                    .order_by("-id").values("direction", "text")[:18])[::-1]
+        if len(rows) < 6:
+            continue
+        seen.add(cid)
+        body = "\n".join(("Клієнт: " if r["direction"] == "in" else "Ми: ")
+                          + re.sub(r"\s+", " ", (r["text"] or ""))[:220] for r in rows if (r["text"] or "").strip())
+        out.append("--- ЕТАЛОН (закінчився оплатою %s грн) ---\n%s" % (p.amount, body))
+        if len(out) >= limit:
+            break
+    return "\n\n".join(out)
+
+
+def past_feedback(days=14, limit=12):
+    """Поправки Олега: де він сказав, що розбір був неправильний, і які правила відхилив.
+    Йдуть у промпт, щоб аналітик не повторював ту саму помилку (Олег 26.09.2026)."""
+    from .models import DialogReview
+    since = (timezone.localtime() - timedelta(days=days)).date()
+    lines = []
+    for r in DialogReview.objects.filter(period_start__gte=since).order_by("-id")[:20]:
+        for it in (r.issues or []):
+            fb = it.get("feedback") or {}
+            if fb.get("verdict") == "wrong":
+                lines.append("• Висновок «%s» Олег назвав неправильним: %s"
+                             % ((it.get("problem") or "")[:120], (fb.get("note") or "—")[:200]))
+        for p in (r.proposals or []):
+            if p.get("status") == "declined":
+                lines.append("• Правило «%s» відхилено: %s"
+                             % (p.get("title"), (p.get("note") or "без пояснення")[:200]))
+    lines = lines[:limit]
+    return ("ПОПРАВКИ ВЛАСНИКА (не повторюй цих висновків):\n" + "\n".join(lines)) if lines else ""
 
 
 def ai_dialogs(items, model="claude-haiku-4-5"):
     """Розбір проблемних діалогів пачками. Повертає {conv_id: {...}}."""
     from .ai import claude_json
     res = {}
-    for i in range(0, len(items), 5):
-        chunk = items[i:i + 5]
+    for i in range(0, len(items), 4):
+        chunk = items[i:i + 4]
         blocks = []
         for it in chunk:
-            blocks.append("=== ДІАЛОГ %s (%s, канал %s) ===\nФормальні зауваження: %s\n%s"
+            who = [AGENT_LABEL[a] for a in actors(it.get("today") or it["msgs"])]
+            blocks.append("=== ДІАЛОГ %s (%s, канал %s) ===\nЗ нашого боку писали: %s\n"
+                          "Формальні зауваження: %s\n%s"
                           % (it["conv"].id, str(it["conv"].contact)[:30],
                              it["conv"].channel.name if it["conv"].channel_id else "—",
+                             ", ".join(who) or "невідомо",
                              ", ".join(TAGS.get(t, t) for t, _q in it["tags"]) or "—",
                              _dialog_text(it["msgs"])))
-        prompt = ("Розбери кожен діалог. Для КОЖНОГО поверни JSON-обʼєкт у масиві \"dialogs\":\n"
+        extra = "\n\n".join(x for x in (GOOD_CACHE.get("text") or "", past_feedback()) if x)
+        prompt = ((extra + "\n\n" if extra else "")
+                  + "Розбери кожен діалог. Для КОЖНОГО поверни JSON-обʼєкт у масиві \"dialogs\":\n"
                   "{\"id\": <номер діалогу>, \"problem\": \"що саме завадило продажу, 1 речення\", "
                   "\"quote\": \"наша фраза, після якої стало гірше\", "
                   "\"better\": \"як треба було написати, готовий текст клієнту\", "
+                  "\"why\": \"чому клієнт відреагував саме так — логіка з його боку, 1-2 речення\", "
+                  "\"steps\": [\"2-4 конкретні наступні кроки саме в ЦЬОМУ чаті, по одному рядку, "
+                  "у порядку виконання\"], "
+                  "\"existing\": \"якщо цей випадок УЖЕ покритий чинним правилом — назви його одним рядком; "
+                  "якщо правила немає — порожній рядок\", "
+                  "\"missing_in\": [\"crm\" і/або \"chatplace\" — у кого з агентів цього правила ЩЕ НЕМАЄ; "
+                  "якщо є в обох — порожній список\"], "
+                  "\"fix\": \"ГОТОВЕ правило для агента, 1-2 речення наказовим тоном — саме те, що треба "
+                  "дописати в його інструкцію, щоб такого більше не було\", "
+                  "\"agents\": [\"crm\" і/або \"chatplace\" і/або \"human\" — кого саме вчимо, "
+                  "виходячи з того, хто писав клієнту в цьому діалозі], "
                   "\"tag\": \"коротка категорія 1-3 слова\"}\n"
-                  "Якщо діалог нормальний — problem: \"ок\".\n\n" + "\n\n".join(blocks))
+                  "Якщо діалог нормальний — problem: \"ок\".\n"
+                  "У системному блоці є ЧИННІ правила обох агентів. Спершу перевір, чи випадок уже "
+                  "ними покритий: якщо так — це ПОРУШЕННЯ наявного правила, а не привід вигадувати нове "
+                  "(напиши його в \"existing\"). Нове правило пропонуй лише коли в чинних його справді немає. "
+                  "Наша мета — щоб продавець CRM умів усе те саме, що Юля ChatPlace, і Юлю можна було "
+                  "вимкнути: якщо правило є у Юлі, але немає у продавця CRM — став \"crm\" у missing_in.\n"
+                  "Повідомлення «менеджер узяв ваш запит / ознайомлююсь» — це наше свідоме правило, "
+                  "не вважай його помилкою саме по собі; помилка лише якщо воно пішло ПІСЛЯ змістовної "
+                  "відповіді або повторилось.\n"
+                  "ВАЖЛИВО: ми поступово вчимо ПРОДАВЦЯ CRM, щоб згодом вимкнути Юлю ChatPlace. "
+                  "Тому якщо помилку зробила Юля ChatPlace, а продавець CRM у цьому чаті теж працює — "
+                  "став обох, щоб правило лягло і в нашого агента.\n\n" + "\n\n".join(blocks))
         try:
-            data = claude_json(prompt, model=model, max_tokens=1800, system=AI_SYSTEM, cache=True,
+            system = SHORT_SYSTEM + "\n\n" + rules_index()
+            data = claude_json(prompt, model=model, max_tokens=4000, system=system, cache=True,
                                source="ШІ-РОП: нічний розбір")
         except Exception:
             continue
@@ -157,13 +351,16 @@ def ai_summary(stats, issues, model="claude-sonnet-4-6"):
         "Пропонуй максимум 3 правила і тільки те, що видно з даних. Якщо системних проблем немає — "
         "порожній список." % body)
     try:
-        return claude_json(prompt, model=model, max_tokens=1600, system=AI_SYSTEM,
+        return claude_json(prompt, model=model, max_tokens=1600, system=ai_system(),
                            source="ШІ-РОП: підсумок дня")
     except Exception as e:
         return {"summary": "Не вдалося зробити підсумок (%s)" % str(e)[:120], "systemic": [], "proposals": []}
 
 
 # ── денний розбір ─────────────────────────────────────────────────────────────────────
+GOOD_CACHE = {}
+
+
 def run_daily(day=None, send_tg=True, ai=True):
     from .models import DialogReview
     from django.db.models import Sum
@@ -178,13 +375,25 @@ def run_daily(day=None, send_tg=True, ai=True):
     bad = [it for it in items if it["tags"]]
     bad.sort(key=lambda x: -len(x["tags"]))
     bad = bad[:25]
+    if ai and bad:
+        GOOD_CACHE["text"] = ("ЕТАЛОННІ ДІАЛОГИ НАШОЇ КОМПАНІЇ (на них рівняйся):\n%s" % good_dialogs()) \
+            if good_dialogs() else ""
     ai_rows = ai_dialogs(bad) if (ai and bad) else {}
     issues = []
     for it in bad:
         d = ai_rows.get(it["conv"].id) or {}
         if (d.get("problem") or "").strip().lower() in ("ок", "ok", "нормально"):
             continue
+        seen_actors = actors(it.get("today") or it["msgs"])
+        ags = [a for a in (d.get("agents") or []) if a in AGENT_LABEL] or seen_actors
         issues.append({
+            "fix": (d.get("fix") or "")[:600],
+            "why": (d.get("why") or "")[:500],
+            "existing_rule": (d.get("existing") or "")[:300],
+            "missing_in": [x for x in (d.get("missing_in") or []) if x in ("crm", "chatplace")],
+            "steps": [str(x)[:220] for x in (d.get("steps") or [])][:4],
+            "agents": ags,
+            "agent_names": [AGENT_LABEL[a] for a in ags],
             "conv_id": it["conv"].id,
             "contact": str(it["conv"].contact)[:60] if it["conv"].contact_id else "",
             "channel": it["conv"].channel.name if it["conv"].channel_id else "",
@@ -275,13 +484,57 @@ def ai_week(data, model="claude-sonnet-4-6"):
               "чи спрацювали прийняті правила, на чому сфокусуватись наступного тижня. Наводь цифри.\"}"
               % json.dumps(data, ensure_ascii=False)[:8000])
     try:
-        return claude_json(prompt, model=model, max_tokens=1200, system=AI_SYSTEM,
+        return claude_json(prompt, model=model, max_tokens=1200, system=ai_system(),
                            source="ШІ-РОП: тижневий аудит")
     except Exception as e:
         return {"summary": "Не вдалося зробити підсумок (%s)" % str(e)[:120]}
 
 
 # ── звіт Олегу в Telegram ─────────────────────────────────────────────────────────────
+def ask_about_dialog(rev, conv_id, question):
+    """Менеджер/власник питає ШІ-РОПа, ЧОМУ він так оцінив діалог. Відповідає та сама персона,
+    що робила розбір, і бачить і саму переписку, і свій висновок (Олег 26.09.2026)."""
+    from apps.inbox.models import Conversation
+    from .ai import claude_json
+    conv = Conversation.objects.filter(id=conv_id).first()
+    if conv is None:
+        return {"error": "чат не знайдено"}
+    issue = next((i for i in (rev.issues or []) if int(i.get("conv_id") or 0) == int(conv_id)), {})
+    rows = list(conv.messages.filter(internal=False).order_by("-id")
+                .values("direction", "text")[:40])[::-1]
+    dialog = "\n".join(("Клієнт: " if r["direction"] == "in" else "Ми: ")
+                        + re.sub(r"\s+", " ", (r["text"] or ""))[:300] for r in rows if (r["text"] or "").strip())
+    prev = "\n".join("Питання: %s\nВідповідь: %s" % (q.get("q"), q.get("a")) for q in (issue.get("qa") or [])[-3:])
+    prompt = ("Твій розбір цього діалогу (%s):\nПроблема: %s\nЧому: %s\nЩо треба було написати: %s\n"
+              "Правило для агента: %s\n\nПЕРЕПИСКА:\n%s\n\n%s\nВЛАСНИК ПИТАЄ: %s\n\n"
+              "Відповідай по суті, коротко (до 6 речень), українською. Якщо власник має рацію і твій "
+              "висновок був неправильний — скажи це прямо і сформулюй правильний висновок. "
+              "Поверни JSON {\"answer\": \"...\"}."
+              % (str(conv.contact)[:40] if conv.contact_id else conv.id,
+                 issue.get("problem") or "—", issue.get("why") or "—", issue.get("better") or "—",
+                 issue.get("fix") or "—", dialog[-6000:],
+                 ("ПОПЕРЕДНІ ПИТАННЯ ПО ЦЬОМУ ДІАЛОГУ:\n%s\n" % prev) if prev else "",
+                 (question or "").strip()[:600]))
+    try:
+        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=900, system=ai_system(),
+                        source="ШІ-РОП: питання по розбору")
+        ans = (r.get("answer") or r.get("suggestion") or "").strip()
+    except Exception as e:
+        return {"error": str(e)[:200]}
+    if not ans:
+        return {"error": "порожня відповідь"}
+    issues = list(rev.issues or [])
+    target = next((i for i in issues if int(i.get("conv_id") or 0) == int(conv_id)), None)
+    if target is not None:
+        qa = list(target.get("qa") or [])
+        qa.append({"q": (question or "").strip()[:600], "a": ans[:2000],
+                   "at": timezone.now().isoformat()})
+        target["qa"] = qa[-10:]
+        rev.issues = issues
+        rev.save(update_fields=["issues"])
+    return {"answer": ans}
+
+
 def report_text(rev):
     s = rev.metrics.get("stats") or {}
     if rev.kind == "weekly":

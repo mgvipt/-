@@ -56,6 +56,26 @@ def _manager_wrote_at_all(conv, hours=24):
                                   created_at__gte=timezone.now() - timedelta(hours=hours)).exists()
 
 
+def _anyone_wrote_after(conv, when):
+    """Чи хтось із нашого боку вже відповів на це повідомлення клієнта — менеджер АБО ШІ.
+    26.09.2026: раніше дивились лише на живих менеджерів, тому після відповіді ШІ клієнт
+    отримував ще й «збираю для вас інформацію» — і це виглядало недоречно."""
+    from .models import Message
+    return Message.objects.filter(conversation=conv, direction="out", internal=False,
+                                  created_at__gt=when).exists()
+
+
+def _already_sent_contact(conv, hours):
+    """Одна людина = одне повідомлення на добу, навіть якщо в неї кілька чатів
+    (Instagram + архів ChatPlace тощо)."""
+    from .models import Message
+    if not conv.contact_id:
+        return _already_sent(conv, hours)
+    return Message.objects.filter(conversation__contact_id=conv.contact_id, internal=True,
+                                  text__contains=MARK,
+                                  created_at__gte=timezone.now() - timedelta(hours=hours)).exists()
+
+
 def _manager_wrote_after(conv, when):
     from .models import Message
     return Message.objects.filter(conversation=conv, direction="out", internal=False, sender__isnull=False,
@@ -97,11 +117,11 @@ def candidates(now=None):
         inc = _last_in(conv)
         if inc is None:
             continue                                   # клієнт нічого не писав — нічого й не тримаємо
-        if _manager_wrote_after(conv, inc.created_at):
-            continue                                   # менеджер уже відповів на останнє повідомлення
+        if _anyone_wrote_after(conv, inc.created_at):
+            continue                                   # на останнє повідомлення вже відповіли (менеджер або ШІ)
         if _manager_wrote_at_all(conv):
             continue                                   # менеджер уже в розмові — знайомство недоречне
-        if _already_sent(conv, cfg.per_dialog_hours):
+        if _already_sent_contact(conv, cfg.per_dialog_hours):
             continue
         waited = (timezone.now() - inc.created_at).total_seconds()
         took = _took_at(conv)

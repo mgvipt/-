@@ -987,6 +987,7 @@ class DialogReviewViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "правило не знайдено"}, status=404)
         from django.utils import timezone as _tz
         target["status"] = status_
+        target["note"] = (request.data.get("note") or "").strip()[:600]
         target["decided_at"] = _tz.now().isoformat()
         target["decided_by"] = request.user.get_full_name() or request.user.username
         if status_ == "approved" and not target.get("kb_id"):
@@ -1004,6 +1005,90 @@ class DialogReviewViewSet(viewsets.ReadOnlyModelViewSet):
         r.proposals = props
         r.save(update_fields=["proposals"])
         return Response({"ok": True, "proposal": target})
+
+    @action(detail=True, methods=["get"])
+    def dialog(self, request, pk=None):
+        """Сам діалог просто в цьому вікні — дзеркало переписки (Олег 26.09.2026).
+        Тільки читання, без синхронізації з ChatPlace: це перегляд, а не робота в чаті."""
+        from apps.inbox.models import Conversation, Message
+        r = self.get_object()
+        conv = Conversation.objects.filter(id=request.query_params.get("conv") or 0).first()
+        if conv is None:
+            return Response({"detail": "чат не знайдено"}, status=404)
+        rows = list(Message.objects.filter(conversation=conv)
+                    .order_by("-id").values("id", "direction", "text", "created_at", "internal",
+                                            "sender_name", "attachments")[:120])[::-1]
+        return Response({
+            "conv_id": conv.id,
+            "contact": str(conv.contact) if conv.contact_id else "",
+            "channel": conv.channel.name if conv.channel_id else "",
+            "period": r.period_start,
+            "messages": [{
+                "id": m["id"], "dir": m["direction"], "text": m["text"] or "",
+                "at": m["created_at"], "internal": m["internal"],
+                "who": m["sender_name"] or "", "attachments": m["attachments"] or [],
+            } for m in rows],
+        })
+
+    @action(detail=True, methods=["post"])
+    def ask(self, request, pk=None):
+        """Спитати ШІ-РОПа, чому він так оцінив цей діалог (Олег 26.09.2026)."""
+        from apps.crm import dialog_review as dr
+        r = self.get_object()
+        res = dr.ask_about_dialog(r, int(request.data.get("conv_id") or 0),
+                                  request.data.get("question") or "")
+        if res.get("error"):
+            return Response({"detail": res["error"]}, status=400)
+        return Response(res)
+
+    @action(detail=True, methods=["post"])
+    def apply_fix(self, request, pk=None):
+        """Додати правило з конкретного діалогу в базу знань ПРОДАВЦЯ CRM.
+        Правила Юлі ChatPlace веде Олег сам — для неї повертаємо готовий текст, щоб скопіювати."""
+        from django.utils import timezone as _tz
+        from apps.knowledge.models import KnowledgeItem
+        r = self.get_object()
+        conv_id = int(request.data.get("conv_id") or 0)
+        issues = list(r.issues or [])
+        it = next((i for i in issues if int(i.get("conv_id") or 0) == conv_id), None)
+        if it is None:
+            return Response({"detail": "діалог не знайдено"}, status=404)
+        text = (request.data.get("text") or it.get("fix") or "").strip()
+        if not text:
+            return Response({"detail": "немає тексту правила"}, status=400)
+        if it.get("applied", {}).get("kb_id"):
+            return Response({"ok": True, "kb_id": it["applied"]["kb_id"], "msg": "вже додано"})
+        kb = KnowledgeItem.objects.create(
+            title=("Правило з розбору %s · чат #%s" % (r.period_start.strftime("%d.%m.%Y"), conv_id))[:200],
+            text=text, topic="process", status="approved", kind="rule",
+            audience=["funnel_agent", "rop_hint", "compose_assist", "analyst", "yulia_web"],
+            source="ШІ-РОП: розбір діалогів %s" % r.period_start)
+        it["applied"] = {"kb_id": kb.id, "at": _tz.now().isoformat(),
+                         "by": request.user.get_full_name() or request.user.username}
+        r.issues = issues
+        r.save(update_fields=["issues"])
+        return Response({"ok": True, "kb_id": kb.id})
+
+    @action(detail=True, methods=["post"])
+    def issue_feedback(self, request, pk=None):
+        """«Ти неправильно оцінив діалог» + причина. Ці поправки йдуть у промпт наступних розборів,
+        щоб аналітик не повторював ту саму помилку (Олег 26.09.2026)."""
+        from django.utils import timezone as _tz
+        r = self.get_object()
+        conv_id = int(request.data.get("conv_id") or 0)
+        verdict = (request.data.get("verdict") or "").strip()      # wrong | ok
+        note = (request.data.get("note") or "").strip()[:600]
+        if verdict not in ("wrong", "ok"):
+            return Response({"detail": "verdict: wrong | ok"}, status=400)
+        issues = list(r.issues or [])
+        target = next((i for i in issues if int(i.get("conv_id") or 0) == conv_id), None)
+        if target is None:
+            return Response({"detail": "діалог не знайдено в розборі"}, status=404)
+        target["feedback"] = {"verdict": verdict, "note": note, "at": _tz.now().isoformat(),
+                              "by": request.user.get_full_name() or request.user.username}
+        r.issues = issues
+        r.save(update_fields=["issues"])
+        return Response({"ok": True, "feedback": target["feedback"]})
 
     @action(detail=False, methods=["post"])
     def run(self, request):

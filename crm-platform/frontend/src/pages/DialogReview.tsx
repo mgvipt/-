@@ -10,6 +10,11 @@ type Prop = { n: number; title: string; rule: string; why: string; examples: any
 type Issue = {
   conv_id: number; contact: string; channel: string; who: string;
   tags: string[]; tag_text: string; quotes: string[]; problem: string; better: string; ai_tag: string;
+  fix?: string; agents?: string[]; agent_names?: string[];
+  why?: string; steps?: string[]; qa?: { q: string; a: string; at: string }[];
+  existing_rule?: string; missing_in?: string[];
+  applied?: { kb_id: number; at: string; by: string };
+  feedback?: { verdict: string; note: string };
 };
 type Review = {
   id: number; kind: string; period_start: string; period_end: string; created_at: string;
@@ -56,6 +61,10 @@ export default function DialogReview() {
   const [busy, setBusy] = useState("");
   const [fWho, setFWho] = useState("");
   const [fTag, setFTag] = useState("");
+  const [chat, setChat] = useState<any | null>(null);     // дзеркало переписки в цьому ж вікні
+  const [note, setNote] = useState("");
+  const [ask, setAsk] = useState("");
+  const [asking, setAsking] = useState(false);
 
   async function load(k = kind) {
     const r: any = await api.get(`/api/dialog-reviews/?kind=${k}`);
@@ -74,7 +83,47 @@ export default function DialogReview() {
     if (!open) return;
     setBusy(`${p.n}`);
     try {
-      await api.post(`/api/dialog-reviews/${open.id}/proposal/`, { n: p.n, status });
+      let why = "";
+      if (status === "declined") {
+        why = window.prompt("Чому відхиляєте? Аналітик врахує це в наступних розборах:", "") || "";
+      }
+      await api.post(`/api/dialog-reviews/${open.id}/proposal/`, { n: p.n, status, note: why });
+      const r: any = await api.get(`/api/dialog-reviews/${open.id}/`);
+      setOpen(r);
+    } finally { setBusy(""); }
+  }
+  async function showChat(convId: number) {
+    if (!open) return;
+    setChat({ conv_id: convId, loading: true, messages: [] });
+    setNote("");
+    const r: any = await api.get(`/api/dialog-reviews/${open.id}/dialog/?conv=${convId}`);
+    setChat(r);
+  }
+  async function askRop(convId: number) {
+    if (!open || !ask.trim()) return;
+    setAsking(true);
+    try {
+      const r: any = await api.post(`/api/dialog-reviews/${open.id}/ask/`, { conv_id: convId, question: ask });
+      const fresh: any = await api.get(`/api/dialog-reviews/${open.id}/`);
+      setOpen(fresh);
+      setChat((c: any) => ({ ...c, answer: r.answer, lastQ: ask }));
+      setAsk("");
+    } finally { setAsking(false); }
+  }
+  async function sendFeedback(convId: number, verdict: "wrong" | "ok") {
+    if (!open) return;
+    setBusy("fb");
+    try {
+      await api.post(`/api/dialog-reviews/${open.id}/issue_feedback/`, { conv_id: convId, verdict, note });
+      const r: any = await api.get(`/api/dialog-reviews/${open.id}/`);
+      setOpen(r); setNote("");
+    } finally { setBusy(""); }
+  }
+  async function applyFix(it: Issue) {
+    if (!open) return;
+    setBusy(`fix${it.conv_id}`);
+    try {
+      await api.post(`/api/dialog-reviews/${open.id}/apply_fix/`, { conv_id: it.conv_id });
       const r: any = await api.get(`/api/dialog-reviews/${open.id}/`);
       setOpen(r);
     } finally { setBusy(""); }
@@ -284,13 +333,157 @@ export default function DialogReview() {
                   marginTop: 6, fontSize: 13, color: "#475569", borderLeft: "3px solid #e2e8f0", paddingLeft: 10,
                 }}>«{q}»</div>
               ))}
-              {it.better && (
-                <div style={{ marginTop: 8, fontSize: 13.5, background: "#f0fdf4", borderRadius: 8, padding: "8px 11px" }}>
-                  <b style={{ color: "#15803d" }}>Як треба було: </b>{it.better}
+              {it.why && (
+                <div style={{ marginTop: 6, fontSize: 13.5, color: "#475569" }}>
+                  <b>Чому клієнт так відреагував: </b>{it.why}
                 </div>
               )}
+              {it.better && (
+                <div style={{ marginTop: 8, fontSize: 13.5, background: "#f0fdf4", borderRadius: 8, padding: "8px 11px" }}>
+                  <b style={{ color: "#15803d" }}>Як треба було написати: </b>{it.better}
+                </div>
+              )}
+              {(it.steps || []).length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 13.5, background: "#fff7ed", borderRadius: 8, padding: "8px 11px" }}>
+                  <b style={{ color: "#c2410c" }}>Що зробити в цьому чаті зараз:</b>
+                  <ol style={{ margin: "5px 0 0", paddingLeft: 20, lineHeight: 1.6 }}>
+                    {(it.steps || []).map((x, i) => <li key={i}>{x}</li>)}
+                  </ol>
+                </div>
+              )}
+              {it.fix && (
+                <div style={{
+                  marginTop: 8, fontSize: 13.5, background: "#eff6ff", border: "1px solid #bfdbfe",
+                  borderRadius: 8, padding: "9px 11px",
+                }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 5 }}>
+                    <b style={{ color: "#1d4ed8" }}>
+                      {it.existing_rule ? "Правило вже є — агент його порушив:" : "Що додати агенту:"}
+                    </b>
+                    {(it.agent_names || []).map((a) => (
+                      <span key={a} style={{
+                        fontSize: 11.5, borderRadius: 20, padding: "2px 9px",
+                        background: a === "Юля ChatPlace" ? "#fdf2f8" : a === "Продавець CRM" ? "#ecfdf5" : "#f1f5f9",
+                        color: a === "Юля ChatPlace" ? "#be185d" : a === "Продавець CRM" ? "#047857" : "#334155",
+                      }}>{a}</span>
+                    ))}
+                  </div>
+                  {it.existing_rule && (
+                    <div style={{
+                      fontSize: 13, background: "#fee2e2", color: "#991b1b", borderRadius: 6,
+                      padding: "6px 9px", marginBottom: 6,
+                    }}>
+                      Чинне правило: {it.existing_rule}
+                      {(it.missing_in || []).length > 0
+                        ? ` · бракує: ${(it.missing_in || []).map((x) => x === "crm" ? "продавцю CRM" : "Юлі ChatPlace").join(", ")}`
+                        : " · є в обох агентів — питання виконання, а не правил"}
+                    </div>
+                  )}
+                  <div style={{ lineHeight: 1.5 }}>{it.fix}</div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                    {it.applied?.kb_id ? (
+                      <span style={{ fontSize: 12.5, color: "#15803d" }}>
+                        ✓ додано продавцю CRM — запис бази знань #{it.applied.kb_id}
+                      </span>
+                    ) : (
+                      <button className="btn btn-green" disabled={busy === `fix${it.conv_id}`}
+                        onClick={() => applyFix(it)}>Додати продавцю CRM</button>
+                    )}
+                    {(it.agents || []).includes("chatplace") && (
+                      <button className="btn" onClick={() => {
+                        navigator.clipboard?.writeText(it.fix || "");
+                        window.alert("Скопійовано — вставте в правила Юлі ChatPlace");
+                      }}>Скопіювати для Юлі ChatPlace</button>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button className="btn" onClick={() => showChat(it.conv_id)}>💬 Показати діалог</button>
+                {it.feedback?.verdict === "wrong" && (
+                  <span style={{ fontSize: 12, color: "#b45309" }}>
+                    ✎ ви позначили розбір неправильним{it.feedback?.note ? `: ${it.feedback.note}` : ""}
+                  </span>
+                )}
+                {it.feedback?.verdict === "ok" && (
+                  <span style={{ fontSize: 12, color: "#15803d" }}>✓ розбір підтверджено</span>
+                )}
+              </div>
             </div>
           ))}
+        </div>
+      )}
+      {chat && (
+        <div onClick={() => setChat(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.35)", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute", top: 0, right: 0, bottom: 0, width: "min(460px, 100%)", background: "#f8fafc",
+              display: "flex", flexDirection: "column", boxShadow: "-4px 0 24px rgba(0,0,0,.18)",
+            }}>
+            <div style={{
+              padding: "12px 14px", background: "#fff", borderBottom: "1px solid #e2e8f0",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <div style={{ fontWeight: 700 }}>{chat.contact || `Чат #${chat.conv_id}`}</div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>{chat.channel}</div>
+              <a href={`/inbox?c=${chat.conv_id}`} target="_blank" rel="noreferrer"
+                style={{ marginLeft: "auto", fontSize: 13 }}>відкрити чат ↗</a>
+              <button className="btn" onClick={() => setChat(null)}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              {chat.loading && <div style={{ color: "#64748b" }}>Завантажую переписку…</div>}
+              {(chat.messages || []).map((m: any) => (
+                <div key={m.id} style={{ display: "flex", justifyContent: m.dir === "in" ? "flex-start" : "flex-end" }}>
+                  <div style={{
+                    maxWidth: "82%", padding: "8px 11px", borderRadius: 12, fontSize: 13.5, lineHeight: 1.45,
+                    whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    background: m.internal ? "#fffbeb" : m.dir === "in" ? "#fff" : "#e0f2fe",
+                    border: m.internal ? "1px solid #fde68a" : "1px solid #e2e8f0",
+                    color: m.internal ? "#92400e" : "#0f172a",
+                  }}>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 3 }}>
+                      {m.internal ? "службова нотатка" : m.dir === "in" ? "клієнт" : (m.who || "ми")}
+                      {" · "}{new Date(m.at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ borderTop: "1px solid #e2e8f0", background: "#fff", padding: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>Спитати ШІ-РОПа</div>
+              {(issues.find((x) => x.conv_id === chat.conv_id)?.qa || []).map((qa, i) => (
+                <div key={i} style={{ marginBottom: 8, fontSize: 13, lineHeight: 1.5 }}>
+                  <div style={{ color: "#64748b" }}>— {qa.q}</div>
+                  <div style={{ background: "#eef2ff", borderRadius: 8, padding: "7px 10px", marginTop: 3 }}>{qa.a}</div>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                <input value={ask} onChange={(e) => setAsk(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void askRop(chat.conv_id); }}
+                  placeholder="Чому ти вважаєш, що тут помилка?"
+                  style={{ flex: 1, borderRadius: 8, border: "1px solid #cbd5e1", padding: "8px 10px", fontSize: 13 }} />
+                <button className="btn" disabled={asking || !ask.trim()} onClick={() => askRop(chat.conv_id)}>
+                  {asking ? "…" : "Спитати"}
+                </button>
+              </div>
+              <div style={{ fontSize: 12.5, color: "#64748b", marginBottom: 6 }}>
+                Якщо ШІ-РОП оцінив цей діалог неправильно — напишіть чому, він врахує це в наступних розборах
+              </div>
+              <textarea value={note} onChange={(e) => setNote(e.target.value)}
+                placeholder="Напр.: клієнт сам просив не писати, тут усе зроблено правильно"
+                style={{ width: "100%", minHeight: 54, borderRadius: 8, border: "1px solid #cbd5e1", padding: 8, fontSize: 13 }} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn" disabled={busy === "fb"} onClick={() => sendFeedback(chat.conv_id, "wrong")}>
+                  Неправильно оцінив
+                </button>
+                <button className="btn btn-green" disabled={busy === "fb"} onClick={() => sendFeedback(chat.conv_id, "ok")}>
+                  Розбір правильний
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
