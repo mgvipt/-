@@ -206,6 +206,52 @@ def effect_photos(material, code=None, limit=3, prefer=""):
     return out[:limit]
 
 
+_LIGHT_CACHE = {}
+
+
+def _brightness(item):
+    """Яскравість центру фото (0-255). Рахуємо раз і памʼятаємо — файли не міняються."""
+    import io
+    if item.id in _LIGHT_CACHE:
+        return _LIGHT_CACHE[item.id]
+    val = None
+    try:
+        from PIL import Image
+        sl = item.preview_file or item.file
+        if sl is not None:
+            im = Image.open(io.BytesIO(bytes(sl.data))).convert("RGB")
+            w, h = im.size
+            im = im.crop((w // 4, h // 4, w * 3 // 4, h * 3 // 4)).resize((32, 32))
+            px = list(im.getdata())
+            val = sum(sum(p) for p in px) / (3.0 * len(px))
+    except Exception:
+        val = None
+    _LIGHT_CACHE[item.id] = val
+    return val
+
+
+def light_photos(material, limit=2, prefer=""):
+    """Найсвітліші реальні фото матеріалу — так виглядає БАЗОВИЙ колір, без тонування
+    (Олег 26.09.2026: «255 грн — це базовий світлий, покажи як він виглядає»)."""
+    rows = []
+    for it in _items():
+        if it.kind != "image" or is_swatch(it):
+            continue
+        if "реальне фото" not in (it.tags or ""):
+            continue
+        name = "%s %s" % (it.material or "", it.title or "")
+        if material and material.lower() not in name.lower() and (it.material or "") != material:
+            continue
+        if prefer and prefer.lower() not in name.lower():
+            continue
+        b = _brightness(it)
+        if b is None:
+            continue
+        rows.append((b, it))
+    rows.sort(key=lambda r: -r[0])
+    return [it for _b, it in rows[:limit]]
+
+
 def file_url(item):
     """Публічне посилання на файл — те саме, що бачить клієнт у чаті."""
     if item.public_url:

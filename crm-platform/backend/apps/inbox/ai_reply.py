@@ -268,6 +268,52 @@ def _maybe_effect_photos(conv, text):
         _note(conv, "%s: не вдалося надіслати фото ефектів (%s)." % (NOTE_PREFIX, str(e)[:150]))
 
 
+BASE_COLOR_RX = re.compile(
+    r"базов\w*\s+(?:кол|світл|варіант|відтін|цвет)|у\s+базов|в\s+базов|без\s+тонуванн|"
+    r"базов\w*\s+—|базовому\s+кольор", re.I)
+
+
+def _maybe_base_photos(conv, text):
+    """Мова про базовий (нетонований) колір — CRM показує, як ця база виглядає наживо.
+    26.09.2026 (Олег, діалог з Олесею): клієнт памʼятає ціну «від 255» і не розуміє, звідки 430.
+    Пояснення без фото не працює — база має бути видно: світла, майже біла, з легким підтоном."""
+    from .models import Message
+    from .showcase import file_url, light_photos
+    try:
+        if not BASE_COLOR_RX.search(text or ""):
+            return
+        mark = "фото базового кольору"
+        if Message.objects.filter(conversation=conv, internal=True, text__contains=mark).exists():
+            return
+        msgs = [m.text for m in conv.messages.filter(internal=False).order_by("-id")[:12]]
+        from apps.knowledge.volume_calc import find_material, short_name
+        mat = find_material(msgs, text)
+        if not mat:
+            return
+        from apps.warehouse.models import Product
+        pname = Product.objects.filter(id=mat[0]).values_list("name", flat=True).first() or ""
+        want = short_name(pname)
+        rows = light_photos(want.split()[0] if want else "", limit=2)
+        if len(rows) < 1:
+            return
+        atts = []
+        lines = ["Так базовий колір виглядає наживо 👇"]
+        for it in rows:
+            url = file_url(it)
+            if not url:
+                continue
+            lines.append(url)
+            atts.append({"type": "image", "url": url, "name": it.title[:60], "library_asset_id": it.id,
+                         "color_code": it.color_code})
+        if not atts:
+            return
+        msg = _send(conv, "\n\n".join(lines))
+        Message.objects.filter(id=msg.id).update(attachments=atts)
+        _note(conv, "%s: надіслав %s (%s)." % (NOTE_PREFIX, mark, ", ".join(a["name"] for a in atts)))
+    except Exception as e:
+        _note(conv, "%s: не вдалося надіслати фото базового кольору (%s)." % (NOTE_PREFIX, str(e)[:150]))
+
+
 def _requisites_text():
     """Затверджений запис бази знань з реквізитами ФОП (редагується в AI ЦЕНТРІ)."""
     from apps.knowledge.models import KnowledgeItem
@@ -512,6 +558,7 @@ def reply_now(conv_id):
     # 23.09.2026 (Олег): «якщо мова про вибір кольору — спершу кілька фото, як це виглядає в інтерʼєрі,
     # і вже потім посилання на каталог матеріалу» — щоб у клієнта одразу була презентація.
     _maybe_effect_photos(conv, text)
+    _maybe_base_photos(conv, text)
     try:
         msg = send_message(conv, text)
         Message.objects.filter(id=msg.id).update(sender_name="%s · %s" % (NOTE_PREFIX, conv.channel.name))
@@ -602,7 +649,7 @@ def _make_volume_offer(conv, calc, order):
               "посилання на оплату НЕ надсилаю." % NOTE_PREFIX)
         t = None
     try:
-        res = make_offer(deal, items, send_pay=bool(t) or not tint)
+        res = make_offer(deal, items, send_pay=bool(t) or not tint, as_invoice=True)
     except Exception as e:
         _note(conv, "%s: не вдалося оформити обʼєм (%s) — зробіть вручну." % (NOTE_PREFIX, str(e)[:200]))
         return
@@ -625,8 +672,9 @@ def _make_volume_offer(conv, calc, order):
                          % (t["total"], calc.get("color") or "—", t["service"], t["ml"]))
         except Exception as e:
             tnote = " Тонування не додано (%s) — додайте вручну." % str(e)[:120]
-    _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, прорахунок і посилання на оплату %s надіслано.%s%s"
-          % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), res.get("url") or "—", tnote, miss))
+    _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, надіслав накладну %s (оплата %s).%s%s"
+          % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), res.get("doc_url") or "—",
+             res.get("url") or "—", tnote, miss))
 
 
 MAX_AUTO_ORDER = 2000        # ₴ — вище цієї суми оформлює менеджер

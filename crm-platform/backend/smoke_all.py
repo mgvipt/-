@@ -25,6 +25,8 @@ HOST = "crm.wallcovdec.com.ua"
 
 # (назва, роль, url, допустимі статуси, обов'язкові ключі верхнього рівня)
 CHECKS = [
+    # 26.09.2026 (Олег): тара входить у розрахунок обʼєму; агент надсилає накладну посиланням
+    ("Кольори: підбір RAL/NCS", "owner", "/api/knowledge/colors/?q=RAL%201013", {200}, ["found"]),
     ("Інструкції: бібліотека менеджера", "manager", "/api/content-library/instructions/", {200}, ["items"]),
     ("Контент-ліди: аналітика власника", "owner", "/api/content-library/audience/", {200}, ["total", "events"]),
     ("Інструкції: неопублікована закрита", "owner", "/instructions/not-published/", {404}, []),

@@ -117,12 +117,13 @@ def estimate(material_id, base, area):
                       "role": "декоративний матеріал" if i == 0 else ROLE.get(p.id, "ґрунт"),
                       "price": Decimal(p.price), "total": (q * Decimal(p.price)).quantize(Decimal("0.01")),
                       "consumption": cons, "density": p.density_kg_l, "is_material": i == 0})
-    total = sum((l["total"] for l in lines), Decimal("0"))
+    taras = tara_lines(lines)
+    total = sum((l["total"] for l in lines + taras), Decimal("0"))
     mat = next((l for l in lines if l["is_material"]), None)
     colors = COLORS_BY_ID.get(material_id, COLORS.get(base, ""))
     # base потрібен для тонування (фактурні рахуються інакше, ніж тонкошарові)
     return {"area": area, "material_id": material_id, "base": base, "lines": lines, "missing": missing,
-            "total": total, "material": mat, "ok": bool(mat), "colors": colors}
+            "tara_lines": taras, "total": total, "material": mat, "ok": bool(mat), "colors": colors}
 
 
 def short_name(name):
@@ -134,17 +135,19 @@ def prompt_block(calc):
     """Текст для продавця: точні цифри, які він називає клієнту (сам не рахує)."""
     if not calc or not calc.get("ok"):
         return ""
+    taras = calc.get("tara_lines") or []
     rows = ["• %s (%s) — %s %s × %s грн = %s грн" % (l["short"], l.get("role", ""), _g(l["qty"]), l["unit"],
                                                      _g(l["price"]), _g(l["total"]))
-            for l in calc["lines"]]
+            for l in list(calc["lines"]) + list(taras)]
     mat = calc["material"]
+    tara_total = sum((l["total"] for l in taras), Decimal("0"))
     out = ("РОЗРАХУНОК CRM на %s м² (рахувала CRM з карток каталогу — цифри точні, сам нічого не перераховуй):\n%s\n"
            "Разом: %s грн (≈ %s грн за 1 м² з усіма шарами). Лише декоративний матеріал: %s грн. "
-           "Ґрунти й основа разом: %s грн.\n"
+           "Ґрунти й основа разом: %s грн. Тара під розлив: %s грн.\n"
            "Жодних інших сум не складай і не рахуй — називай лише цифри з цього блоку.\n"
            "Захисного покриття в розрахунку НЕМАЄ — не називай ґрунти «захистом»."
            % (_g(calc["area"]), "\n".join(rows), _g(calc["total"]), _g(calc["total"] / Decimal(str(calc["area"]))),
-              _g(mat["total"]), _g(calc["total"] - mat["total"])))
+              _g(mat["total"]), _g(calc["total"] - mat["total"] - tara_total), _g(tara_total)))
     t = calc.get("tint") or tint_estimate(calc, None)
     if t and not t["need_color"]:
         out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг, тара: %s): послуга %s грн + колорант %s мл × 6 грн = %s грн. "
@@ -183,8 +186,10 @@ TINT_MIN_KG = Decimal("5")
 # на 250 г матеріалу. На 1 кг множимо на 4: «03-1» → 4 мл/кг, «03-20» → 80 мл/кг, «03-05» (це 0,5) → 2 мл/кг.
 TONER_UAH_ML = Decimal("6")
 ML_PER_250G_TO_KG = Decimal("4")
+TARA_FALLBACK_DENSITY = Decimal("1.3")   # середня щільність наших матеріалів, поки в картці немає своєї
 TARA_KG = Decimal("5")                # запасний варіант, якщо в картці немає щільності
 TARA_RX = re.compile(r"тара\s*([\d.,]+)\s*(?:л\b|л\.|$|·)", re.I)   # «Тара 3.4л», «ТАРА 2,2»
+TARA_SKIP_RX = re.compile(r"шприц|флакон|мите\s*відро", re.I)   # це не тара під розлив
 TINT_PRODUCT = 1311                   # картка «Послуга тонування» (ціну ставить менеджер)
 
 # Код кольору з бібліотеки CRM: «FBK16-1,5», «CSK 01-21», «MSK03-5», «SLK12-0,1» —
@@ -274,22 +279,76 @@ def tara_sizes():
     return sorted(out)
 
 
-def tara_for(kg, density, sizes=None):
-    """Скільки тар і яких треба на цю вагу: літри = вага ÷ щільність, беремо найменшу тару, в яку влазить.
-    Без щільності в картці рахуємо запасним способом — одна тара на кожні 5 кг."""
+def tara_products():
+    """Картки тари з каталогу: {обʼєм у літрах: картка}. Лише нова тара — без шприців, флаконів
+    і митих відер (менеджери у справжніх сделках ставлять саму тару: ТАРА 2,2, Тара 3.4л, 5,5л…)."""
+    from apps.warehouse.models import Product
+    out = {}
+    for p in Product.objects.filter(is_active=True, name__istartswith="тара").order_by("id"):
+        if TARA_SKIP_RX.search(p.name or "") or not p.price or p.price <= 0:
+            continue
+        m = TARA_RX.search(p.name or "")
+        if not m:
+            continue
+        try:
+            v = Decimal(m.group(1).replace(",", "."))
+        except Exception:
+            continue
+        if v > 0:
+            out.setdefault(v, p)
+    return out
+
+
+def tara_pick(kg, density, sizes=None):
+    """(скільки тар, обʼєм однієї тари в літрах, чи рахували по щільності)."""
     kg = Decimal(str(kg))
     if not density or Decimal(str(density)) <= 0:
-        return int(math.ceil(kg / TARA_KG)) or 1, "", False
+        return int(math.ceil(kg / TARA_KG)) or 1, None, False
     litres = (kg / Decimal(str(density))).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
     sizes = sizes if sizes is not None else tara_sizes()
     if not sizes:
-        return int(math.ceil(kg / TARA_KG)) or 1, "", False
+        return int(math.ceil(kg / TARA_KG)) or 1, None, False
     for v in sizes:
         if litres <= v:
-            return 1, "%s л" % _g(v), True
+            return 1, v, True
     big = sizes[-1]
-    n = int(math.ceil(litres / big)) or 1
-    return n, "%s × %s л" % (n, _g(big)), True
+    return int(math.ceil(litres / big)) or 1, big, True
+
+
+def tara_for(kg, density, sizes=None):
+    """Скільки тар і яких треба на цю вагу: літри = вага ÷ щільність, беремо найменшу тару, в яку влазить.
+    Без щільності в картці рахуємо запасним способом — одна тара на кожні 5 кг."""
+    n, litres, ok = tara_pick(kg, density, sizes)
+    if not ok or litres is None:
+        return n, "", False
+    return n, ("%s л" % _g(litres)) if n == 1 else ("%s × %s л" % (n, _g(litres))), True
+
+
+def tara_lines(lines):
+    """Тара під розлив — окремі позиції в накладну (Олег 26.09.2026: «тару ти не додав»).
+    На кожну позицію в кг/л беремо найменшу тару з каталогу, в яку влазить обʼєм."""
+    prods = tara_products()
+    if not prods:
+        return []
+    sizes = sorted(prods)
+    agg = {}
+    for l in tinted_lines({"lines": lines}):
+        dens = l.get("density")
+        if not dens or Decimal(str(dens)) <= 0:
+            dens = TARA_FALLBACK_DENSITY   # щільності ще немає в картці — беремо середню по наших матеріалах
+        n, litres, ok = tara_pick(l["qty"], dens, sizes)
+        if not ok or litres not in prods:
+            continue
+        agg[litres] = agg.get(litres, 0) + n
+    out = []
+    for litres in sorted(agg):
+        p = prods[litres]
+        q = Decimal(agg[litres])
+        out.append({"product_id": p.id, "name": p.name, "short": (p.name or "").strip(), "qty": q,
+                    "unit": p.unit or "шт", "role": "тара під розлив", "price": Decimal(p.price),
+                    "total": (q * Decimal(p.price)).quantize(Decimal("0.01")),
+                    "consumption": None, "density": None, "is_material": False, "is_tara": True})
+    return out
 
 
 def tinted_lines(calc):

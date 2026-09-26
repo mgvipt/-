@@ -1013,10 +1013,13 @@ def send_requisites(deal, conv=None, user=None, sender_name=""):
     return {"ok": sent, "amount": amount, "text": text}
 
 
-def make_offer(deal, items_spec, user=None, send_pay=True, replace=False):
+def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_invoice=False):
     """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату».
     replace=True (26.09.2026, Олег): клієнт передумав щодо комплектації («можна без дощечки») —
-    перескладаємо ТУ САМУ сделку, якщо по ній ще немає оплати. З оплатою нічого не міняємо."""
+    перескладаємо ТУ САМУ сделку, якщо по ній ще немає оплати. З оплатою нічого не міняємо.
+    as_invoice=True (26.09.2026, Олег): «не потрібно скидати все текстом, а просто посилання, і в
+    накладній уже буде все прописано» — замість довгого прорахунку й окремого повідомлення з оплатою
+    клієнт отримує ОДНЕ посилання на накладну: склад замовлення, сума, реквізити і кнопка оплати."""
     from django.conf import settings as _s
     from apps.inbox.models import Conversation
     from apps.inbox.services import send_message
@@ -1055,7 +1058,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True, replace=False):
     quote = "\U0001f9fe \u0412\u0430\u0448 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a:\n" + "\n".join(lines) + ("\n\n\u0420\u0430\u0437\u043e\u043c \u0434\u043e \u0441\u043f\u043b\u0430\u0442\u0438: %s \u0433\u0440\u043d" % _g(total))
     text_quote = "\u041f\u0456\u0434\u0433\u043e\u0442\u0443\u0432\u0430\u043b\u0438 \u0434\u043b\u044f \u0432\u0430\u0441 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a \U0001f60a\n\n" + quote
     sent_q = False
-    if conv:
+    if conv and not as_invoice:
         try:
             send_message(conv, text_quote, user=user); sent_q = True
         except Exception:
@@ -1080,14 +1083,37 @@ def make_offer(deal, items_spec, user=None, send_pay=True, replace=False):
             PayLink.objects.create(code=code, deal=deal, target=full)
             url = "%s/p/%s/" % (base, code)
             paytext = compact_payment(url, _g(total))
-            if conv:
+            if conv and not as_invoice:
                 try:
                     send_message(conv, paytext, user=user); sent_p = True
                 except Exception:
                     pass
             _advance_deal_stage(deal, 2, "\u0430\u0432\u0442\u043e: \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f \u043d\u0430 \u043e\u043f\u043b\u0430\u0442\u0443")
             log_activity("deal", deal.id, "AI: \u043e\u043f\u043b\u0430\u0442\u0430", "%s \u0433\u0440\u043d; %s" % (total, url), user, "AI-\u0430\u0433\u0435\u043d\u0442")
-    return {"ok": True, "added": added, "missing": missing, "amount": str(total), "sent_quote": sent_q, "sent_pay": sent_p, "url": url}
+    doc_url = ""
+    if as_invoice:
+        # накладну збирає сервер (apps/crm/invoice.py) — той самий документ, що й у менеджера
+        try:
+            from .invoice import invoice_link
+            doc_url = invoice_link(deal, pay_url=url)
+            if conv:
+                txt = ("Зібрала все у накладну — там склад замовлення, сума й реквізити:\n%s" % doc_url)
+                if url:
+                    txt += "\n\nОплатити картою можна прямо з неї 💳"
+                send_message(conv, txt, user=user)
+                sent_q = True
+                sent_p = bool(url)
+        except Exception:
+            doc_url = ""
+            if conv and not sent_q:      # накладна не вийшла — щоб клієнт не лишився без відповіді
+                try:
+                    send_message(conv, text_quote, user=user); sent_q = True
+                    if url:
+                        send_message(conv, compact_payment(url, _g(total)), user=user); sent_p = True
+                except Exception:
+                    pass
+    return {"ok": True, "added": added, "missing": missing, "amount": str(total), "sent_quote": sent_q,
+            "sent_pay": sent_p, "url": url, "doc_url": doc_url}
 
 
 def _issue_checkbox_for_deal(deal, user=None, notify=True):

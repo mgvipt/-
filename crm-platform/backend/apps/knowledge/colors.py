@@ -164,6 +164,37 @@ def refs_for(lab, limit=3, system=None):
     return rows[:limit]
 
 
+_FAMILY_RX = re.compile(r"^(.*?)-([\d.,]+)$")
+
+
+def _dose(code):
+    m = _FAMILY_RX.match((code or "").strip())
+    if not m:
+        return None
+    try:
+        return float(m.group(2).replace(",", "."))
+    except Exception:
+        return None
+
+
+def family(code, material=None, limit=10):
+    """Сходинки насиченості того самого кольору (Олег 26.09.2026: «мені здається колір світліше,
+    там одиничка може бути»). Друга частина коду — мл колоранта на 250 г: той самий префікс = той самий
+    відтінок, менша цифра = світліше. Фото завжди темніше за реальну стіну, тому менеджер має бачити
+    весь рядок, а не одну відповідь."""
+    from .models import SwatchColor
+    m = _FAMILY_RX.match((code or "").strip())
+    if not m:
+        return []
+    qs = SwatchColor.objects.filter(color_code__istartswith=m.group(1) + "-")
+    if material:
+        qs = qs.filter(material=material)
+    rows = [{"item_id": s.item_id, "material": s.material, "code": s.color_code, "hex": s.hex,
+             "lab_l": round(s.lab_l, 1), "dose": _dose(s.color_code)} for s in qs]
+    rows.sort(key=lambda r: -(r["lab_l"] or 0))
+    return rows[:limit]
+
+
 def by_our_code(code):
     """Наш образок за кодом кольору (FBK16-1,5 тощо)."""
     from .models import SwatchColor
@@ -193,5 +224,11 @@ def prompt_block(text, limit=3):
             lines.append("  (наших образків ще немає в базі)")
         for r in rows:
             lines.append("  • %s %s — збіг %s" % (r["material"], r["code"], r["level"]))
+        if rows:
+            fam = [x for x in family(rows[0]["code"], rows[0]["material"]) if x["code"] != rows[0]["code"]]
+            if fam:
+                lines.append("  Той самий відтінок, інша насиченість (цифра після дефіса = мл колоранта "
+                             "на 250 г, менша = світліше): %s"
+                             % ", ".join("%s" % x["code"] for x in fam))
     lines.append(DISCLAIMER)
     return "\n".join(lines)
