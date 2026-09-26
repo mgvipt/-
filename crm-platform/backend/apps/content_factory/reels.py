@@ -272,7 +272,11 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
     from .styles import drawtext, font_file
     from .platform_rules import SAFE
     z = SAFE.get(platform) or SAFE["instagram"]
-    width = max(8, int((1080 - z["left"] - z["right"] - 40) / ((style.size if style else 68) * 0.56)))
+    # 27.09: ширина символу залежить від шрифту — жирні й ВЕЛИКІ ЛІТЕРИ ширші; інакше текст вилазив за кадр (скарга Олега)
+    avail = 1080 - z["left"] - z["right"] - 40
+    size0 = style.size if style else 68
+    k = 0.56 + (0.14 if style and style.upper else 0) + (0.06 if style and str(style.weight) in ("Bold", "ExtraBold", "Black") else 0)
+    width = max(8, int(avail / (size0 * k)))
     label = ""
     if blog is not None and blog.label_ai:
         lf = os.path.join(folder, "label.txt")
@@ -288,7 +292,11 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
         tf = os.path.join(folder, f"t{n}.txt")
         with open(tf, "w") as f:
             text = b["text"].upper() if style and style.upper else b["text"]
-            f.write(_wrap(text, width))
+            wrapped = _wrap(text, width)
+            f.write(wrapped)
+        longest = max((len(x) for x in wrapped.split("\n")), default=1)
+        fit = int(avail / max(1, longest * k))  # довге слово не переноситься — зменшуємо шрифт саме цього кадру
+        fsize = min(size0, max(28, fit))
         out = os.path.join(folder, f"seg{n}.mp4")
         secs = f"{float(b['seconds']):.2f}"
         fx = b.get("fx") or {}
@@ -299,14 +307,14 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
             with open(img, "wb") as f:
                 f.write(bytes(link.data))
             vf = ("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,"
-                  + motion + drawtext(style, tf, platform) + ("" if b.get("ai") in REAL_KINDS else label))
+                  + motion + drawtext(style, tf, platform, size=fsize) + ("" if b.get("ai") in REAL_KINDS else label))
             _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-framerate", "30", "-t", secs, "-i", img,
                   "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
         else:
             sc = VideoScene.objects.select_related("asset").get(pk=b["scene_id"])
             src = fetch_original(sc.asset, folder)
             start = sc.start + float(b.get("offset") or 0)
-            vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30," + motion + drawtext(style, tf, platform)
+            vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30," + motion + drawtext(style, tf, platform, size=fsize)
             _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{start:.2f}", "-i", src, "-t", secs,
                   "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
         segs.append(out)
@@ -335,7 +343,20 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
         _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", joined])
     final = os.path.join(folder, "reel.mp4")
     vo = [(n, b["vo_id"]) for n, b in enumerate(p["beats"]) if b.get("vo_id")]
-    if vo:  # озвучка: кожна репліка стартує з початку свого кадру
+    if p.get("vo_whole"):  # 27.09: одна розмовна озвучка на весь ролик поверх кадрів
+        path = os.path.join(folder, "vo_whole.mp3")
+        with open(path, "wb") as f:
+            f.write(bytes(SharedLink.objects.get(pk=p["vo_whole"]).data))
+        probe = lambda x: float(_run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", x]).stdout.strip() or 0)
+        ad, vd = probe(path), probe(joined)
+        if ad + 0.45 > vd:  # голос довший за кадри — останній кадр трохи довше стоїть
+            longer = os.path.join(folder, "joined_long.mp4")
+            _run(["ffmpeg", "-y", "-loglevel", "error", "-i", joined, "-vf", f"tpad=stop_mode=clone:stop_duration={ad + 0.5 - vd:.2f}",
+                  "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", longer])
+            joined = longer
+        _run(["ffmpeg", "-y", "-loglevel", "error", "-i", joined, "-i", path, "-filter_complex", "[1:a]adelay=150|150,aresample=44100,apad[aout]",
+              "-map", "0:v", "-map", "[aout]", "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", final])
+    elif vo:  # озвучка: кожна репліка стартує з початку свого кадру
         starts, acc = [], 0.0
         for n, b in enumerate(p["beats"]):
             starts.append(acc)
@@ -534,6 +555,15 @@ def fetch_ref_image(url):
     return data
 
 
+# 27.09: заголовок обовʼязковий + розмовна мова (правила з розбору нашого Instagram — content_rules.py)
+from .content_rules import HEADLINE_RULE as _HEADLINE, VOICE_RULES as _VOICE  # noqa: E402
+_HEAD_TASK = ("\n\nПЕРШИЙ КАДР (beats[0].text) — це ЗАГОЛОВОК рилса одного з типів нижче, 3–7 слів, не нейтральний опис.\n"
+              + _HEADLINE + "\nТексти кадрів і підпис — розмовно:\n" + _VOICE)
+PLAN_SYSTEM += _HEAD_TASK
+PLAN_TASK_BLOG += _HEAD_TASK
+AI_PLAN_TASK += _HEAD_TASK
+
+
 ART_DIRECTOR = """Ти — арт-директор інтерʼєрної зйомки для Instagram і TikTok. Склади опис ОДНОГО вертикального кадру 9:16 англійською
 для генератора гіперреалістичних зображень.
 Матеріал декоративної стіни: {material} (саму фактуру генератор візьме з фото-зразка — не описуй візерунок вигадано).
@@ -653,10 +683,54 @@ def backfill_thumbs(material, limit=200):
     return done
 
 
+NARRATION = """Напиши ОДНУ суцільну озвучку за кадром для вертикального ролика ~{sec} с. Це жива розмова, як подруга з досвідом
+ремонту розповідає, — а не окремі фрази під кожен кадр. Речення перетікають одне в одне.
+Кадри по черзі (текст на екрані): {beats}
+Задум: {topic}. Підпис під роликом: {caption}
+- Довжина {words} слів (±10%) — щоб голос ішов на весь ролик.
+- Не читай дослівно тексти з екрану — доповнюй їх; перше речення б'є одразу, без вступу.
+- Факти й цифри — лише ті, що є вище. В кінці — один заклик з підпису.
+{rules}
+Поверни ЛИШЕ JSON: {{"text":"..."}}"""
+
+
+def write_narration(reel):
+    """Суцільна розмовна озвучка на весь рилс (Haiku ≈$0.002). Зберігається в brief.narration — власник може правити."""
+    from apps.crm.ai import claude_json
+    from .content_rules import VOICE_RULES
+    sec = sum(float(b.get("seconds") or 0) for b in reel.beats) or 14
+    r = claude_json(NARRATION.format(sec=round(sec), words=max(12, int(sec * 2.3)), topic=(reel.brief or {}).get("title") or reel.title,
+                                     beats=" → ".join(f"«{b.get('text', '')}»" for b in reel.beats), caption=(reel.caption or "")[:400],
+                                     rules=VOICE_RULES[:2500]), model="claude-haiku-4-5", max_tokens=700, source=PLAN_SOURCE)
+    text = clean_text(str((r or {}).get("text") or (r or {}).get("suggestion") or "")).strip()
+    if len(text) < 10:
+        raise ReelError("Не вдалося написати озвучку — спробуйте ще раз.")
+    reel.brief = dict(reel.brief or {}, narration=text[:1200])
+    reel.brief.pop("narration_tts", None)
+    reel.save(update_fields=["brief"])
+    return text
+
+
 def prepare_voice(reel):
-    """Озвучка голосом з brief.voice_id: репліка кадру = beat.say або текст на екрані. Перегенеровуємо лише змінені репліки."""
+    """Озвучка голосом з brief.voice_id. 27.09: за замовчуванням ОДНА розповідь на весь ролик (brief.voice_mode="whole");
+    «по кадрах» — старий режим: репліка кадру = beat.say або текст на екрані. Перегенеровуємо лише змінене."""
     from . import aiimage, freeai
     voice = (reel.brief or {}).get("voice_id")
+    brief = dict(reel.brief or {})
+    if voice and brief.get("voice_mode", "whole") == "whole":
+        if not brief.get("narration"):
+            write_narration(reel)
+            brief = dict(reel.brief or {})
+        say = (brief.get("narration_tts") or brief.get("narration") or "").strip()
+        if brief.get("vo_whole_key") != f"{voice}|{say}":
+            mp3 = freeai.eleven_tts(say, voice)
+            if not mp3:
+                raise ReelError("ElevenLabs не озвучив текст — перевірте ліміт символів або спробуйте ще раз.")
+            brief["vo_whole_id"] = aiimage.save(mp3, "audio/mpeg", f"reel-{reel.id}-vo-whole").id
+            brief["vo_whole_key"] = f"{voice}|{say}"
+            reel.brief = brief
+            reel.save(update_fields=["brief"])
+        return
     beats, changed = [], False
     for b in reel.beats:
         b = dict(b)
@@ -677,6 +751,11 @@ def prepare_voice(reel):
         reel.save(update_fields=["beats"])
 
 
+def _vo_whole(reel):
+    b = reel.brief or {}
+    return b.get("vo_whole_id") if b.get("voice_id") and b.get("voice_mode", "whole") == "whole" else None
+
+
 def rerender(reel):
     """Перемонтувати рилс за відредагованими кадрами (без нових викликів ШІ; озвучка — лише змінені репліки)."""
     from secrets import token_urlsafe
@@ -685,7 +764,7 @@ def rerender(reel):
     os.makedirs(WORK, exist_ok=True)
     folder = tempfile.mkdtemp(dir=WORK)
     try:
-        data, dur = render({"beats": reel.beats}, folder, style=reel.style, blog=reel.blog)
+        data, dur = render({"beats": reel.beats, "vo_whole": _vo_whole(reel)}, folder, style=reel.style, blog=reel.blog)
         old = reel.file
         reel.file = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{reel.material}.mp4",
                                               content_type="video/mp4", data=data)
@@ -709,7 +788,7 @@ def platform_versions(reel):
     for platform in ("tiktok", "youtube"):
         folder = tempfile.mkdtemp(dir=WORK)
         try:
-            data, _dur = render({"beats": reel.beats}, folder, style=reel.style, blog=reel.blog, platform=platform)
+            data, _dur = render({"beats": reel.beats, "vo_whole": _vo_whole(reel)}, folder, style=reel.style, blog=reel.blog, platform=platform)
             old = out.get(platform)
             out[platform] = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{reel.id}-{platform}.mp4",
                                                       content_type="video/mp4", data=data).id

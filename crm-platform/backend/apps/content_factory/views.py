@@ -814,6 +814,9 @@ def _reel(request, r):
         "can_undo_texts": bool((r.brief or {}).get("prev_texts")), "review": r.review or {},
         "notes": studiosvc.editor_notes(r) if r.stage in ("script", "material", "style") else [],
         "published": r.published or {}, "can_publish": pubsvc.can_publish(r.blog), "voice_id": (r.brief or {}).get("voice_id", ""),
+        "voice_mode": (r.brief or {}).get("voice_mode", "whole"), "narration": (r.brief or {}).get("narration", ""),
+        "narration_tts": (r.brief or {}).get("narration_tts", ""),
+        "vo_whole_url": _link_url(request, (r.brief or {}).get("vo_whole_id")) if (r.brief or {}).get("vo_whole_id") else "",
         "variants": {k: _link_url(request, v) for k, v in (r.variants or {}).items()},
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
         "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else (b.get("prompt") or ""),
@@ -975,10 +978,11 @@ class ReelView(_Base):
                 keep = {k: b[k] for k in ("image_id", "ai", "prompt", "orig_scene_id", "ok") if b.get(k)}
                 old_b = old.get(n) or {}
                 voice_keep = {k: old_b[k] for k in ("vo_id", "vo_key", "ref_frame", "say_tts", "fixes") if old_b.get(k)}
-                if b.get("say") is not None and b.get("say") != old_b.get("say"):
-                    voice_keep.pop("say_tts", None)  # нова репліка — старі виправлення вимови не застосовуємо  # озвучка й кадр референсу не губляться
-                if b.get("say") is not None:
-                    voice_keep["say"] = reelsvc.clean_text(str(b.get("say") or ""))[:300]
+                new_say, old_say = (b.get("say") or "").strip(), (old_b.get("say") or "").strip()
+                if b.get("say") is not None and new_say != old_say:  # 27.09: "" і None — те саме; інакше збереження стирало правку вимови
+                    voice_keep.pop("say_tts", None)  # нова репліка — старі виправлення вимови не застосовуємо
+                if new_say:
+                    voice_keep["say"] = reelsvc.clean_text(new_say)[:300]
                 if keep.get("image_id"):  # ШІ-кадр: лише ті картинки, що вже були в цьому ролику
                     known = {x.get("image_id") for x in old.values()}
                     if keep["image_id"] not in known:
@@ -1019,6 +1023,12 @@ class ReelView(_Base):
             r.style = ReelStyle.objects.filter(pk=data["style_id"] or 0).first()
         if "voice_id" in data:  # озвучка ElevenLabs: "" — без голосу
             r.brief = dict(r.brief or {}, voice_id=str(data["voice_id"] or "")[:64])
+        if data.get("voice_mode") in ("whole", "beats"):  # 27.09: одна розповідь на весь ролик або по кадрах
+            r.brief = dict(r.brief or {}, voice_mode=data["voice_mode"])
+        if "narration" in data:  # текст суцільної озвучки правиться вручну — старе виправлення вимови скидаємо
+            br = dict(r.brief or {}, narration=reelsvc.clean_text(str(data["narration"] or ""))[:1200])
+            br.pop("narration_tts", None)
+            r.brief = br
         if "stage" in data:
             if data["stage"] not in studiosvc.STAGES:
                 return Response({"error": "Невідомий крок."}, status=400)
@@ -1069,10 +1079,13 @@ class ReelView(_Base):
                 d = request.data or {}
                 try:
                     idx = int(d.get("index"))
-                    assert 0 <= idx < len(r.beats)
+                    assert -1 <= idx < len(r.beats)
                 except (TypeError, ValueError, AssertionError):
                     return Response({"error": "Невідомий кадр."}, status=400)
-                studiosvc.fix_speech(r, idx, str(d.get("instruction") or "")[:300])
+                if idx == -1:
+                    studiosvc.fix_narration(r, str(d.get("instruction") or "")[:300])
+                else:
+                    studiosvc.fix_speech(r, idx, str(d.get("instruction") or "")[:300])
                 ReelDraft.objects.filter(pk=r.pk).update(busy=True)
 
                 def work():
@@ -1084,6 +1097,19 @@ class ReelView(_Base):
                         ReelDraft.objects.filter(pk=r.pk).update(busy=False)
                 _bg(work)
                 return Response({"ok": True, "note": "Виправив вимову й перезвучую цю репліку — до хвилини."})
+            elif op == "narration":  # написати суцільну озвучку заново (Haiku ≈$0.002) і перезвучити
+                reelsvc.write_narration(r)
+                ReelDraft.objects.filter(pk=r.pk).update(busy=True, error="")
+
+                def work():
+                    try:
+                        reelsvc.rerender(ReelDraft.objects.get(pk=r.pk))
+                    except Exception as e:
+                        ReelDraft.objects.filter(pk=r.pk).update(error=f"Озвучка не вдалася: {str(e)[:200]}")
+                    finally:
+                        ReelDraft.objects.filter(pk=r.pk).update(busy=False)
+                _bg(work)
+                return Response({"ok": True, "note": "Написав нову озвучку й перезвучую — до хвилини."})
             elif op == "autofx":
                 r.beats = studiosvc.auto_fx(r.beats)
                 r.save(update_fields=["beats"])

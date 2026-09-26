@@ -84,6 +84,7 @@ type ReelT = {
   beats: { text: string; scene_id?: number; seconds: number; what: string; source: string; thumb_url?: string;
     image_id?: number; ai?: string; prompt?: string; orig_scene_id?: number; ok?: boolean; say?: string; say_tts?: string; fixes?: string[]; vo_id?: number; vo_url?: string; ref_url?: string; fx?: { transition?: string; motion?: string } }[];
   published?: { instagram?: { permalink?: string; at?: string }; tiktok?: { share_id?: string; at?: string } }; can_publish?: boolean; voice_id?: string;
+  voice_mode?: string; narration?: string; narration_tts?: string; vo_whole_url?: string;
 };
 type StyleT = {
   id: number; name: string; origin: string; origin_display: string; font: string; weight: string; size: number; color: string;
@@ -218,6 +219,7 @@ const CSS = `
 .cf-safe i.l{top:0;bottom:0;left:0;background:rgba(224,122,110,.10)}.cf-safe i.r{top:0;bottom:0;right:0;background:rgba(224,122,110,.10)}
 .cf-safe span{position:absolute;left:6px;font-size:10px;color:#fff;text-shadow:0 1px 2px #000;opacity:.85}
 .cf-safe i.t span{bottom:3px}.cf-safe i.b span{top:3px}
+.cf-narr{display:grid;gap:8px}
 .cf-scope{display:flex;flex-direction:column;gap:2px;padding-bottom:6px}
 .cf-scope + .cf-scope{border-top:1px solid var(--cf-line);margin-top:6px}
 .cf-scope.blog{background:linear-gradient(180deg,rgba(227,184,95,.05),transparent 60%);border-radius:10px}
@@ -3795,6 +3797,9 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
   const frame = (op: string, index = sel, p = prompt, extra: Record<string, unknown> = {}) => act("frame", async () => { await saveIfDirty(); return api.post(`${base}frame/`, { index, op, prompt: p, ...extra }); });
   const [pickLib, setPickLib] = useState(false);
   const [reelStyle, setReelStyle] = useState<StyleT | null>(null);
+  const whole = (r.voice_mode || "whole") === "whole";
+  const [narr, setNarr] = useState(r.narration || "");
+  useEffect(() => { setNarr(r.narration || ""); }, [r.narration]);
   useEffect(() => { // стиль тексту ролика — щоб перегляд показував текст так, як його змонтує завод
     if (!r.style_id) { setReelStyle(null); return; }
     api.get<StylesData>("/api/content-factory/reels/styles/").then((d) => setReelStyle(d.styles.find((x) => x.id === r.style_id) || null)).catch(() => setReelStyle(null));
@@ -3834,7 +3839,7 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
         <div className="cf-studio-step">
           <ol className="cf-script">{beats.map((x, i) => (
             <li key={i}>
-              <span className="n">{i === 0 ? "гачок" : i === beats.length - 1 ? "фінал" : `кадр ${i + 1}`}</span>
+              <span className="n" title={i === 0 ? "Заголовок рилса: 3–7 слів, з перших секунд, одного з типів (біль, секрет, ламання стереотипу, лайфхак, питання-інструкція, тест-доказ…)" : undefined}>{i === 0 ? "заголовок" : i === beats.length - 1 ? "фінал" : `кадр ${i + 1}`}</span>
               <input className="cf-in" value={x.text} maxLength={80} onChange={(e) => upd(i, { text: e.target.value })} aria-label={`Текст кадру ${i + 1}`} />
               <input className="cf-in sec" inputMode="decimal" value={x.seconds} onChange={(e) => upd(i, { seconds: Number(e.target.value.replace(",", ".")) || 0 })} aria-label={`Секунд кадру ${i + 1}`} />
               <small>{x.what || x.prompt || ""}</small>
@@ -3920,9 +3925,21 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
               onChange={(v) => act("voice", () => api.patch(base, { voice_id: v }))}
               opts={[{ v: "", l: "Без озвучки (музику додасте в соцмережі)" }, ...(voices || []).map((x) => ({ v: x.id, l: x.name }))]} />
             <VoicePlay id={r.voice_id || ""} />
-            <span className="cf-quiet">ElevenLabs, ваш тариф Starter: ≈{beats.reduce((a, x) => a + (x.say ?? x.text ?? "").length, 0)} символів з ~40 тис./міс</span>
+            <span className="cf-quiet">ElevenLabs, ваш тариф Starter: ≈{whole ? (narr || "").length || Math.round(total * 16) : beats.reduce((a, x) => a + (x.say ?? x.text ?? "").length, 0)} символів з ~40 тис./міс</span>
           </div>
-          {r.voice_id && <div className="cf-say">{beats.map((x, i) => (
+          {r.voice_id && <Seg label="Як звучить озвучка" value={whole ? "whole" : "beats"} onChange={(v) => act("vmode", () => api.patch(base, { voice_mode: v }))}
+            opts={[{ v: "whole", l: "Одна розповідь на весь ролик" }, { v: "beats", l: "Окремо по кадрах" }]} />}
+          {r.voice_id && whole && (
+            <div className="cf-narr">
+              <textarea className="cf-ta" rows={4} value={narr} onChange={(e) => setNarr(e.target.value)}
+                placeholder="Текст озвучки напишеться сам під час монтажу — розмовно, на весь ролик. Або напишіть свій." aria-label="Текст суцільної озвучки" />
+              <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+                {narr !== (r.narration || "") && <button type="button" className="cf-btn ghost" disabled={!!busy} onClick={() => act("narr", () => api.patch(base, { narration: narr }))}>Зберегти текст</button>}
+                <button type="button" className="cf-btn ghost" disabled={!!busy || locked} onClick={() => studio("narr", "narration")}>{busy === "narr" ? "Пишу…" : "Написати озвучку заново · ≈$0.002"}</button>
+                <span className="cf-quiet">Голос іде суцільно поверх усіх кадрів. Якщо розповідь довша за кадри — останній кадр трохи довше стоїть.</span>
+              </div>
+            </div>)}
+          {r.voice_id && !whole && <div className="cf-say">{beats.map((x, i) => (
             <label key={i}><span>{i + 1}. голос каже</span>
               <input className="cf-in" value={x.say ?? x.text} onChange={(e) => upd(i, { say: e.target.value })} aria-label={`Що каже голос у кадрі ${i + 1}`} /></label>))}
             <span className="cf-quiet">За замовчуванням голос читає текст з екрана. Можна написати повніше — репліка звучить з початку свого кадру.</span></div>}
@@ -3950,7 +3967,19 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
                 <summary>Стиль тексту: <b>{r.style_name}</b> — змінити</summary>
                 <StylePicker value={r.style_id} onChange={(id) => act("render", async () => { await api.patch(base, { style_id: id }); return api.post(`${base}render/`); })} />
               </details>
-              {r.voice_id && beats.some((x) => x.vo_url) && (
+              {r.voice_id && whole && r.vo_whole_url && (
+                <div className="cf-card cf-voicefix">
+                  <h3>Озвучка — одна розповідь на весь ролик</h3>
+                  <audio src={r.vo_whole_url} controls preload="none" style={{ width: "100%" }} />
+                  <small>{r.narration_tts || r.narration}</small>
+                  <p className="cf-quiet">Напишіть, що не так («у слові краю наголос на у», «в кінці «до краю» — голос донизу, спокійно»). Безкоштовний ШІ перепише текст для голосу — на екрані нічого не зміниться.</p>
+                  <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                    <input className="cf-in" value={fixes[-1] || ""} onChange={(e) => setFixes({ ...fixes, [-1]: e.target.value })} placeholder="Що виправити у вимові…" aria-label="Виправлення вимови в озвучці" />
+                    <button type="button" className="cf-btn ghost" disabled={!!busy || locked || (fixes[-1] || "").trim().length < 3}
+                      onClick={() => act("fix", async () => { const x2 = await api.post(`${base}studio/`, { op: "fix_voice", index: -1, instruction: fixes[-1] }); setFixes({ ...fixes, [-1]: "" }); return x2; })}>Виправити · безкоштовно</button>
+                  </div>
+                </div>)}
+              {r.voice_id && !whole && beats.some((x) => x.vo_url) && (
                 <div className="cf-card cf-voicefix">
                   <h3>Озвучка — послухайте й виправте вимову</h3>
                   <p className="cf-quiet">Напишіть словами, що не так («наголос у слові шовк на о», «повільніше на слові Галатея»). Безкоштовний ШІ перепише текст для голосу, і перезвучиться лише ця репліка.</p>

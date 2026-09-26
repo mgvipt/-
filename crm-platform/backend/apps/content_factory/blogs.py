@@ -158,6 +158,9 @@ def system_for(blog, task, platform=True):
     vis = visual_text(blog)
     if vis:
         rules += f"\n\nВІЗУАЛЬНА БІБЛІЯ БЛОГУ (з прикладу Олега — кадри й описи мають їй відповідати):\n{vis}"
+    if blog.slug == "wallcov" or blog.use_crm_kb:  # 27.09: як говорить наш Instagram — розмовно, простими словами
+        from .content_rules import VOICE_RULES
+        rules += "\n\n" + VOICE_RULES
     return (f"{task}{rules}\n\nБЛОГ: «{blog.name}».\nМАЙСТЕР-ПРОМТ БЛОГУ (головне, дотримуйся буквально):\n{blog.master_prompt.strip()}\n\n"
             f"Мета блогу: {blog.goal.strip() or '(не вказана)'}\nЗаклик блогу: {blog.cta.strip() or '(немає — без заклику)'}\n\n{COMMON_RULES}")
 

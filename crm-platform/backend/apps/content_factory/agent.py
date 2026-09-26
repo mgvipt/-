@@ -185,7 +185,8 @@ def reply(chat, text, role, model, blog):
         raise AgentError(f"Досягнуто стелі агента ${MONTH_CAP_USD:.0f} на місяць. Виберіть GPT (безкоштовно) або почекайте до 1-го числа.")
     hits = kb_hits(text + " " + " ".join(m["text"] for m in chat.messages[-4:] if m.get("who") == "me"))
     kb = "\n".join(f"[{'Маркетинг' if f.blog.slug == 'marketing' else 'Бізнес і найм'}] {f.title}: {f.text[:500]}" for f in hits)
-    system = (f"{ROLES[role][1]}\n\n{RULES}\n\nДАНІ ЗАВОДУ (станом на {timezone.localtime():%d.%m.%Y %H:%M}):\n{snapshot(blog)}"
+    from .content_rules import all_rules
+    system = (f"{ROLES[role][1]}\n\n{RULES}\n\nПРАВИЛА WALLCOV (з розбору нашого Instagram — сценарії розмовні, заголовок обовʼязковий):\n{all_rules()}\n\nДАНІ ЗАВОДУ (станом на {timezone.localtime():%d.%m.%Y %H:%M}):\n{snapshot(blog)}"
               f"\n\nЗАПИСИ БАЗ ЗНАНЬ, схожі на запит (бери лише доречні):\n{kb or '— нічого схожого не знайдено'}")
     hist = [{"role": "assistant" if m["who"] == "agent" else "user", "content": m["text"]} for m in chat.messages[-12:] if m.get("text")]
     hist.append({"role": "user", "content": text})
