@@ -882,7 +882,8 @@ class StudioView(_Base):
                                         "title": (x.get("title") or "")[:120], "source": x.get("source") or x.get("domain") or ""}
                                        for x in (d.get("images") or []) if x.get("imageUrl")]})
         if action == "voices" and request.GET.get("sample"):  # 27.09: «Прослухати» голос
-            link = freeai.voice_sample(str(request.GET["sample"])[:64])
+            from . import freeai as fai  # локальний імпорт: нижче у функції freeai теж імпортується локально
+            link = fai.voice_sample(str(request.GET["sample"])[:64])
             if not link:
                 return Response({"error": "Не вдалося отримати зразок голосу."}, status=400)
             return Response({"url": _link_url(request, link.id)})
