@@ -3019,6 +3019,28 @@ function WebImagePicker({ q, onPick }: { q: string; onPick: (url: string) => voi
   );
 }
 
+/** «▶ Прослухати» голос озвучки: зразок ElevenLabs (перший раз CRM озвучує коротку фразу й запамʼятовує). */
+function VoicePlay({ id }: { id: string }) {
+  const [state, setState] = useState<"" | "load" | "play" | "err">("");
+  const ref = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => { ref.current?.pause(); }, []);
+  useEffect(() => { ref.current?.pause(); setState(""); }, [id]);
+  if (!id) return null;
+  const go = async () => {
+    if (state === "play") { ref.current?.pause(); setState(""); return; }
+    setState("load");
+    try {
+      const d = await api.get<{ url: string }>(`/api/content-factory/studio/voices/?sample=${encodeURIComponent(id)}`);
+      const a = new Audio(d.url); ref.current = a; a.onended = () => setState("");
+      await a.play(); setState("play");
+    } catch { setState("err"); }
+  };
+  return (
+    <button type="button" className="cf-btn ghost" style={{ height: 38 }} onClick={go} aria-label="Прослухати голос">
+      <Icon n={state === "play" ? "pause" : "play"} size={14} /> {state === "load" ? "Завантажую…" : state === "play" ? "Стоп" : state === "err" ? "Не вдалося" : "Прослухати"}</button>
+  );
+}
+
 function LibPicker({ material, onPick }: { material: string; onPick: (id: number) => void }) {
   const [mat, setMat] = useState(material);
   const [data, setData] = useState<{ items: TgPhoto[]; materials: string[] } | null>(null);
@@ -3555,8 +3577,9 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
             </div>)}
           {!footage && mode === "material" && <p className="cf-quiet">Власних нарізок у блогу немає: сценарист опише кадри, а намалює їх художник на кроці «Матеріал» (≈$0.07 за кадр).</p>}
           <h3 style={{ marginTop: 6 }}>Хто озвучує</h3>
-          <Pick label="Голос" value={voice} onChange={setVoice} width={320}
+          <div className="cf-set"><Pick label="Голос" value={voice} onChange={setVoice} width={320}
             opts={[{ v: "", l: "Без озвучки" }, ...voices.map((x) => ({ v: x.id, l: x.name }))]} />
+          <VoicePlay id={voice} /></div>
           <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
             <button type="button" className="cf-btn gold" disabled={!!busy || !pick.title.trim() || (mode === "videos" && chosen.length === 0) || (footage && mode === "material" && !material)} onClick={create}>
               {busy === "create" ? "Передаю сценаристу…" : "Далі: сценарій · ≈$0.02–0.05"}</button>
@@ -3778,6 +3801,7 @@ function ReelStudio({ r, blog, allBlogs, onChanged, onClose }: { r: ReelT; blog:
             <Pick label="Голос" value={r.voice_id || ""} width={300} placeholder="без озвучки"
               onChange={(v) => act("voice", () => api.patch(base, { voice_id: v }))}
               opts={[{ v: "", l: "Без озвучки (музику додасте в соцмережі)" }, ...(voices || []).map((x) => ({ v: x.id, l: x.name }))]} />
+            <VoicePlay id={r.voice_id || ""} />
             <span className="cf-quiet">ElevenLabs, ваш тариф Starter: ≈{beats.reduce((a, x) => a + (x.say ?? x.text ?? "").length, 0)} символів з ~40 тис./міс</span>
           </div>
           {r.voice_id && <div className="cf-say">{beats.map((x, i) => (

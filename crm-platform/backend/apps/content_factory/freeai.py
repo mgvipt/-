@@ -166,7 +166,7 @@ def ig_media(url, username, pages=3):
 def eleven_voices():
     """Голоси акаунта для озвучки: клон Олега, голоси героїв «Стіни в шоці», диктор. Кеш на добу."""
     from django.core.cache import cache
-    hit = cache.get("cf-eleven-voices")
+    hit = cache.get("cf-eleven-voices2")
     if hit is not None:
         return hit
     key = os.environ.get("ELEVENLABS_API_KEY")
@@ -178,9 +178,10 @@ def eleven_voices():
             vs = json.load(r).get("voices") or []
     except Exception:
         return []
-    out = [{"id": v["voice_id"], "name": v["name"], "kind": v.get("category", "")} for v in vs if v.get("category") in ("cloned", "professional")]
+    out = [{"id": v["voice_id"], "name": v["name"], "kind": v.get("category", ""), "preview_url": v.get("preview_url") or ""}
+           for v in vs if v.get("category") in ("cloned", "professional")]
     out.sort(key=lambda v: (0 if "Олег" in v["name"] or "Кріжев" in v["name"] else 1, v["name"]))
-    cache.set("cf-eleven-voices", out, 24 * 3600)
+    cache.set("cf-eleven-voices2", out, 24 * 3600)
     return out
 
 
@@ -221,3 +222,33 @@ def groq_chat(system, user, model="openai/gpt-oss-120b", max_tokens=600, source=
         return None
     _usage(source, "groq/" + model)
     return (text or "").strip()
+
+
+SAMPLE_TEXT = "Привіт! Це Wallcov. Декоративна штукатурка, яка по-різному оживає вдень і ввечері."
+
+
+def voice_sample(voice_id):
+    """Зразок голосу для кнопки «Прослухати» (27.09): готовий preview ElevenLabs або одна коротка фраза, озвучена
+    раз і збережена в CRM (≈80 символів з місячного ліміту на голос). Повертає SharedLink або None."""
+    from apps.inbox.models import SharedLink
+    from secrets import token_urlsafe
+    name = f"voice-sample-{voice_id}.mp3"
+    hit = SharedLink.objects.filter(filename=name).order_by("-id").first()
+    if hit:
+        return hit
+    v = next((x for x in eleven_voices() if x["id"] == voice_id), None)
+    if not v:
+        return None
+    data = None
+    if v.get("preview_url"):
+        try:
+            req = urllib.request.Request(v["preview_url"], headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read(5 * 1024 * 1024)
+        except Exception:
+            data = None
+    data = data or eleven_tts(SAMPLE_TEXT, voice_id, source="content_factory.voice_sample")
+    if not data:
+        return None
+    return SharedLink.objects.create(token=token_urlsafe(24), filename=name, content_type="audio/mpeg", data=data)
+

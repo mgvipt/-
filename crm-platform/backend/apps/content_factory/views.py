@@ -881,6 +881,11 @@ class StudioView(_Base):
             return Response({"items": [{"url": x.get("imageUrl", ""), "thumb": x.get("thumbnailUrl") or x.get("imageUrl", ""),
                                         "title": (x.get("title") or "")[:120], "source": x.get("source") or x.get("domain") or ""}
                                        for x in (d.get("images") or []) if x.get("imageUrl")]})
+        if action == "voices" and request.GET.get("sample"):  # 27.09: «Прослухати» голос
+            link = freeai.voice_sample(str(request.GET["sample"])[:64])
+            if not link:
+                return Response({"error": "Не вдалося отримати зразок голосу."}, status=400)
+            return Response({"url": _link_url(request, link.id)})
         if action == "voices":
             from . import freeai
             return Response({"voices": freeai.eleven_voices()})
