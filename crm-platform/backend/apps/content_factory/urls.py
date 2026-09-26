@@ -84,6 +84,7 @@ urlpatterns += [  # 25.09 v2: каруселі (текст, поради), па�
     path("api/content-factory/carousels/<int:pk>/advice/", views.CarouselView.as_view(), {"action": "advice"}),
     path("api/content-factory/blogs/<int:pk>/memory/", views.BlogMemoryView.as_view()),
     path("api/content-factory/blogs/<int:pk>/active/", views.BlogActiveView.as_view()),
+    path("api/content-factory/blogs/<int:pk>/tiktok/", views.BlogTiktokView.as_view()),
 ]
 urlpatterns += [  # 25.09: навчання блогу знаннями ззовні
     path("api/content-factory/blogs/<int:pk>/learn/", views.BlogLearnView.as_view()),

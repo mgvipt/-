@@ -1957,11 +1957,37 @@ class BlogActiveView(_Base):
         items = sorted(qs, key=lambda i: -(i.views or 0))[:24]
         med = sorted(i.views or 0 for i in qs)
         mid = med[len(med) // 2] if med else 0
+        from . import tiktok_stats as ttsvc
         return Response({
-            "accounts": [{"platform": c.platform, "handle": c.handle, "url": c.url, "in_virale": c.in_virale} for c in own],
+            "accounts": [{"id": c.id, "platform": c.platform, "handle": c.handle, "url": c.url, "in_virale": c.in_virale,
+                          "api": ttsvc.connected(c) if c.platform == "tiktok" else False,
+                          "synced_at": (c.api or {}).get("synced_at")} for c in own],
             "median_views": mid,
             "items": [{"id": i.id, "username": i.username, "platform": i.platform, "url": i.url, "preview_url": i.preview_url,
                        "caption": (i.caption or "")[:200], "views": i.views, "likes": i.likes, "comments": i.comments,
                        "x": round((i.views or 0) / mid, 1) if mid else None, "published_at": _iso(i.published_at)} for i in items],
         })
+
+
+class BlogTiktokView(_Base):
+    """POST /blogs/<id>/tiktok/ {op: connect, channel_id} → {url} (авторизація TikTok); {op: sync} — забрати ролики зараз."""
+    def post(self, request, pk):
+        from . import tiktok_stats as ttsvc
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        b = get_object_or_404(Blog, pk=pk)
+        d = request.data or {}
+        own = ContentChannel.objects.filter(blog=b, platform="tiktok", role=ContentChannel.Role.OWN)
+        if d.get("op") == "connect":
+            cc = get_object_or_404(own, pk=d.get("channel_id") or 0)
+            return Response({"url": ttsvc.start_url(cc, request.user)})
+        if d.get("op") == "sync":
+            res = {}
+            for cc in own:
+                try:
+                    res[cc.handle] = ttsvc.sync(cc)
+                except Exception as e:
+                    res[cc.handle] = str(e)[:200]
+            return Response({"result": res})
+        return Response({"error": "Невідома дія."}, status=400)
 

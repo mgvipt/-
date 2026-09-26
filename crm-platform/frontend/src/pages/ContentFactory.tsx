@@ -156,9 +156,10 @@ const ROLE_HINT: Record<string, string> = {
 };
 
 const CSS = `
-.cf-ag{display:grid;grid-template-columns:230px minmax(0,1fr);gap:14px;align-items:start}
-.cf-ag-list{display:grid;gap:6px;position:sticky;top:0}
-.cf-ag-item{display:flex;align-items:center;gap:4px;border-radius:8px}
+.cf-ag{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:14px;align-items:start}
+.cf-ag-list{display:grid;gap:6px;min-width:0;overflow:hidden}
+.cf-ag-list > .cf-btn{width:100%}
+.cf-ag-item{display:flex;align-items:center;gap:4px;border-radius:8px;min-width:0}
 .cf-ag-item.on{background:var(--cf-panel2)}
 .cf-ag-item button{all:unset;cursor:pointer;display:flex;align-items:center;gap:7px;padding:7px 8px;font-size:12.5px;color:var(--cf-ink2);min-width:0;flex:1}
 .cf-ag-item button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -205,7 +206,7 @@ const CSS = `
 .cf-dash-bars .row b{text-align:right;font-variant-numeric:tabular-nums}
 .cf-ag-in{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;position:sticky;bottom:0;background:var(--cf-bg);padding-top:6px}
 .cf-ag-in .cf-ta{min-height:64px}
-@media (max-width:760px){.cf-ag{grid-template-columns:1fr}.cf-ag-list{position:static}.cf-ag-sel{grid-template-columns:1fr}}
+@media (max-width:760px){.cf-ag{grid-template-columns:1fr}.cf-ag-sel{grid-template-columns:1fr}}
 .cf-fact-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
 .cf-fact-search .cf-quiet{grid-column:1/-1}
 .cf-designer{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
@@ -3051,7 +3052,7 @@ function VoicePlay({ id }: { id: string }) {
 }
 
 /** «Активні зараз» у профілі блогу (27.09): найпопулярніші ролики власних акаунтів блогу → основа для нових рилсів. */
-type ActiveT = { accounts: { platform: string; handle: string; url: string; in_virale: boolean }[]; median_views: number;
+type ActiveT = { accounts: { id: number; platform: string; handle: string; url: string; in_virale: boolean; api: boolean; synced_at?: string | null }[]; median_views: number;
   items: { id: number; username: string; platform: string; url: string; preview_url: string; caption: string; views: number | null;
     likes: number | null; comments: number | null; x: number | null; published_at: string | null }[] };
 
@@ -3062,21 +3063,44 @@ function BlogActive({ blogId, onReel }: { blogId: number; onReel?: (refs: RefPic
   const [links, setLinks] = useState("");
   const [msg, setMsg] = useState("");
   useEffect(() => { api.get<ActiveT>(`/api/content-factory/blogs/${blogId}/active/?days=${days}`).then(setD).catch(() => setMsg("Не вдалося завантажити ролики.")); }, [blogId, days]);
+  const [rel, setRel] = useState(0);
+  useEffect(() => { // повернення з TikTok після авторизації: ?tiktok=connected|error&msg=
+    const p = new URLSearchParams(window.location.search); const st = p.get("tiktok");
+    if (st) { setMsg(st === "connected" ? "TikTok підключено, ролики завантажено." + (p.get("msg") ? " " + p.get("msg") : "") : "TikTok: " + (p.get("msg") || "не вдалося підключити.")); window.history.replaceState(null, "", window.location.pathname); }
+  }, []);
+  useEffect(() => { if (rel) api.get<ActiveT>(`/api/content-factory/blogs/${blogId}/active/?days=${days}`).then(setD).catch(() => undefined); }, [rel]); // eslint-disable-line react-hooks/exhaustive-deps
   const sync = async () => { try { const r: any = await api.post("/api/content-factory/feed/"); setMsg(r.note || "Оновлюю…"); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } };
+  const ttConnect = async (id: number) => {
+    try { const r = await api.post<{ url: string }>(`/api/content-factory/blogs/${blogId}/tiktok/`, { op: "connect", channel_id: id }); window.location.href = r.url; }
+    catch (e: any) { setMsg(e?.data?.error || "Не вдалося почати підключення TikTok."); }
+  };
+  const ttSync = async () => {
+    setMsg("Забираю ролики з TikTok…");
+    try { const r = await api.post<{ result: Record<string, number | string> }>(`/api/content-factory/blogs/${blogId}/tiktok/`, { op: "sync" });
+      setMsg(Object.entries(r.result).map(([h, n]) => `@${h}: ${typeof n === "number" ? n + " роликів" : n}`).join(" · ") || "TikTok-акаунтів немає."); setRel((x) => x + 1); }
+    catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); }
+  };
+  const hasTt = !!d?.accounts.some((a) => a.platform === "tiktok");
   const toggle = (u: string) => setSel((s) => (s.includes(u) ? s.filter((x) => x !== u) : s.length >= 3 ? s : [...s, u]));
   const pasted = links.split(/\s+/).filter((x) => /^https?:\/\//.test(x)).slice(0, 3);
   const go = (refs: RefPick[]) => onReel && refs.length && onReel(refs);
   return (
     <div className="cf-card">
       <h3><Icon n="flame" size={14} /> Активні зараз · ролики акаунтів блогу</h3>
-      <p className="cf-quiet">Найпопулярніші ролики ваших акаунтів за період (дані Virale, оновлюються раз на добу або кнопкою). Виберіть до 3 —
+      <p className="cf-quiet">Найпопулярніші ролики ваших акаунтів за період (TikTok — напряму з TikTok, Instagram — через Virale; раз на добу або кнопкою). Виберіть до 3 —
         майстер рилса візьме їхній прийом, темп і гачок і зробить новий ролик із вашим змістом.</p>
       {d && <div className="cf-chips">{d.accounts.map((a) => (
-        <a key={a.handle} className="cf-chip" href={a.url} target="_blank" rel="noreferrer">{PLATFORM_MARK[a.platform] || a.platform} @{a.handle}{a.in_virale ? "" : " · ще не відстежується"}</a>))}
+        <span key={a.handle} className="cf-set" style={{ gap: 6 }}>
+          <a className="cf-chip" href={a.url} target="_blank" rel="noreferrer">{PLATFORM_MARK[a.platform] || a.platform} @{a.handle}
+            {a.platform === "tiktok" ? (a.api ? " · TikTok API підключено" : " · не підключено") : a.in_virale ? "" : " · ще не відстежується"}</a>
+          {a.platform === "tiktok" && !a.api && <button type="button" className="cf-btn gold" style={{ height: 30 }} onClick={() => ttConnect(a.id)}
+            title="Відкриється сторінка TikTok: увійдіть у цей акаунт і дозвольте доступ до статистики. Пароль у CRM не потрапляє">Підключити TikTok</button>}
+        </span>))}
         {!d.accounts.length && <span className="cf-quiet">У блогу немає власних акаунтів — додайте їх вище в «Акаунти блогу» з типом «Наша».</span>}</div>}
       <div className="cf-set">
         <div className="cf-chips">{[30, 90, 365].map((n) => <button key={n} type="button" className={"cf-chip" + (days === n ? " on" : "")} onClick={() => setDays(n)}>{n === 365 ? "рік" : `${n} днів`}</button>)}</div>
-        <button type="button" className="cf-btn ghost" onClick={sync}><Icon n="refresh" size={13} /> Оновити з Virale</button>
+        {hasTt && <button type="button" className="cf-btn ghost" onClick={ttSync}><Icon n="refresh" size={13} /> Оновити з TikTok</button>}
+        <button type="button" className="cf-btn ghost" onClick={sync} title="Instagram-акаунти й конкуренти — через Virale"><Icon n="refresh" size={13} /> Оновити з Virale</button>
         {!!sel.length && <button type="button" className="cf-btn gold" onClick={() => go(sel.map((u) => { const i = d?.items.find((x) => x.url === u); return { url: u, thumb: i?.preview_url, title: i?.caption }; }))}>
           Зробити рилс на основі вибраних · {sel.length}</button>}
       </div>

@@ -33,6 +33,7 @@ class ContentChannel(models.Model):
     blog = models.ForeignKey("Blog", null=True, blank=True, on_delete=models.SET_NULL, related_name="channels",
                              help_text="До якого блогу належить сторінка (наша, конкурент чи натхнення)")
     in_virale = models.BooleanField(default=False, help_text="Сторінка відстежується у Virale — її ролики йдуть у стрічку")
+    api = models.JSONField(default=dict, blank=True, help_text="27.09: токени офіційного API (TikTok for Business) власного акаунта блогу")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)

@@ -567,6 +567,18 @@ class TiktokCallbackView(APIView):
             return HttpResponse("bad state", status=403)
         if not code:
             return HttpResponse("no code", status=400)
+        if st.get("cf"):  # 27.09: акаунт блогу контент-заводу (лише статистика роликів) — канал Контакт-центру не чіпаємо
+            try:
+                from apps.content_factory.tiktok_stats import connect as cf_connect, sync as cf_sync
+                cc, warn = cf_connect(code, st["cf"])
+                try:
+                    cf_sync(cc)
+                except Exception:
+                    log.exception("TikTok content sync after connect failed")
+                return HttpResponseRedirect("/content-factory?tiktok=connected" + ("&msg=" + urllib.parse.quote(warn) if warn else ""))
+            except Exception as exc:
+                log.exception("TikTok content connect failed")
+                return HttpResponseRedirect("/content-factory?tiktok=error&msg=" + urllib.parse.quote(str(exc)[:160]))
         try:
             from django.contrib.auth import get_user_model
             user = get_user_model().objects.filter(pk=st.get("u")).first()

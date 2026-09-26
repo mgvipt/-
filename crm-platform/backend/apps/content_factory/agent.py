@@ -97,7 +97,16 @@ def snapshot(blog):
     rep = AnalystReport.objects.filter(blog=blog).first() if blog else AnalystReport.objects.first()
     if rep:
         L.append(f"\nОСТАННІЙ ЗВІТ АНАЛІТИКА ({timezone.localtime(rep.created_at):%d.%m}): {rep.summary[:1200]}")
-    handles = list(blog.channels.values_list("handle", flat=True)) if blog else []
+    if blog:  # 27.09: СВІЖІ ролики власних акаунтів (TikTok API / Virale) — важливіші за майстер-промт, він може бути застарілим
+        own = {h.lower().lstrip(".") for h in blog.channels.filter(role="own").values_list("handle", flat=True)}
+        mine = FeedItem.objects.filter(username__in=own).exclude(published_at=None).order_by("-published_at")[:15]
+        if mine:
+            L.append("\nНАШІ ОСТАННІ РОЛИКИ (живі дані акаунтів; якщо суперечать майстер-промту — довіряй роликам і скажи про розбіжність):")
+            L += [f"- {timezone.localtime(i.published_at):%d.%m} {i.platform} @{i.username} · {i.views or 0} переглядів · {i.likes or 0} лайків · "
+                  f"{(i.caption or '')[:100]}" for i in mine]
+        else:
+            L.append("\nНАШІ РОЛИКИ: даних з акаунтів ще немає — висновки лише з CRM, скажи про це власнику.")
+    handles = [h.lower().lstrip(".") for h in blog.channels.exclude(role="own").values_list("handle", flat=True)] if blog else []
     feed = FeedItem.objects.filter(username__in=handles) if handles else FeedItem.objects.none()
     top = feed.exclude(views=None).order_by("-views")[:6]
     if top:
