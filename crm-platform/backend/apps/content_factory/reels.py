@@ -321,14 +321,16 @@ def render(p, folder, style=None, blog=None, platform="instagram"):
     joined = os.path.join(folder, "joined.mp4")
     trans = [XFADE.get((b.get("fx") or {}).get("transition") or "cut") for b in p["beats"]]
     if any(trans[1:]):  # є переходи — склеюємо через xfade (перекодування)
-        fc, prev, acc = [], "[0:v]", float(p["beats"][0]["seconds"])
+        # 27.09: усі шматки до однієї шкали часу/fps/формату — інакше xfade після concat падав «Invalid argument»
+        fc = [f"[{i}:v]fps=30,format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[s{i}]" for i in range(len(segs))]
+        prev, acc = "[s0]", float(p["beats"][0]["seconds"])
         for i in range(1, len(segs)):
             d = float(p["beats"][i]["seconds"])
             if trans[i]:
-                fc.append(f"{prev}[{i}:v]xfade=transition={trans[i]}:duration={XFADE_SEC}:offset={max(0.1, acc - XFADE_SEC):.3f}[v{i}]")
+                fc.append(f"{prev}[s{i}]xfade=transition={trans[i]}:duration={XFADE_SEC}:offset={max(0.1, acc - XFADE_SEC):.3f},settb=AVTB[v{i}]")
                 acc += d - XFADE_SEC
             else:
-                fc.append(f"{prev}[{i}:v]concat=n=2:v=1:a=0[v{i}]")
+                fc.append(f"{prev}[s{i}]concat=n=2:v=1:a=0,settb=AVTB[v{i}]")
                 acc += d
             prev = f"[v{i}]"
         args = ["ffmpeg", "-y", "-loglevel", "error"]
