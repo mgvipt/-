@@ -69,14 +69,34 @@ REVIEW_TASK = REVIEW_TASK_BASE + "\n\nПеревіряй також: чи є з�
 ROLES = {"smm": "SMM-редактор", "editor": "Монтажер", "brand": "Контролер бренду"}
 
 
-def _call(system, max_tokens=1600, model="claude-sonnet-4-6"):
-    from apps.crm.ai import claude_json
+def _claude_long(prompt, system, model, max_tokens, timeout=150):
+    """Як crm.ai.claude_json, але з довшим очікуванням (27.09: з 2–3 референсами продюсер думав >45 с і запит обривався «Не вдалося»)."""
+    import os
+    import urllib.request
+    from apps.crm.ai import _log_usage
+    body = json.dumps({"model": model, "max_tokens": max_tokens, "system": system,
+                       "messages": [{"role": "user", "content": prompt}]}).encode()
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body, headers={
+        "x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        resp = json.load(r)
+    _log_usage(SOURCE, model, resp.get("usage") or {})
+    text = "".join(b.get("text", "") for b in resp.get("content") or [] if b.get("type") == "text")
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except ValueError:
+            pass
+    return {"context": "", "suggestion": text}
 
+
+def _call(system, max_tokens=1600, model="claude-sonnet-4-6"):
     def call(prompt):
         try:
-            return claude_json(prompt, model=model, max_tokens=max_tokens, system=system, source=SOURCE) or {}
-        except TimeoutError:  # спільний claude_json має таймаут 45 с — одна повторна спроба
-            return claude_json(prompt, model=model, max_tokens=max_tokens, system=system, source=SOURCE) or {}
+            return _claude_long(prompt, system, model, max_tokens) or {}
+        except TimeoutError:  # одна повторна спроба
+            return _claude_long(prompt, system, model, max_tokens) or {}
     return call
 
 

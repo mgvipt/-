@@ -920,6 +920,8 @@ class StudioView(_Base):
                                                 str(data.get("url") or "")[:500], feed_ids, urls=urls, remake=bool(data.get("remake"))))
             except (ValueError, reelsvc.ReelError) as e:
                 return Response({"error": str(e)}, status=400)
+            except Exception as e:  # 27.09: не «Не вдалося», а зрозуміла причина
+                return Response({"error": f"Продюсер не відповів ({type(e).__name__}): {str(e)[:150]}. Спробуйте ще раз — або з одним референсом."}, status=502)
         brief = data.get("brief") if isinstance(data.get("brief"), dict) else {}
         brief = {k: reelsvc.clean_text(str(brief.get(k) or ""))[:400] for k in ("title", "hook", "goal", "why", "shots", "fit", "source", "pain")} | (
             {"structure": brief["structure"]} if isinstance(brief.get("structure"), (dict, list)) else {}) | (

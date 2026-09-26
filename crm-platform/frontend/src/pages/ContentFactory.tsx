@@ -220,6 +220,13 @@ const CSS = `
 .cf-safe span{position:absolute;left:6px;font-size:10px;color:#fff;text-shadow:0 1px 2px #000;opacity:.85}
 .cf-safe i.t span{bottom:3px}.cf-safe i.b span{top:3px}
 .cf-narr{display:grid;gap:8px}
+.cf-scen{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.cf-scen button{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:4px;padding:10px 12px;border-radius:10px;border:1px solid var(--cf-line);background:var(--cf-panel2)}
+.cf-scen button b{display:flex;align-items:center;gap:6px;font-size:13.5px;color:var(--cf-ink)}
+.cf-scen button span{font-size:12px;color:var(--cf-ink2);line-height:1.4}
+.cf-scen button.on{border-color:var(--cf-gold);box-shadow:inset 0 0 0 1px var(--cf-gold)}
+.cf-scen button:focus-visible{outline:2px solid var(--cf-blue)}
+.cf-ref-add{display:grid;gap:8px}
 .cf-scope{display:flex;flex-direction:column;gap:2px;padding-bottom:6px}
 .cf-scope + .cf-scope{border-top:1px solid var(--cf-line);margin-top:6px}
 .cf-scope.blog{background:linear-gradient(180deg,rgba(227,184,95,.05),transparent 60%);border-radius:10px}
@@ -3454,8 +3461,12 @@ const STUDIO_STEPS: { k: string; l: string; who: string; what: string }[] = [
 ];
 const GOAL_L: Record<string, string> = { save: "зберегти", share: "переслати", comment: "коментар", dm: "написати в Direct", follow: "підписатися" };
 const FIT_L: Record<string, string> = { ours: "з наших кадрів", ai: "малює ШІ", shoot: "треба доснімати" };
-const IDEA_SRC: Opt[] = [{ v: "ai", l: "ШІ запропонує" }, { v: "ours", l: "З наших відео" }, { v: "base", l: "З бази знань" },
-  { v: "mine", l: "Моя ідея" }, { v: "ref", l: "Референс" }, { v: "search", l: "Пошук в інтернеті" }];
+const SCENARIOS = [
+  { v: "ref", icon: "copy", l: "З референсів", d: "Повторюємо будову, темп і гачок вибраних роликів — зміст і кадри наші." },
+  { v: "media", icon: "video", l: "З моїх відео й фото", d: "ШІ знаходить у ваших відео важливі моменти нанесення й демонстрації й монтує з них." },
+  { v: "ai", icon: "sparkles", l: "Ідеї від ШІ", d: "5 ідей з питань клієнтів, того, що вистрілило в ніші, бази знань і мети блогу." },
+  { v: "mine", icon: "pencil", l: "Моя ідея", d: "Опишіть словами — продюсер складе задум або 5 подач." },
+];
 const stepIdx = (k: string) => Math.max(0, STUDIO_STEPS.findIndex((s) => s.k === k));
 
 type RefPick = { url: string; thumb?: string; title?: string; ig_user?: string };
@@ -3548,7 +3559,10 @@ function StudioBar({ stage, view, onView }: { stage: string; view: string; onVie
 
 function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { name: string; videos: number }[]; onCreated: (id: number) => void }) {
   const [handed] = useState(takeRefs);
-  const [src, setSrc] = useState(handed ? "ref" : "ai");
+  const [scen, setScen] = useState(handed ? "ref" : "ai");
+  const src = scen === "ref" ? "ref" : scen === "media" ? "ours" : scen === "mine" ? "mine" : "ai";
+  const [aiFrom, setAiFrom] = useState("ai");
+  const [addMore, setAddMore] = useState(false);
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [refs, setRefs] = useState<RefPick[]>(handed?.refs || []);
@@ -3568,16 +3582,18 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
   const [voices, setVoices] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.get<{ voices: { id: string; name: string }[] }>("/api/content-factory/studio/voices/").then((d) => setVoices(d.voices || [])).catch(() => setVoices([])); }, []);
   const footage = blog.real_footage;
-  useEffect(() => { if (src === "ref" && !feed) api.get<{ items: FeedT[] }>(`/api/content-factory/feed/?days=90&sort=outlier&blog=${blog.id}`).then((d) => setFeed(d.items.slice(0, 24))).catch(() => setFeed([])); }, [src, feed, blog.id]);
-  useEffect(() => { if (mode === "videos" && !vids) api.get<SrcData>(`/api/content-factory/sources/?kind=video&blog=${blog.id}`).then((d) => setVids(d.items)).catch(() => setVids([])); }, [mode, vids, blog.id]);
+  useEffect(() => { if (scen === "ref" && !feed) api.get<{ items: FeedT[] }>(`/api/content-factory/feed/?days=90&sort=outlier&blog=${blog.id}`).then((d) => setFeed(d.items.slice(0, 24))).catch(() => setFeed([])); }, [scen, feed, blog.id]);
+  useEffect(() => { if ((mode === "videos" || scen === "media") && !vids) api.get<SrcData>(`/api/content-factory/sources/?kind=video&blog=${blog.id}`).then((d) => setVids(d.items)).catch(() => setVids([])); }, [mode, scen, vids, blog.id]);
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label); setMsg(null);
     try { await fn(); } catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); } finally { setBusy(""); }
   };
-  const suggest = () => run("ideas", async () => {
-    const s = src === "search" ? "ref" : src;
+  const suggest = (auto = false) => run("ideas", async () => {
+    const s = scen === "ref" ? "ref" : scen === "media" ? "ours" : scen === "mine" ? "mine" : aiFrom;
     const x = await api.post<{ ideas: StudioIdea[]; refs: StudioRef[] }>("/api/content-factory/studio/ideas/", { blog_id: blog.id, source: s, text, url, urls: refs, feed_ids: feedSel, remake });
-    setRes(x); setPick(null);
+    setRes(x);
+    if (auto && x.ideas.length) { setPick({ ...x.ideas[0] }); if (scen === "media") setMode("videos"); setMsg({ ok: true, text: "Задум готовий — підправте нижче й натисніть «Далі: сценарій». Інші варіанти — у списку." }); }
+    else setPick(null);
   });
   const create = () => run("create", async () => {
     if (!pick) return;
@@ -3587,38 +3603,91 @@ function IdeaStep({ blog, materials, onCreated }: { blog: BlogT; materials: { na
       material: footage && (mode === "material" || mode === "all_ai") ? material : "", asset_ids: mode === "videos" ? chosen : [], all_ai: mode === "all_ai", voice_id: voice });
     onCreated(x.id);
   });
-  const needInput = (src === "mine" && text.trim().length < 5) || ((src === "ref" || src === "search") && !url.trim() && feedSel.length === 0 && refs.length === 0);
+  const hasRefs = !!url.trim() || feedSel.length > 0 || refs.length > 0;
+  const pickScen = (v: string) => { setScen(v); setRes(null); setPick(null); setMsg(null); if (v === "media") setMode("videos"); else if (mode === "videos") setMode("material"); };
   return (
     <div className="cf-card cf-studio-step">
-      <h3>Звідки взяти ідею</h3>
-      <Seg label="Джерело ідеї" value={src} onChange={(v) => { setSrc(v); setRes(null); }} opts={IDEA_SRC} />
-      {src === "mine" && <textarea className="cf-in cf-ta" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Опишіть ідею: що хочете показати й кому. Продюсер запропонує 5 варіантів подачі." aria-label="Моя ідея" />}
-      {(src === "ai" || src === "ours" || src === "base") && <input className="cf-in" value={text} onChange={(e) => setText(e.target.value)} placeholder="Побажання (необовʼязково): тема, сезон, матеріал, акція…" aria-label="Побажання" />}
-      {src === "ref" && (
+      <h3>Як робимо ролик</h3>
+      <div className="cf-scen" role="radiogroup" aria-label="Сценарій створення ролика">
+        {SCENARIOS.map((sc) => (
+          <button key={sc.v} type="button" role="radio" aria-checked={scen === sc.v} className={scen === sc.v ? "on" : ""} onClick={() => pickScen(sc.v)}>
+            <b><Icon n={sc.icon} size={15} /> {sc.l}</b><span>{sc.d}</span></button>))}
+      </div>
+
+      {scen === "ref" && (
         <div className="cf-picker">
+          <div className="cf-kv"><span>Вибрані референси · {refs.length + feedSel.length} з 3</span></div>
           {refs.length > 0 && <div className="cf-ref-chosen">{refs.map((r) => (
             <span key={r.url}>{r.thumb ? <img src={r.thumb} alt="" referrerPolicy="no-referrer" /> : null}<a href={r.url} target="_blank" rel="noreferrer">{r.title || r.url}</a>
               <button type="button" aria-label="Прибрати" onClick={() => setRefs(refs.filter((x) => x.url !== r.url))}>✕</button></span>))}</div>}
+          {feedSel.length > 0 && <div className="cf-ref-chosen">{(feed || []).filter((f) => feedSel.includes(f.id)).map((f) => (
+            <span key={f.id}>{f.preview_url ? <img src={f.preview_url} alt="" referrerPolicy="no-referrer" /> : null}<a href={f.url} target="_blank" rel="noreferrer">@{f.username}: {(f.caption || "").slice(0, 80)}</a>
+              <button type="button" aria-label="Прибрати" onClick={() => setFeedSel(feedSel.filter((x) => x !== f.id))}>✕</button></span>))}</div>}
+          {url.trim() && <div className="cf-ref-chosen"><span><span /><a href={url} target="_blank" rel="noreferrer">{url}</a><button type="button" aria-label="Прибрати" onClick={() => setUrl("")}>✕</button></span></div>}
           <Toggle on={remake} onChange={(v) => { setRemake(v); setMode(v ? "all_ai" : "material"); }} label="ШІ-ремейк: усе в кадрі нове"
             hint="Беремо будову, темп і прийоми референсу, а кадри ШІ малює заново: інше приміщення, фон, руки, предмети, наша фактура. Впізнати оригінал не можна." />
-          <input className="cf-in" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Ще посилання на ролик: YouTube, Instagram, TikTok, Pinterest, Telegram…" aria-label="Посилання на референс" />
-          <span className="cf-quiet">YouTube ШІ переглядає повністю; для інших мереж бере підпис і показники. Або виберіть до 3 роликів, що вистрілили у вашій стрічці:</span>
-          <div className="cf-ref-grid">{!feed ? <span className="cf-kv">Завантажую…</span> : feed.length === 0 ? <span className="cf-kv">У стрічці цього блогу поки порожньо — додайте сторінки в «Сторінках».</span>
-            : feed.map((f) => (
-              <button key={f.id} type="button" className={feedSel.includes(f.id) ? "on" : ""} title={f.caption}
-                onClick={() => setFeedSel(feedSel.includes(f.id) ? feedSel.filter((x) => x !== f.id) : feedSel.length < 3 ? [...feedSel, f.id] : feedSel)}>
-                {f.preview_url ? <img src={f.preview_url} alt="" loading="lazy" /> : <span className="ph" />}
-                <em>{f.x ? `×${f.x.toFixed(1)}` : ""} @{f.username}</em></button>))}</div>
+          {hasRefs && !addMore ? (
+            <button type="button" className="cf-btn ghost" style={{ justifySelf: "start" }} disabled={refs.length + feedSel.length >= 3} onClick={() => setAddMore(true)}>+ Додати ще референс</button>
+          ) : (
+            <div className="cf-ref-add">
+              <input className="cf-in" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Вставте посилання на ролик: YouTube, Instagram, TikTok, Pinterest, Telegram…" aria-label="Посилання на референс" />
+              <input className="cf-in" value={q} onChange={(e) => setQ(e.target.value)} placeholder="…або знайдіть в інтернеті: «декоративна штукатурка», «ремонт до і після»" aria-label="Пошук референсу в інтернеті" />
+              {q.trim() && <WebSearch q={q} compact onGo={(r, rm) => { setRefs([...refs, ...r].slice(0, 3)); setRemake(rm); setMode(rm ? "all_ai" : "material"); setQ(""); setAddMore(false); }} />}
+              <span className="cf-quiet">…або виберіть ролики, що вистрілили у стрічці вашої ніші (до 3):</span>
+              <div className="cf-ref-grid">{!feed ? <span className="cf-kv">Завантажую…</span> : feed.length === 0 ? <span className="cf-kv">У стрічці цього блогу поки порожньо — додайте сторінки в «Конкуренти й натхнення».</span>
+                : feed.map((f) => (
+                  <button key={f.id} type="button" className={feedSel.includes(f.id) ? "on" : ""} title={f.caption}
+                    onClick={() => setFeedSel(feedSel.includes(f.id) ? feedSel.filter((x) => x !== f.id) : refs.length + feedSel.length < 3 ? [...feedSel, f.id] : feedSel)}>
+                    {f.preview_url ? <img src={f.preview_url} alt="" loading="lazy" /> : <span className="ph" />}
+                    <em>{f.x ? `×${f.x.toFixed(1)}` : ""} @{f.username}</em></button>))}</div>
+              {hasRefs && <button type="button" className="cf-btn ghost" style={{ justifySelf: "start" }} onClick={() => setAddMore(false)}>Готово, згорнути</button>}
+            </div>)}
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="cf-btn gold" disabled={!!busy || !hasRefs} onClick={() => suggest(true)}>
+              {busy === "ideas" ? "Дивлюсь референси…" : `Далі: зробити рилс з вибраних (${refs.length + feedSel.length + (url.trim() ? 1 : 0)}) · ≈$0.03`}</button>
+            <button type="button" className="cf-btn ghost" disabled={!!busy || !hasRefs} onClick={() => suggest(false)}
+              title="Замість одного задуму — 5 різних подач на основі тих самих референсів">Показати 5 варіантів задуму</button>
+          </div>
+          <p className="cf-quiet">Що далі: ШІ перегляне референси (YouTube — повністю, інші — підпис і показники), візьме їхню будову, темп і гачок і складе задум у темі вашого блогу.
+            Ви його підправите, виберете, з чого монтувати й голос — і сценарист напише рилс. До хвилини.</p>
         </div>)}
-      {src === "search" && (
+
+      {scen === "media" && (
         <div className="cf-picker">
-          <input className="cf-in" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Що шукати: «декоративна штукатурка», «ремонт до і після», «cartoon wall»…" aria-label="Пошук в інтернеті" />
-          <WebSearch q={q} compact onGo={(r, rm) => { setRefs(r); setRemake(rm); setMode(rm ? "all_ai" : "material"); setSrc("ref"); setRes(null); }} />
+          {footage && <Pick label="Матеріал" value={material} onChange={setMaterial} width={280} opts={materials.map((m) => ({ v: m.name, l: m.name, hint: `${m.videos} відео` }))} />}
+          <span className="cf-quiet">Виберіть 1–6 своїх відео з «Матеріалів». Вибрано: {chosen.length}</span>
+          <div className="cf-pick-grid">{!vids ? <span className="cf-kv">Завантажую…</span> : vids.length === 0 ? <span className="cf-kv">У «Матеріалах» цього блогу відео немає — підключіть групу Telegram або папку Google Drive.</span>
+            : vids.map((v) => (
+              <button key={v.id} type="button" className={chosen.includes(v.id) ? "on" : ""} title={v.caption || v.material}
+                onClick={() => setChosen(chosen.includes(v.id) ? chosen.filter((x) => x !== v.id) : chosen.length < 6 ? [...chosen, v.id] : chosen)}>
+                <img src={v.thumb_url} alt={v.caption} loading="lazy" />{v.duration ? <em>{v.duration} с</em> : null}</button>))}</div>
+          <input className="cf-in" value={text} onChange={(e) => setText(e.target.value)} placeholder="Що показати (необовʼязково): «як наносимо другий шар», «блік при бічному світлі»…" aria-label="Побажання до ролика з моїх відео" />
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="cf-btn gold" disabled={!!busy || chosen.length === 0} onClick={() => suggest(true)}>
+              {busy === "ideas" ? "Продюсер думає…" : `Далі: зробити рилс з вибраних відео (${chosen.length}) · ≈$0.02`}</button>
+          </div>
+          <p className="cf-quiet">Що далі: ШІ розмітить кожне відео на сцени (етап нанесення, блік, готова стіна, якість кадру), вибере найважливіші моменти
+            нанесення й демонстрації матеріалу й змонтує з них рилс, підставляючи назви наших матеріалів. Ви перевірите кожен кадр на кроці «Матеріал».</p>
         </div>)}
-      <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
-        <button type="button" className="cf-btn gold" disabled={!!busy || needInput} onClick={suggest}>{busy === "ideas" ? "Продюсер думає…" : "Запропонувати ідеї · ≈$0.02"}</button>
-        {(src === "ref" || src === "search") && <span className="cf-quiet">+ перегляд YouTube-референсу ≈$0.01–0.03</span>}
-      </div>
+
+      {scen === "ai" && (
+        <div className="cf-picker">
+          <Seg label="Звідки брати ідеї" value={aiFrom} onChange={setAiFrom} opts={[{ v: "ai", l: "Усе разом" }, { v: "base", l: "З питань клієнтів і бази знань" }, { v: "ours", l: "З наших відео" }]} />
+          <input className="cf-in" value={text} onChange={(e) => setText(e.target.value)} placeholder="Побажання (необовʼязково): тема, сезон, матеріал, акція…" aria-label="Побажання" />
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="cf-btn gold" disabled={!!busy} onClick={() => suggest(false)}>{busy === "ideas" ? "Продюсер думає…" : "Запропонувати 5 ідей · ≈$0.02"}</button>
+          </div>
+          <p className="cf-quiet">Продюсер дивиться, про що питають клієнти, що вистрілило в ніші, базу знань і мету блогу — і пропонує 5 ідей з болем клієнта й гачком. Ви вибираєте одну.</p>
+        </div>)}
+
+      {scen === "mine" && (
+        <div className="cf-picker">
+          <textarea className="cf-in cf-ta" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Опишіть ідею: що хочете показати й кому." aria-label="Моя ідея" />
+          <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="cf-btn gold" disabled={!!busy || text.trim().length < 5} onClick={() => suggest(true)}>{busy === "ideas" ? "Продюсер думає…" : "Далі: зробити рилс з моєї ідеї · ≈$0.02"}</button>
+            <button type="button" className="cf-btn ghost" disabled={!!busy || text.trim().length < 5} onClick={() => suggest(false)}>Показати 5 варіантів подачі</button>
+          </div>
+        </div>)}
       {res && res.refs.length > 0 && (
         <div className="cf-refs">{res.refs.map((r, i) => (
           <div key={i}><b>Референс {i + 1}{r.watched ? " · переглянуто ШІ" : ""}</b><span>{r.summary}</span>{r.hook && <span>Гачок: {r.hook}</span>}{r.why_works && <span>Чому працює: {r.why_works}</span>}{r.note && <small>{r.note}</small>}</div>))}</div>)}
