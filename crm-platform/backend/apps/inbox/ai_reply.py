@@ -584,7 +584,7 @@ def _reply_once(conv_id, expected_incoming_id=None):
                                       hello if first else "") if x)
         r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
-                   context=ctx, context_query=ad_q)
+                   context=ctx, context_query=ad_q, contact_id=conv.contact_id)
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         text = _fix_pages(text, msgs)
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"

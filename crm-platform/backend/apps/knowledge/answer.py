@@ -478,8 +478,33 @@ def _finish_funnel(res, resp, msgs, spec, used):
 FINISH = {"seller": _finish_seller, "rop": _finish_rop, "compose": _finish_compose, "funnel": _finish_funnel}
 
 
+def callback_reply(messages, contact_id=None):
+    """Deterministic callback intake. Contact ID comes only from the server's conversation."""
+    if not messages or not CALL_RX.search(messages[-1].get("text", "")):
+        return None
+    from apps.crm.models import Contact
+    phone = Contact.objects.filter(pk=contact_id).values_list("phone", flat=True).first() if contact_id else ""
+    valid = lambda value: 10 <= len(re.sub(r"\D", "", str(value or ""))) <= 15
+    known = valid(phone)
+    if not known:
+        known = any(valid(m.group()) for row in messages if row.get("role") == "client"
+                    for m in re.finditer(r"(?<!\d)\+?\d[\d ()-]{8,22}\d(?!\d)", row.get("text", "")))
+    ru = bool(re.search(r"перезвон|позвон|наберите", messages[-1].get("text", ""), re.I))
+    if known:
+        text = ("Номер для звонка у нас есть, повторно писать его не нужно. Когда Вам удобно принять звонок менеджера?"
+                if ru else "Номер для дзвінка у нас є, повторно писати його не потрібно. Коли Вам зручно прийняти дзвінок менеджера?")
+    else:
+        text = ("Напишите, пожалуйста, номер телефона, по которому менеджер сможет Вам перезвонить."
+                if ru else "Напишіть, будь ласка, номер телефону, за яким менеджер зможе Вам передзвонити.")
+    return {"text": text, "handoff": True,
+            "handoff_reason": "Клієнт просить дзвінок; номер є в картці/діалозі" if known else "Клієнт просить дзвінок; очікуємо номер телефону",
+            "draft_reply": "", "extra": {"callback_phone_available": known}, "actions": [], "used_items": [], "prices": [],
+            "estimate": {"usd": 0, "model": "", "prompt_chars": 0},
+            "cost": {"usd": 0, "model": "", "in_tok": 0, "out_tok": 0, "cache_read": 0}}
+
+
 def answer(agent, messages, include_drafts=False, topic=None, *, model=None, estimate_only=False,
-           source=SOURCE_TEST, timeout=45, context="", context_query=""):
+           source=SOURCE_TEST, timeout=45, context="", context_query="", contact_id=None):
     """Відповідь агента на діалог. messages = [{"role": "client"|"agent", "text": …}], останнє — клієнта.
     estimate_only=True — лише зібрати промпт і порахувати оцінку ($0, ШІ не викликається)."""
     if agent not in SPECS:
@@ -489,6 +514,10 @@ def answer(agent, messages, include_drafts=False, topic=None, *, model=None, est
         if not estimate_only:
             raise ValueError("Останнім має бути повідомлення клієнта")
         msgs = msgs + [{"role": "client", "text": "Скільки коштує і як оплатити?"}]
+    if agent in SELLER_AGENTS:
+        callback = callback_reply(msgs, contact_id)
+        if callback is not None:
+            return dict(callback, agent=agent, include_drafts=bool(include_drafts), topic=topic or "")
     pool = test_items(include_drafts, topic)
     with (reader.test_pool(pool) if pool is not None else nullcontext()):
         if agent in SELLER_AGENTS and (context or context_query):

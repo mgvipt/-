@@ -31,7 +31,7 @@ def reply(conv, incoming):
     try:
         cfg = KnowledgeSettings.get()
         r = answer("yulia_web", history(conv, incoming), include_drafts=False, model=cfg.webchat_model or None,
-                   source=SOURCE, timeout=25)
+                   source=SOURCE, timeout=25, contact_id=conv.contact_id)
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         if r.get("handoff"):

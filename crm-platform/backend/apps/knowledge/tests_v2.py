@@ -330,8 +330,9 @@ class WebchatAiTests(Users, TestCase):
         self.assertIn("не з каталогу", Message.objects.get(conversation=self.conv, internal=True).text)
         m2 = Message.objects.create(conversation=self.conv, direction="in", text="Передзвоніть мені, будь ласка",
                                     external_id="web-in:kb2-2")
-        with patch(CC, return_value=seller("Звісно! Для якої кімнати?")):
-            self.assertEqual(self.reply(m2).text, HANDOFF_TEXT)
+        with patch(CC, return_value=seller("Звісно! Для якої кімнати?")) as cc:
+            self.assertIn("Напишіть, будь ласка, номер телефону", self.reply(m2).text)
+        cc.assert_not_called()
 
     def test_switch_on_error_hands_off(self):
         self.on()
