@@ -1,7 +1,7 @@
 """Вбудований Claude-агент Wallcov-CRM. Автономно рухає лід/сделку по воронці
 та створює задачі співробітникам за глобальними правилами (GlobalRule).
 Кожна дія — у Історію змін (actor «AI-агент») + аудит AgentRun."""
-import json, os, urllib.request
+import hashlib, json, os, urllib.request
 from contextlib import nullcontext
 from django.db import transaction
 from django.utils import timezone
@@ -77,7 +77,7 @@ def _call(system, user_text, model, max_tokens=1200):
         resp = json.load(r)
     try:
         from apps.crm.ai import _log_usage
-        _log_usage("Помощник: напоминания дожать клиента", model, resp.get("usage") or {})
+        _log_usage("Агент воронки CRM", model, resp.get("usage") or {})
     except Exception:
         pass
     return resp
@@ -123,7 +123,7 @@ def build_context(entity, kind):
     conv = Conversation.objects.filter(contact_id=entity.contact_id).order_by("-last_message_at").first() if entity.contact_id else None
     msgs = []
     if conv:
-        for m in list(Message.objects.filter(conversation=conv).order_by("created_at").values("direction", "text"))[-25:]:
+        for m in list(Message.objects.filter(conversation=conv, internal=False).order_by("created_at").values("direction", "text"))[-25:]:
             if m.get("text"):
                 msgs.append(("Клієнт: " if m["direction"] == "in" else "Ми: ") + m["text"])
     last_in = None
@@ -251,12 +251,24 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
     run = AgentRun(kind=kind, trigger=trigger, user=user, model=model)
     setattr(run, kind, entity)
     actions = []
+    input_hash = ""
     try:
-        resp = _call(build_system(entity, kind), build_context(entity, kind), model)
+        system, context = build_system(entity, kind), build_context(entity, kind)
+        input_hash = hashlib.sha256(json.dumps([system, context, model, cfg.autonomous],
+                                               ensure_ascii=False).encode()).hexdigest()
+        if trigger == "sweep":
+            previous = AgentRun.objects.filter(**{kind: entity}, error="",
+                created_at__gte=timezone.now() - timedelta(hours=24)).order_by("-created_at").first()
+            if previous and (previous.output or {}).get("input_hash") == input_hash:
+                return {"skipped": "same agent input already processed", "run_id": previous.id}
+        resp = _call(system, context, model)
         for block in resp.get("content", []):
             if block.get("type") != "tool_use":
                 continue
             name, inp = block.get("name"), block.get("input", {})
+            if name not in {"move_stage", "fill_needs", "make_offer", "no_action"}:
+                actions.append({"tool": name, "result": {"ok": False, "msg": "tool not authorized"}})
+                continue
             if name == "move_stage":
                 r = _move_stage(entity, kind, inp.get("to_stage"), inp.get("reason", ""), user, cfg.autonomous)
             elif name == "create_task":
@@ -278,6 +290,6 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
             actions.append({"tool": name, "input": inp, "result": r})
     except Exception as e:
         run.error = str(e)[:500]
-    run.output = {"actions": actions}
+    run.output = {"actions": actions, "input_hash": input_hash}
     run.save()
     return {"actions": actions, "error": run.error, "run_id": run.id}

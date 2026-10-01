@@ -294,6 +294,10 @@ class WebchatAudienceView(APIView):
 
 
 def webchat_estimate():
-    """Орієнтир для інтерфейсу: одна відповідь веб-чату ≈ 6 тис. символів запиту + 300 токенів відповіді."""
+    """Орієнтир холодного запиту з реально зібраними правилами; без платного виклику."""
     m = KnowledgeSettings.get().webchat_model or HAIKU
-    return {"model": m, "per_reply_usd": estimate_usd(m, 7000, 300), "models": MODELS}
+    sample = answer("yulia_web", [{"role": "client", "text": "Пробник Галатея: ціна і як замовити?"}],
+                    model=m, estimate_only=True)
+    est = sample["estimate"]
+    return {"model": m, "per_reply_usd": est["usd"], "models": MODELS,
+            "prompt_chars": est["prompt_chars"], "basis": "assembled_sample_cold_estimate"}

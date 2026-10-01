@@ -36,7 +36,7 @@ TEST_AGENT_CODES = [c for c, _ in TEST_AGENTS]
 SELLER_AGENTS = ("yulia_ig", "yulia_tiktok", "yulia_web")
 HAIKU = "claude-haiku-4-5"
 SONNET = "claude-sonnet-4-6"
-MODELS = [HAIKU, SONNET]
+MODELS = [HAIKU, SONNET, "claude-sonnet-5-5"]
 API = "https://api.anthropic.com/v1/messages"
 SOURCE_TEST = "Тестовий чат бази знань"
 
@@ -219,15 +219,31 @@ def _spec_seller(agent, msgs, model, context="", context_query=""):
     # 22.09.2026: context — напр. реклама, з якої прийшов клієнт (apps/inbox/ad_context.py);
     # context_query — матеріал реклами, щоб база знань підтягнула каталог/ціни саме його
     q = (_query(msgs) + " " + (context_query or "")).strip()
-    items = reader.select(agent, q, 15)
-    kb = reader.context_for(agent, q, limit=15, max_chars=6000)
+    candidates = reader.select(agent, q, 45)
+    items, seen_facts = [], set()
+    for item in candidates:
+        if item.kind == "rule":
+            items.append(item)
+            continue
+        key = re.sub(r"\s+", " ", item.text or "").strip()
+        if key not in seen_facts and len(seen_facts) < 15:
+            seen_facts.add(key)
+            items.append(item)
+    # Mandatory rules must not disappear behind topic-order truncation. Cache the complete
+    # stable approved rules with the seller system; reserve the user-context budget for facts.
+    rules = [i for i in items if i.kind == "rule"]
+    rule_text = "\n\n".join(catalog.render(i.title + "\n" + i.text) for i in rules)
+    facts = [i for i in items if i.kind != "rule"]
+    kb = reader.render_items(facts, max_chars=6000)
+    live_prices = catalog.prices_block(items, q)
+    kb = "\n\n".join(x for x in (kb, live_prices) if x)
     kits = test_kits_block()
     user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n%s\n%sДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
             "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, (context + "\n\n") if context else "",
                                                _dialog(msgs), msgs[-1]["text"]))
-    allowed = kb + "\n" + (context or "") + "\n" + "\n".join(m["text"] for m in msgs if m["role"] == "client")
-    spec = {"system": seller_system(CHANNEL[agent]), "user": user, "model": model or HAIKU, "max_tokens": 600,
-            "mode": "seller", "cache": False, "allowed": allowed}
+    allowed = kb + "\n" + kits + "\n" + rule_text + "\n" + (context or "")
+    spec = {"system": seller_system(CHANNEL[agent]) + "\n\nЗАТВЕРДЖЕНІ ПРАВИЛА WALLCOV:\n" + rule_text + "\n\nУТОЧНЕННЯ ПРІОРИТЕТУ: актуальна ціна з каталогу CRM вища за приклади та історію. На етапі оформлення можна питання-підтвердження; після погодження покупки, передачі менеджеру чи відмови зайве питання не потрібне. На пряме питання про ШІ відповідай чесно, що ти віртуальна консультантка.", "user": user, "model": model or HAIKU, "max_tokens": 600,
+            "mode": "seller", "cache": True, "allowed": allowed}
     if not items:
         spec["empty"] = "для цього агента немає %s записів — ШІ не викликається, $0" % (
             "жодних" if reader.approved_for(agent) == [] else "підхожих")
@@ -388,7 +404,7 @@ def _finish_seller(res, resp, msgs, spec, used):
     if order and (order.get("product") or order.get("volume")):
         # 18.09.2026 (Олег): клієнт погодився на тест-набір — не передаємо менеджеру, а оформлюємо самі.
         # Лишаємо тільки справді небезпечні причини (чужі суми, знижки), решту прибираємо.
-        problems = [p for p in problems if "не з каталогу" in p or "знижк" in p]
+        problems = [p for p in problems if "не з каталогу" in p or "знижк" in p or "дзвінок" in p]
     if data.get("handoff") and not (order and (order.get("product") or order.get("volume"))):
         reason = str(data.get("reason") or "").strip()
         problems.insert(0, "ШІ сам вирішив передати менеджеру" + (": " + reason if reason else ""))

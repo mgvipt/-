@@ -5919,9 +5919,7 @@ class AiUsageView(APIView):
 
 
 class AnthropicCostView(APIView):
-    """Реальний розхід Anthropic по КОЖНОМУ ключу (усі боти) — рахуємо з usage_report
-    (надійно, збігається з фактом). cost_report показує ще й Claude Code/підписку (кеш) —
-    його даємо окремо як org_total з поміткою."""
+    """Оцінка витрат API по ключах за фактичними токенами провайдера, не банківські списання."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -5950,7 +5948,7 @@ class AnthropicCostView(APIView):
         from apps.integrations.models import IntegrationSettings as _IS
         _sub = _IS.objects.filter(provider="ai_subscription").first()
         _subv = float((_sub.config or {}).get("monthly_usd") or 0) if _sub else 0.0
-        _ckey = "ai_anthropic:%s:%s" % (a_frm, to)
+        _ckey = "ai_anthropic:v2:%s:%s" % (a_frm, to)
         _cached = _dj_cache.get(_ckey)
         if _cached is not None:
             _r = dict(_cached); _r["subscription_monthly"] = _subv; _r["cached"] = True
@@ -5960,13 +5958,7 @@ class AnthropicCostView(APIView):
             req = urllib.request.Request(url, headers=H)
             with urllib.request.urlopen(req, timeout=40) as r:
                 return _j.loads(r.read().decode() or "{}")
-        # ціна за 1 токен: (uncached_in, output, cache_read, cache_write)
-        PRICE = {"opus": (15/1e6, 75/1e6, 1.5/1e6, 18.75/1e6),
-                 "sonnet": (3/1e6, 15/1e6, 0.3/1e6, 3.75/1e6),
-                 "haiku": (0.8/1e6, 4/1e6, 0.08/1e6, 1/1e6)}
-        def tier(m):
-            m = (m or "").lower()
-            return "opus" if "opus" in m else ("sonnet" if "sonnet" in m else "haiku")
+        from apps.crm.ai_costs import report_usage_cost
         _base = "https://api.anthropic.com/v1/organizations"
         _win = "starting_at=%sT00:00:00Z&ending_at=%sT23:59:59Z" % (a_frm, to)
         try:
@@ -5976,7 +5968,7 @@ class AnthropicCostView(APIView):
                     names[k.get("id")] = k.get("name")
             except Exception:
                 pass
-            _uparams = _win + "&bucket_width=1d&limit=31&group_by[]=api_key_id&group_by[]=model"
+            _uparams = _win + "&bucket_width=1d&limit=31&group_by[]=api_key_id&group_by[]=model&group_by[]=service_tier&group_by[]=inference_geo"
             _url = _base + "/usage_report/messages?" + _uparams
             agg = {}; _pages = 0
             while _url and _pages < 40:
@@ -5984,11 +5976,7 @@ class AnthropicCostView(APIView):
                 for b in (us.get("data") or []):
                     for r in (b.get("results") or []):
                         kid = r.get("api_key_id") or "—"
-                        pin, pout, pcr, pcw = PRICE[tier(r.get("model"))]
-                        c = (int(r.get("uncached_input_tokens") or 0) * pin
-                             + int(r.get("output_tokens") or 0) * pout
-                             + int(r.get("cache_read_input_tokens") or 0) * pcr
-                             + int(r.get("cache_creation_input_tokens") or 0) * pcw)
+                        c = float(report_usage_cost(r))
                         agg[kid] = agg.get(kid, 0) + c
                 _np = us.get("next_page")
                 _url = (_base + "/usage_report/messages?" + _uparams + "&page=" + urllib.parse.quote(_np)) if (us.get("has_more") and _np) else None
@@ -5996,7 +5984,8 @@ class AnthropicCostView(APIView):
                            for kid, v in agg.items()], key=lambda x: -x["cost"])
             keys_total = round(sum(r["cost"] for r in rows), 2)
             payload = {"configured": True, "from": a_frm, "to": to, "rows": rows,
-                       "total": keys_total, "org_total": None}
+                       "total": keys_total, "org_total": None, "cost_basis": "usage_estimate",
+                       "note": "Оцінка за токенами; рахунок провайдера може відрізнятися."}
             _dj_cache.set(_ckey, payload, 600)           # 10 хв — щоб не довбати Admin API
             _dj_cache.set(_ckey + ":last", payload, 86400)  # останній удачний на добу (на випадок 429)
             _out = dict(payload); _out["subscription_monthly"] = _subv
