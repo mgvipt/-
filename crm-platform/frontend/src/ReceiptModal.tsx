@@ -3,13 +3,40 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { useUnits } from "./units";
 
-const UNITS = ["шт", "кг", "г", "л", "мл", "м", "см", "м²", "м³", "пог.м", "рулон", "упаковка", "комплект", "набір", "пара", "відро", "банка", "пляшечка", "туба", "мішок", "пачка", "лист", "день", "година", "послуга"];
+
 interface Row { product: number; product_name: string; qty: string; price: string; retail: string; factor: string; unit: string; q: string; res: any[]; open: boolean; }
 
 /* 01.10.2026 (Олег): видима підказка про коефіцієнт — плутали ціну за упаковку з ціною за одиницю
  * (ввели 119,24 за кг у поле, яке чекає ціну за відро 15 кг → собівартість стала 7,95 ₴/кг).
  * Показуємо живий приклад із тієї ж позиції, а не абстрактне пояснення. */
+/* 01.10.2026 (Олег): «в прихід додалась одна одиниця, а не по коефіцієнту».
+ * Коеф загубився (товар новий, pack_factor=1) і ніщо про це не сказало.
+ * Тепер під кожною позицією ВИДНО, що саме ляже на склад і по якій ціні. */
+function RowResult({ r, t }: { r: Row; t: (ru: string, uk: string) => string }) {
+  if (!r.product) return null;
+  const f = Number(r.factor) || 1;
+  const q = Number(r.qty) || 0;
+  const pr = Number(String(r.price).replace(",", ".")) || 0;
+  if (!q) return null;
+  const u = r.unit || t("ед", "од");
+  const nf = (v: number) => v.toLocaleString("ru", { maximumFractionDigits: 2 });
+  const one = f === 1;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 11.5, margin: "3px 0 0 2px",
+                  color: one ? "#92400e" : "#15803d", fontWeight: 600 }}>
+      <span>→ {t("на склад", "на склад")} <b>{nf(q * f)} {u}</b>{pr > 0 ? <> · <b>{nf(f ? pr / f : pr)} ₴/{u}</b></> : null}</span>
+      {one && (
+        <span style={{ color: "#92400e", fontWeight: 500 }}>
+          {t("· коэф 1 — упаковка пойдёт как 1 " + u + ". Если это ведро на несколько " + u + " — поставьте коэффициент",
+             "· коеф 1 — упаковка піде як 1 " + u + ". Якщо це відро на кілька " + u + " — поставте коефіцієнт")}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function PackHint({ rows, t }: { rows: Row[]; t: (ru: string, uk: string) => string }) {
   const r = rows.find((x) => (Number(x.factor) || 1) !== 1 && !!x.product);
   if (!r) return null;
@@ -46,6 +73,7 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
   productId?: number; productName?: string; dealId?: number; editDoc?: any; onClose: () => void; onSaved?: () => void;
 }) {
   const { t } = useLang();
+  const UNITS = useUnits();
   const [wh, setWh] = useState<number>(0);
   const [rows, setRows] = useState<Row[]>([
     { product: productId || 0, product_name: productName || "", qty: "1", price: "", retail: "", factor: "1", unit: "", q: "", res: [], open: false },
@@ -228,10 +256,10 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
 
         {/* Позиції */}
         <label style={lbl}>{t("Позиции","Позиції")}</label>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 44px 38px 44px 92px 82px 66px 20px", gap: 8, alignItems: "center", padding: "0 2px 4px", fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .2 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 58px 86px 62px 104px 90px 76px 22px", gap: 8, alignItems: "center", padding: "0 2px 4px", fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .2 }}>
           <span>{t("ТОВАР","ТОВАР")}</span>
-          <span style={{ textAlign: "center" }}>{t("К-ВО","К-СТЬ")}</span>
-          <span style={{ textAlign: "center" }} title={t("Единица измерения (из номенклатуры)","Одиниця виміру (з номенклатури)")}>{t("ЕД.","ОД.")}</span>
+          <span style={{ textAlign: "center" }} title={t("Сколько упаковок (вёдер, мешков)","Скільки упаковок (відер, мішків)")}>{t("УПАК.","УПАК.")}</span>
+          <span style={{ textAlign: "center" }} title={t("Единица измерения — в чём считаем на складе (кг, литры, штуки). Сохраняется в номенклатуру.","Одиниця виміру — у чому рахуємо на складі (кг, літри, штуки). Зберігається в номенклатуру.")}>{t("ЕД. ИЗМ.","ОД. ВИМ.")}</span>
           <span style={{ textAlign: "center" }} title={t("Коэффициент: сколько единиц номенклатуры в 1 упаковке. Ведро 15 кг → 15. На склад попадёт к-во × коэф.","Коефіцієнт: скільки одиниць номенклатури в 1 упаковці. Відро 15 кг → 15. На склад потрапить к-сть × коеф.")}>{t("КОЭФ","КОЕФ")}</span>
           <span style={{ textAlign: "center" }} title={t("Цена за ВСЮ упаковку (ведро), не за кг/литр. Система сама поделит на коэффициент — результат видно подсказкой под полем.","Ціна за ВСЮ упаковку (відро), не за кг/літр. Система сама поділить на коефіцієнт — результат видно підказкою під полем.")}>{t("ЗАКУПКА","ЗАКУПКА")}</span>
           <span style={{ textAlign: "center" }}>{t("СУММА","СУМА")}</span>
@@ -239,7 +267,8 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
           <span></span>
         </div>
         {rows.map((r, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 44px 38px 44px 92px 82px 66px 20px", gap: 8, alignItems: "center", marginBottom: 6 }}>
+          <div key={i} style={{ marginBottom: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 58px 86px 62px 104px 90px 76px 22px", gap: 8, alignItems: "center" }}>
             <div style={{ position: "relative", minWidth: 0 }}>
               {r.product ? (
                 <div style={{ ...inp, display: "flex", alignItems: "center", background: "#eff6ff" }}><span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5 }}>{r.product_name}</span><span onClick={() => setRow(i, { product: 0, product_name: "", q: "" })} style={{ cursor: "pointer", color: "#94a3b8" }}>✕</span></div>
@@ -258,9 +287,9 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
               )}
             </div>
             <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Сколько упаковок (вёдер, мешков). Единицы посчитаются сами: к-во × коэф.","Скільки упаковок (відер, мішків). Одиниці порахуються самі: к-сть × коеф.")} placeholder={t("к-во","к-сть")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px" }} />
-            <select value={r.unit || ""} onChange={(e) => { const u = e.target.value; setRow(i, { unit: u }); if (r.product) api.patch(`/api/products/${r.product}/`, { unit: u }).catch(() => {}); }} title={t("Единица измерения — клик меняет список; сохраняется в номенклатуру (везде)","Одиниця виміру — клік відкриває список; зберігається в номенклатуру (всюди)")} style={{ border: "none", background: "transparent", fontSize: 12, color: "#0f172a", fontWeight: 600, textAlign: "center", textAlignLast: "center" as any, cursor: "pointer", width: "100%", appearance: "none" as any, padding: 0 }}><option value="">—</option>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
+            <select value={r.unit || ""} onChange={(e) => { const u = e.target.value; setRow(i, { unit: u }); if (r.product) api.patch(`/api/products/${r.product}/`, { unit: u }).catch(() => {}); }} title={t("Единица измерения — клик меняет список; сохраняется в номенклатуру (везде)","Одиниця виміру — клік відкриває список; зберігається в номенклатуру (всюди)")} style={{ height: 36, border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", fontSize: 12.5, color: "#0f172a", fontWeight: 600, textAlign: "center", textAlignLast: "center" as any, cursor: "pointer", width: "100%", padding: "0 2px", boxSizing: "border-box" as any }}><option value="">—</option>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
             <div style={{ minWidth: 0 }}>
-              <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Сколько единиц в 1 упаковке: ведро 15 кг → 15, мешок 25 кг → 25. Обычная штука без фасовки → 1.","Скільки одиниць в 1 упаковці: відро 15 кг → 15, мішок 25 кг → 25. Звичайна штука без фасування → 1.")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
+              <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Сколько единиц в 1 упаковке: ведро 15 кг → 15, мешок 25 кг → 25. Обычная штука без фасовки → 1.","Скільки одиниць в 1 упаковці: відро 15 кг → 15, мішок 25 кг → 25. Звичайна штука без фасування → 1.")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", fontWeight: 700, borderColor: (Number(r.factor) || 1) !== 1 ? "#2563eb" : "#cbd5e1", borderWidth: (Number(r.factor) || 1) !== 1 ? 2 : 1, background: (Number(r.factor) || 1) !== 1 ? "#eff6ff" : "#fff" }} />
               {(Number(r.factor) || 1) !== 1 && <div style={{ fontSize: 10, textAlign: "center", lineHeight: 1, marginTop: 1, color: "#2563eb", fontWeight: 700, whiteSpace: "nowrap" }}>= {((Number(r.qty) || 0) * (Number(r.factor) || 1)).toLocaleString()} {r.unit || t("ед","од")}</div>}
             </div>
             <div style={{ minWidth: 0 }}>
@@ -270,6 +299,8 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
             <span style={{ textAlign: "center", fontWeight: 700, fontSize: 12.5, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{Math.round((Number(r.qty) || 0) * (Number(String(r.price).replace(",", ".")) || 0)).toLocaleString("ru")} ₴</span>
             <input value={r.retail} onChange={(e) => setRow(i, { retail: e.target.value })} type="number" title={t("Цена продажи за 1 единицу (кг/литр/шт) — НЕ за упаковку. Подставляется из номенклатуры, можно изменить — новое значение туда и запишется.","Ціна продажу за 1 одиницю (кг/літр/шт) — НЕ за упаковку. Підставляється з номенклатури, можна змінити — нове значення туди й запишеться.")} placeholder={t("розн.","розн.")} style={{ ...inp, width: "100%", padding: "0 6px", borderColor: "#a7f3d0" }} />
             <span onClick={() => rows.length > 1 && setRows((rs) => rs.filter((_, j) => j !== i))} style={{ cursor: rows.length > 1 ? "pointer" : "default", color: rows.length > 1 ? "#ef4444" : "transparent", textAlign: "center", fontSize: 15 }}>✕</span>
+          </div>
+          <RowResult r={r} t={t} />
           </div>
         ))}
         <span onClick={() => setRows((rs) => [...rs, { product: 0, product_name: "", qty: "1", price: "", retail: "", factor: "1", unit: "", q: "", res: [], open: false }])} style={{ cursor: "pointer", color: "#2563eb", fontSize: 13, fontWeight: 600 }}>+ {t("ещё позиция", "ще позиція")}</span>

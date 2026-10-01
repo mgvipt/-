@@ -1,11 +1,23 @@
 from rest_framework import serializers
-from .models import Warehouse, Product, ProductCategory, StockDocument, StockMovement
+from .models import Warehouse, Product, ProductCategory, StockDocument, StockMovement, Unit
 
 
 class WarehouseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Warehouse
         fields = ["id", "name", "is_default"]
+
+
+class UnitSerializer(serializers.ModelSerializer):
+    products_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Unit
+        fields = ["id", "name", "full_name", "sort_order", "is_active", "products_count"]
+
+    def get_products_count(self, obj):
+        from .models import Product
+        return Product.objects.filter(unit=obj.name).count()
 
 
 class ProductCategorySerializer(serializers.ModelSerializer):

@@ -24,6 +24,8 @@ import InternalMaterialDocuments from "../InternalMaterialDocuments";
 import { api, Paginated } from "../api";
 import RepackForm, { RepackDocModal } from "../RepackForm";
 import { useLang } from "../i18n";
+import { useUnits, invalidateUnits } from "../units";
+import UnitsPanel from "../UnitsPanel";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import { ProductFacts } from "./ProductFacts";
@@ -122,7 +124,7 @@ export default function Warehouse() {
         (view === "inv" && !canTabInv) || (view === "stat" && !canTabStat)) setView("goods");
     // eslint-disable-next-line
   }, [canTabReal, canTabRec, canTabInv, canTabStat]);
-  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "writeoff" | "inv" | "stat" | "dups">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
+  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "writeoff" | "inv" | "stat" | "dups" | "units">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
   useEffect(() => { try { localStorage.setItem("whacc_tab", view); } catch (e) { /* noop */ } }, [view]);
   // авто-загрузка списка документов при входе на вкладку (в т.ч. после перезагрузки / создания прихода)
   useEffect(() => { if (view === "receipt") openReceiptList(); else if (view === "realiz") openRealizList(); else if (view === "writeoff") openWriteoffList(); else if (view === "inv") openInventory(); /* eslint-disable-next-line */ }, [view]);
@@ -297,9 +299,7 @@ export default function Warehouse() {
   // масові дії над товарами
   const [selIds, setSelIds] = useState<Set<number>>(new Set());
   const [bulkUnit, setBulkUnit] = useState("");
-  const UNITS = ["шт", "кг", "г", "л", "мл", "м", "см", "м²", "м³", "пог.м", "рулон", "упаковка",
-                 "комплект", "набір", "пара", "відро", "банка", "пляшечка", "туба", "мішок",
-                 "пачка", "лист", "день", "година", "послуга"];
+  const UNITS = useUnits();
   function toggleSel(id: number) {
     setSelIds((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); return nx; });
   }
@@ -917,6 +917,7 @@ export default function Warehouse() {
         {canTabInv && <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>}
         {canTabStat && <button className={"btn" + (view === "stat" ? " btn-primary" : " btn-light")} onClick={() => setView("stat")}><Icon n="📊" size={15} /> {t("Аналитика","Аналітика")}</button>}
         {canEdit && <button className={"btn" + (view === "dups" ? " btn-primary" : " btn-light")} onClick={() => setView("dups")}><Icon n="📦" size={15} /> {t("Дубли товаров","Дублі товарів")}</button>}
+        {canEdit && <button className={"btn" + (view === "units" ? " btn-primary" : " btn-light")} onClick={() => setView("units")}><Icon n="📏" size={15} /> {t("Единицы измерения","Одиниці виміру")}</button>}
       </div>
 
       {view === "realiz" ? (
@@ -1279,7 +1280,7 @@ export default function Warehouse() {
             <input value={newP.name} onChange={(e) => setNewP({ ...newP, name: e.target.value })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} autoFocus />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <label style={{ fontSize: 12 }} className="muted">{t("Артикул","Артикул")}<input value={newP.sku} onChange={(e) => setNewP({ ...newP, sku: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
-              <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={newP.unit} onChange={(e) => setNewP({ ...newP, unit: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
+              <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<select value={newP.unit} onChange={(e) => setNewP({ ...newP, unit: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", marginTop: 2, background: "#fff" }}><option value="">—</option>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}{newP.unit && !UNITS.includes(newP.unit) && <option value={newP.unit}>{newP.unit}</option>}</select></label>
               <label style={{ fontSize: 12 }} className="muted">{t("Розничная цена","Роздрібна ціна")}<input type="number" value={newP.price} onChange={(e) => setNewP({ ...newP, price: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
               <label style={{ fontSize: 12 }} className="muted">{t("Закупочная","Закупівельна")}<input type="number" value={newP.cost} onChange={(e) => setNewP({ ...newP, cost: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
             </div>
@@ -1397,7 +1398,7 @@ export default function Warehouse() {
                 <label style={{ fontSize: 12 }} className="muted" title={t("Когда остаток меньше — товар сам появится складу во вкладке «Заказать». 0 = не контролируем","Коли залишок менший — товар сам зʼявиться складу у вкладці «Замовити». 0 = не контролюємо")}>{t("Мин. остаток (контроль наличия)","Мін. залишок (контроль наявності)")}<input type="number" value={cardEdit.min_stock ?? 0} onChange={(e) => setCardEdit({ ...cardEdit, min_stock: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 <label style={{ fontSize: 12 }} className="muted" title={t("Кратность заказа: ведро, мешок, упаковка. 0 = довести до минимума ×2","Кратність замовлення: відро, мішок, упаковка. 0 = довести до мінімуму ×2")}>{t("Заказывать по","Замовляти по")}<input type="number" value={cardEdit.reorder_qty ?? 0} onChange={(e) => setCardEdit({ ...cardEdit, reorder_qty: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 {showCost && <label style={{ fontSize: 12 }} className="muted" title={t("Для заявок на дозаказ. Пусто — из последнего прихода","Для заявок на дозамовлення. Порожньо — з останнього приходу")}>{t("Поставщик","Постачальник")}<SupplierPick value={cardEdit.supplier} onChange={(v: any) => setCardEdit({ ...cardEdit, supplier: v })} /></label>}
-                <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={cardEdit.unit} onChange={(e) => setCardEdit({ ...cardEdit, unit: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
+                <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<select value={cardEdit.unit || ""} onChange={(e) => setCardEdit({ ...cardEdit, unit: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px", marginTop: 2, background: "#fff" }}><option value="">—</option>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}{cardEdit.unit && !UNITS.includes(cardEdit.unit) && <option value={cardEdit.unit}>{cardEdit.unit}</option>}</select></label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={cardEdit.is_active} onChange={(e) => setCardEdit({ ...cardEdit, is_active: e.target.checked })} /> {t("Активен (виден в каталоге)","Активний (видно у каталозі)")}</label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Выключи для услуг/работ — не списывается со склада, остаток не считается","Вимкни для послуг/робіт — не списується зі складу, залишок не рахується")}><input type="checkbox" checked={cardEdit.track_stock} onChange={(e) => setCardEdit({ ...cardEdit, track_stock: e.target.checked })} /> {t("Количественный учёт склада","Кількісний облік складу")}</label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Товар под заказ: закупаем ПОСЛЕ продажи. При приходе закупочная цена автоматически обновится во ВСЕХ сделках с этим товаром (в т.ч. закрытых) и в движении товара.","Товар під замовлення: закуповуємо ПІСЛЯ продажу. При приході закупівельна ціна автоматично оновиться в УСІХ угодах з цим товаром (в т.ч. закритих) і в русі товару.")}><input type="checkbox" checked={cardEdit.is_drop} onChange={(e) => setCardEdit({ ...cardEdit, is_drop: e.target.checked })} /> {t("Дроп (докупаем под заказ)","Дроп (докуповуємо під замовлення)")}</label>
@@ -1513,6 +1514,7 @@ export default function Warehouse() {
 
       {/* ─── [9] ИНВЕНТАРИЗАЦИЯ ───────────────────────────────────────────── */}
       {view === "dups" && <DupsPanel />}
+      {view === "units" && <UnitsPanel canEdit={canEdit} />}
       {view === "inv" && (
         <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", padding: 22, maxHeight: "calc(100vh - 170px)", display: "flex", flexDirection: "column" }}>
             {/* Ведомость / История проведённых инвентаризаций */}

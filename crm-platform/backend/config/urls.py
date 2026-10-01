@@ -36,6 +36,7 @@ from apps.telephony import views as tel_views
 
 router = DefaultRouter()
 router.register("product-categories", wh_views.ProductCategoryViewSet)
+router.register("units", wh_views.UnitViewSet)
 router.register("finmodel-articles", fin_views.FinModelArticleViewSet)
 router.register("fin-directions", fin_views.FinDirectionViewSet)
 router.register("channel-spend", fin_views.ChannelSpendViewSet)

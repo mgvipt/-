@@ -57,6 +57,24 @@ class ProductCategory(models.Model):
         return self.name
 
 
+class Unit(models.Model):
+    """Одиниця виміру — ЄДИНИЙ довідник на всю CRM (01.10.2026, Олег).
+    Товар зберігає одиницю текстом (`Product.unit`), щоб історія не ламалась,
+    а цей довідник дає однаковий випадний список скрізь, де одиницю вибирають."""
+    name = models.CharField("Скорочено", max_length=16, unique=True, help_text="Як пишемо в таблицях: кг, л, шт")
+    full_name = models.CharField("Повна назва", max_length=60, blank=True, default="", help_text="Кілограм, літр — для підказки")
+    sort_order = models.PositiveIntegerField("Порядок", default=100)
+    is_active = models.BooleanField("Активна", default=True, help_text="Неактивну не видно у виборі, але старі товари з нею лишаються")
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+        verbose_name = "Одиниця виміру"
+        verbose_name_plural = "Одиниці виміру"
+
+    def __str__(self):
+        return self.name
+
+
 class Product(models.Model):
     name = models.CharField(max_length=255)
     sku = models.CharField("Артикул", max_length=64, blank=True, db_index=True)

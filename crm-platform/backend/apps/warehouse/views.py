@@ -9,8 +9,8 @@ from rest_framework.views import APIView
 from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from apps.common.permissions import HasPermCode
-from .models import Warehouse, Product, ProductCategory, ProductImage, StockDocument, StockMovement, InventoryFactDraft
-from .serializers import WarehouseSerializer, ProductSerializer, StockDocumentSerializer, ProductCategorySerializer
+from .models import Warehouse, Product, ProductCategory, ProductImage, StockDocument, StockMovement, InventoryFactDraft, Unit
+from .serializers import WarehouseSerializer, ProductSerializer, StockDocumentSerializer, ProductCategorySerializer, UnitSerializer
 
 
 class WarehousePerm(HasPermCode):
@@ -63,6 +63,26 @@ class WarehouseViewSet(viewsets.ModelViewSet):
     permission_classes = [WarehouseWrite]
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
+
+
+class UnitViewSet(viewsets.ModelViewSet):
+    """Довідник одиниць виміру. Читати може будь-хто авторизований (список потрібен
+    у кожній формі), редагувати — лише з правом на склад."""
+    queryset = Unit.objects.all()
+    serializer_class = UnitSerializer
+    pagination_class = None
+
+    def get_permissions(self):
+        from rest_framework.permissions import IsAuthenticated
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticated()]
+        return [WarehouseWrite()]
+
+    def get_queryset(self):
+        qs = Unit.objects.all()
+        if self.request.query_params.get("all") != "1":
+            qs = qs.filter(is_active=True)
+        return qs
 
 
 class ProductCategoryViewSet(viewsets.ModelViewSet):
