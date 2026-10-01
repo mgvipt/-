@@ -31,6 +31,7 @@ PERMISSION_GROUPS = [
         ("contact.kind.master", "Вкладка «Майстри»", "Прихована за замовчуванням — відкривати лише відповідальним"),
         ("contact.kind.staff", "Вкладка «Співробітники»", "Прихована за замовчуванням — відкривати лише відповідальним"),
         ("contact.kind.partner", "Вкладка «Партнери / Дизайнери»", "Прихована за замовчуванням — відкривати лише відповідальним"),
+        ("contact.kind.creditor", "Вкладка «Кредитори»", "Хто дав нам гроші в борг: приватні позики, банки, розстрочки. Прихована за замовчуванням — тільки власник"),
     ]),
     ("Чати / Відкриті лінії", [
         ("inbox.view", "Доступ до розділу «Чати / Відкриті лінії»", "Вимкнути — вкладка «Чати» зникне з меню зовсім"),
@@ -432,7 +433,7 @@ class User(AbstractUser):
         ks = set()
         if "contact.kind.client" not in (self.denied_permissions or []):
             ks.add("client")
-        for k in ("supplier", "master", "staff", "partner"):
+        for k in ("supplier", "master", "staff", "partner", "creditor"):
             if self.has_perm_code("contact.kind." + k):
                 ks.add(k)
         return ks

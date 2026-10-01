@@ -29,6 +29,7 @@ const KINDS: [string, string, string, string][] = [
   ["partner", "Партнери", "#fdf2f8", "#be185d"],
   ["designer", "Дизайнери", "#ecfeff", "#0e7490"],
   ["builder", "Будівельники / прораби", "#fefce8", "#a16207"],
+  ["creditor", "Кредитори", "#fef2f2", "#b91c1c"],
 ];
 
 const LOY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активний: "#16a34a", Новий: "#2563eb", Сплячий: "#d97706", Активный: "#16a34a", Новый: "#2563eb", Спящий: "#d97706" };
