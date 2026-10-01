@@ -186,3 +186,53 @@ def summary():
     tot_m = sum(r["interest_month_uah"] for r in rows)
     return dict(loans=rows, total_uah=round(tot_uah, 2), interest_month_uah=round(tot_m, 2),
                 interest_year_uah=round(sum(r["interest_year_uah"] for r in rows), 2))
+
+
+PAY_CATEGORIES = ("Кредиты — возврат тела", "Погашение кредита")
+
+
+def pull_payments(loan: Loan, since: date = None, dry: bool = False):
+    """Підтягнути з журналу платежі, які стосуються цього кредиту.
+
+    Беремо витрати у «кредитних» категоріях, де контрагент — наш кредитор.
+    Кожну операцію записуємо один раз: привʼязка через LoanEntry.transaction.
+    01.10.2026 (Олег): «у кредитах немає сум, які я оплатив і провів останні».
+    """
+    from .models import Category, Transaction
+    if not loan.creditor_id:
+        return []
+    cats = list(Category.objects.filter(name__in=PAY_CATEGORIES).values_list("id", flat=True))
+    if not cats:
+        return []
+    qs = Transaction.objects.filter(direction="out", category_id__in=cats).exclude(
+        id__in=LoanEntry.objects.filter(loan=loan).exclude(transaction=None).values_list("transaction_id", flat=True))
+    if since:
+        qs = qs.filter(date__gte=since)
+    # контрагент — цей кредитор: або за звʼязком contact, або за назвою
+    name = (str(loan.creditor) or "").strip()
+    parts = [w for w in name.replace(",", " ").split() if len(w) > 3]
+    from django.db.models import Q
+    cond = Q(contact_id=loan.creditor_id)
+    for w in parts:
+        cond |= Q(counterparty__icontains=w)
+    qs = qs.filter(cond).order_by("date", "id")
+
+    made = []
+    for t in qs:
+        rate = fx_rate(loan.currency, None) or D("1")
+        amt = (D(t.amount_uah or 0) / rate).quantize(D("0.01"))
+        if amt <= 0:
+            continue
+        if dry:
+            made.append(dict(date=t.date, amount=amt, uah=t.amount_uah, tx=t.id))
+            continue
+        loan.balance = (D(loan.balance or 0) - amt).quantize(D("0.01"))
+        made.append(LoanEntry.objects.create(
+            loan=loan, kind="payment", date=t.date, amount=-amt, rate_uah=rate,
+            amount_uah=-D(t.amount_uah or 0), balance_after=loan.balance, transaction=t,
+            comment=("Платіж %s ₴ з журналу%s" % (int(t.amount_uah or 0),
+                     (" · " + t.comment[:60]) if t.comment else ""))[:255]))
+    if made and not dry:
+        loan.save(update_fields=["balance"])
+        sync_planned(loan)
+    return made

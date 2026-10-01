@@ -3931,6 +3931,14 @@ class LoanViewSet(viewsets.ModelViewSet):
         return Response({"created": len(made), "balance": float(ln.balance)})
 
     @action(detail=True, methods=["post"])
+    def pull_payments(self, request, pk=None):
+        """Підтягнути з журналу платежі цьому кредитору, яких ще немає в кредиті."""
+        from .loans import pull_payments as _pull
+        ln = self.get_object()
+        made = _pull(ln, dry=bool(request.data.get("dry")))
+        return Response({"created": len(made), "balance": float(ln.balance)})
+
+    @action(detail=True, methods=["post"])
     def pay(self, request, pk=None):
         """Записати платіж по кредиту (зменшує тіло). Рух грошей у журналі — окремо."""
         from decimal import Decimal as D

@@ -63,6 +63,15 @@ export default function LoansPanel({ canEdit }: { canEdit: boolean }) {
     } catch (e: any) { setErr(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); }
   }
 
+  async function pullPays(id: number) {
+    try {
+      const r: any = await api.post(`/api/loans/${id}/pull_payments/`, {});
+      load();
+      setErr(r?.created ? t(`Подтянуто платежей: ${r.created}`, `Підтягнуто платежів: ${r.created}`)
+                        : t("Новых платежей в журнале нет", "Нових платежів у журналі немає"));
+    } catch { setErr(t("Не удалось подтянуть", "Не вдалося підтягнути")); }
+  }
+
   async function accrueNow(id: number) {
     try { const r: any = await api.post(`/api/loans/${id}/accrue/`, {}); load();
       if (!r?.created) setErr(t("Начислять пока нечего — всё начислено", "Нараховувати поки нічого — все нараховано"));
@@ -169,8 +178,12 @@ export default function LoansPanel({ canEdit }: { canEdit: boolean }) {
                   <td style={{ ...td, textAlign: "right", fontWeight: 700, color: l.yearly_rate >= 35 ? "#dc2626" : l.yearly_rate >= 20 ? "#b45309" : "#0f172a", whiteSpace: "nowrap" }}>{l.yearly_rate.toFixed(1)}%</td>
                   <td style={{ ...td, textAlign: "right", color: "#dc2626", whiteSpace: "nowrap" }}>{money(l.interest_month_uah)}</td>
                   <td style={{ ...td, textAlign: "right" }}>
-                    {canEdit && <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }} onClick={(e) => { e.stopPropagation(); accrueNow(l.id); }}
-                      title={t("Начислить проценты по сегодня", "Нарахувати відсотки по сьогодні")}>{t("Начислить", "Нарахувати")}</button>}</td>
+                    {canEdit && <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                      <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }} onClick={(e) => { e.stopPropagation(); accrueNow(l.id); }}
+                        title={t("Начислить проценты по сегодня", "Нарахувати відсотки по сьогодні")}>%</button>
+                      <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }} onClick={(e) => { e.stopPropagation(); pullPays(l.id); }}
+                        title={t("Подтянуть платежи этому кредитору из журнала", "Підтягнути платежі цьому кредитору з журналу")}>{t("Платежи", "Платежі")}</button>
+                    </div>}</td>
                 </tr>,
                 isOpen && (
                   <tr key={l.id + "-d"}><td colSpan={7} style={{ padding: "4px 8px 14px", background: "#faf5ff" }}>

@@ -3,7 +3,7 @@
 Ідемпотентна: нараховує лише те, чого ще немає (дивиться last_accrual)."""
 from django.core.management.base import BaseCommand
 
-from apps.finance.loans import accrue, sync_planned
+from apps.finance.loans import accrue, pull_payments, sync_planned
 from apps.finance.models import Loan
 
 
@@ -27,6 +27,11 @@ class Command(BaseCommand):
                     amt = m["amount"] if isinstance(m, dict) else m.amount
                     d = m["date"] if isinstance(m, dict) else m.date
                     self.stdout.write("  %s · %s: +%s %s" % (ln.name, d, amt, ln.currency))
+            paid = pull_payments(ln, dry=o.get("dry"))
+            for m in paid:
+                amt = m["amount"] if isinstance(m, dict) else m.amount
+                d = m["date"] if isinstance(m, dict) else m.date
+                self.stdout.write("  %s · %s: платіж %s %s" % (ln.name, d, amt, ln.currency))
             if not o.get("dry"):
                 sync_planned(ln)
         self.stdout.write(self.style.SUCCESS("нарахувань: %s%s" % (total, " (DRY)" if o.get("dry") else "")))
