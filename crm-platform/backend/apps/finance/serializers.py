@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import FinModelArticle, FinDirection, Account, Category, Transaction, FundAllocation, AdvisoryReport
+from .models import FinModelArticle, FinDirection, Account, Category, Transaction, FundAllocation, AdvisoryReport, Loan, LoanEntry
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -195,3 +195,47 @@ class AdvisoryReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdvisoryReport
         fields = ["id", "kind", "title", "body", "created_at"]
+
+
+class LoanEntrySerializer(serializers.ModelSerializer):
+    kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+
+    class Meta:
+        model = LoanEntry
+        fields = ["id", "loan", "kind", "kind_label", "date", "amount", "rate_uah",
+                  "amount_uah", "balance_after", "comment", "transaction"]
+
+
+class LoanSerializer(serializers.ModelSerializer):
+    creditor_name = serializers.SerializerMethodField()
+    balance_uah = serializers.SerializerMethodField()
+    monthly_rate = serializers.SerializerMethodField()
+    yearly_rate = serializers.SerializerMethodField()
+    interest_month_uah = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Loan
+        fields = ["id", "name", "creditor", "creditor_name", "principal", "balance", "balance_uah",
+                  "currency", "rate_pct", "rate_period", "monthly_rate", "yearly_rate",
+                  "interest_month_uah", "capitalize", "accrual_day", "started_at",
+                  "last_accrual", "is_active", "comment", "planned_payment"]
+        read_only_fields = ["planned_payment", "last_accrual"]
+
+    def get_creditor_name(self, o):
+        return str(o.creditor) if o.creditor else ""
+
+    def get_balance_uah(self, o):
+        from .loans import balance_uah
+        return float(balance_uah(o))
+
+    def get_monthly_rate(self, o):
+        return float(o.monthly_rate())
+
+    def get_yearly_rate(self, o):
+        return float(o.yearly_rate())
+
+    def get_interest_month_uah(self, o):
+        from decimal import Decimal as D
+        from .loans import fx_rate
+        per = D(o.balance or 0) * o.monthly_rate() / D("100")
+        return float((per * (fx_rate(o.currency) or D("1"))).quantize(D("0.01")))

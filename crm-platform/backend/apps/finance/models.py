@@ -322,6 +322,86 @@ class PlannedPayment(models.Model):
         ordering = ["due_date", "id"]
 
 
+class Loan(models.Model):
+    """Кредит або позика, які МИ взяли (01.10.2026, Олег).
+    У кожного кредитора своя ставка і свій період нарахування, тому зберігаємо
+    і ставку, і період, і день нарахування — система сама рахує, скільки набігло.
+    Тіло може бути у валюті: гривневий еквівалент перераховується за курсом НБУ."""
+    PERIOD = [("month", "На місяць"), ("day", "На день"), ("year", "Річна"), ("none", "Без відсотків")]
+    name = models.CharField("Назва", max_length=160, help_text="Напр. «Позика Риги» або «Кредитний ліміт ФОП»")
+    creditor = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL,
+                                 related_name="loans_given", help_text="Хто дав гроші (контрагент типу «Кредитор»)")
+    principal = models.DecimalField("Тіло на старті", max_digits=14, decimal_places=2, default=0)
+    balance = models.DecimalField("Поточний залишок", max_digits=14, decimal_places=2, default=0,
+                                  help_text="У валюті кредиту. Міняється нарахуваннями і платежами")
+    currency = models.CharField("Валюта", max_length=3, default="UAH")
+    rate_pct = models.DecimalField("Ставка, %", max_digits=8, decimal_places=4, default=0)
+    rate_period = models.CharField("За період", max_length=8, choices=PERIOD, default="month")
+    capitalize = models.BooleanField("Відсотки додаються до тіла", default=True,
+                                     help_text="Так — наступного разу відсоток рахується від більшої суми")
+    accrual_day = models.PositiveSmallIntegerField("День нарахування", default=1,
+                                                   help_text="Для місячної ставки: 24 = 24-го числа. Для денної не використовується")
+    started_at = models.DateField("Початок обліку", default=timezone.localdate)
+    last_accrual = models.DateField("Останнє нарахування", null=True, blank=True)
+    is_active = models.BooleanField("Активний", default=True)
+    comment = models.TextField("Коментар", blank=True, default="")
+    planned_payment = models.ForeignKey("PlannedPayment", null=True, blank=True, on_delete=models.SET_NULL,
+                                        related_name="+", help_text="Дзеркало в Дт/Кт — сума оновлюється автоматично")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_active", "name"]
+        verbose_name = "Кредит / позика"
+        verbose_name_plural = "Кредити і позики"
+
+    def __str__(self):
+        return "%s (%s %s)" % (self.name, self.balance, self.currency)
+
+    def monthly_rate(self):
+        """Ставку будь-якого періоду приводимо до місячної — щоб кредити можна було порівняти."""
+        from decimal import Decimal as _D
+        r = _D(str(self.rate_pct or 0))
+        if self.rate_period == "day":
+            return r * _D("30.4375")
+        if self.rate_period == "year":
+            return r / _D("12")
+        if self.rate_period == "none":
+            return _D("0")
+        return r
+
+    def yearly_rate(self):
+        """Ефективна річна з капіталізацією — реальна ціна грошей."""
+        from decimal import Decimal as _D
+        m = self.monthly_rate() / _D("100")
+        if m <= 0:
+            return _D("0")
+        if not self.capitalize:
+            return (m * 12 * 100).quantize(_D("0.01"))
+        return (((1 + m) ** 12 - 1) * 100).quantize(_D("0.01"))
+
+
+class LoanEntry(models.Model):
+    """Рух по кредиту: нарахували відсотки, заплатили, довзяли ще."""
+    KIND = [("accrual", "Нарахування відсотків"), ("payment", "Платіж"),
+            ("draw", "Довзяли"), ("adjust", "Коригування")]
+    loan = models.ForeignKey(Loan, on_delete=models.CASCADE, related_name="entries")
+    kind = models.CharField(max_length=10, choices=KIND, db_index=True)
+    date = models.DateField(db_index=True)
+    amount = models.DecimalField("Сума у валюті кредиту", max_digits=14, decimal_places=2)
+    rate_uah = models.DecimalField("Курс до гривні", max_digits=12, decimal_places=4, default=1)
+    amount_uah = models.DecimalField("Сума у гривні", max_digits=14, decimal_places=2, default=0)
+    balance_after = models.DecimalField("Залишок після", max_digits=14, decimal_places=2, default=0)
+    comment = models.CharField(max_length=255, blank=True, default="")
+    transaction = models.ForeignKey("Transaction", null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+", help_text="Операція в журналі, якщо платіж пройшов через касу")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-id"]
+        verbose_name = "Рух по кредиту"
+        verbose_name_plural = "Рухи по кредитах"
+
+
 class BankRule(models.Model):
     """Правило авторозноски банківських операцій: якщо поле містить текст →
     проставити категорію / напрямок / фонд / контрагента. Застосовується при

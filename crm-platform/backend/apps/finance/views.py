@@ -11,8 +11,8 @@ from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
 from .models import DaySnapshot  # noqa: E402  (знімки дня)
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan, WorkDay, WorkSession
-from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan, WorkDay, WorkSession, Loan, LoanEntry
+from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer, LoanSerializer, LoanEntrySerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
 def _today():
@@ -3898,3 +3898,46 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
             s.reopened_by = request.user
             s.save(update_fields=["reopened_at", "reopened_by"])
         return Response(self._head(s))
+
+
+class LoanViewSet(viewsets.ModelViewSet):
+    """Кредити і позики, які МИ взяли. Бачить і править лише той, хто має право на фінанси."""
+    queryset = Loan.objects.all().select_related("creditor")
+    serializer_class = LoanSerializer
+    pagination_class = None
+
+    def get_permissions(self):
+        return [FinanceManagePerm()] if self.action not in ("list", "retrieve", "summary", "entries") else [FinancePerm()]
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """Зведення: скільки винні всього, скільки відсотків на місяць, хто найдорожчий."""
+        from .loans import summary as _s
+        return Response(_s())
+
+    @action(detail=True, methods=["get"])
+    def entries(self, request, pk=None):
+        """Історія: нарахування, платежі, довзяття."""
+        rows = LoanEntry.objects.filter(loan_id=pk).order_by("-date", "-id")[:300]
+        return Response(LoanEntrySerializer(rows, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def accrue(self, request, pk=None):
+        """Донарахувати відсотки до сьогодні (за правилом цього кредиту)."""
+        from .loans import accrue, sync_planned
+        ln = self.get_object()
+        made = accrue(ln)
+        sync_planned(ln)
+        return Response({"created": len(made), "balance": float(ln.balance)})
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        """Записати платіж по кредиту (зменшує тіло). Рух грошей у журналі — окремо."""
+        from decimal import Decimal as D
+        from .loans import pay as _pay
+        ln = self.get_object()
+        amt = D(str(request.data.get("amount_uah") or 0))
+        if amt <= 0:
+            return Response({"detail": "Вкажи суму платежу"}, status=400)
+        e = _pay(ln, amt, comment=request.data.get("comment") or "")
+        return Response({"id": e.id, "balance": float(ln.balance)})
