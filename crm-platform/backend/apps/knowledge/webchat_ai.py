@@ -30,8 +30,9 @@ def reply(conv, incoming):
     from apps.inbox.models import Message
     try:
         cfg = KnowledgeSettings.get()
+        from .conversation_context import prompt_block
         r = answer("yulia_web", history(conv, incoming), include_drafts=False, model=cfg.webchat_model or None,
-                   source=SOURCE, timeout=25, contact_id=conv.contact_id)
+                   source=SOURCE, timeout=25, contact_id=conv.contact_id, context=prompt_block(conv, incoming))
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         if r.get("handoff"):

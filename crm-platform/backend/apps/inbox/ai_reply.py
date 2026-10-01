@@ -580,8 +580,9 @@ def _reply_once(conv_id, expected_incoming_id=None):
             color_ctx = color_block(incoming.text or "")
         except Exception:
             color_ctx = ""
+        from apps.knowledge.conversation_context import prompt_block as crm_context
         ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), color_ctx, language_hint(incoming.text),
-                                      hello if first else "") if x)
+                                      hello if first else "", crm_context(conv, incoming)) if x)
         r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
                    context=ctx, context_query=ad_q, contact_id=conv.contact_id)
