@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .roles import ROLES
 from . import precheck as pc
 from . import publisher, runs
 from .answer import HAIKU, MODELS, SONNET, TEST_AGENTS, answer, estimate_usd
@@ -27,7 +28,7 @@ AGENT_NOTES = {
                  "Із чернетками — як відповідатиме після їх затвердження.",
     "compose_assist": "У CRM ✨ покращує чернетку менеджера. Тут — відповідь, яку він склав би на своїй базі (Sonnet).",
     "rop_hint": "Та сама підказка, що кнопка AI-РОП у чаті: діагноз паузи + готова фраза (Sonnet).",
-    "funnel_agent": "Агент воронки клієнту не пише — показує, які дії зробив би (стадія, анкета, тест-набір). "
+    "funnel_agent": "Агент воронки клієнту не пише — показує, які дії зробив би (стадія та анкета; без паралельного оформлення замовлення). "
                     "Нічого не виконується.",
 }
 
@@ -65,6 +66,7 @@ class TestChatView(APIView):
         return Response({
             "agents": [{"value": c, "label": l, "model": _agent_model(c), "note": AGENT_NOTES.get(c, "")}
                        for c, l in TEST_AGENTS],
+            "roles": [{"value": c, **r} for c, r in ROLES.items()],
             "can_test": can_edit(request.user), "stored": False,
         })
 

@@ -14,6 +14,7 @@ include_drafts=True / topic — ЛИШЕ «Тестовий чат»: у меж�
 Нічого не зберігає як чат і нікому не надсилає. Витрати пишуться в «Витрати ШІ» (crm_aiusage).
 """
 import json
+from copy import copy
 import os
 import re
 import urllib.request
@@ -25,12 +26,12 @@ from . import catalog, reader
 from .models import KnowledgeItem
 
 TEST_AGENTS = [
-    ("yulia_ig", "Юля Instagram"),
-    ("yulia_tiktok", "Юля TikTok"),
-    ("yulia_web", "Сайт (веб-чат)"),
-    ("compose_assist", "Помічник ✨"),
-    ("rop_hint", "Підказка AI-РОП"),
-    ("funnel_agent", "Агент воронки"),
+    ("yulia_ig", "Продавець · Instagram"),
+    ("yulia_tiktok", "Продавець · TikTok"),
+    ("yulia_web", "Продавець · чати CRM"),
+    ("compose_assist", "Продавець · чернетка"),
+    ("rop_hint", "РОП"),
+    ("funnel_agent", "Продавець · картки"),
 ]
 TEST_AGENT_CODES = [c for c, _ in TEST_AGENTS]
 SELLER_AGENTS = ("yulia_ig", "yulia_tiktok", "yulia_web")
@@ -63,7 +64,8 @@ SELLER_CONTRACT = (
 
 def seller_system(channel_name):
     """Майстер-промт продавця (apps/knowledge/seller_prompt.py) + JSON-контракт відповіді."""
-    return _seller_system_for(channel_name) + "\n" + SELLER_CONTRACT
+    from .roles import instruction
+    return _seller_system_for(channel_name) + "\n" + instruction("seller") + "\n" + SELLER_CONTRACT
 
 _W = r"(?<![а-яіїєґa-z])"
 PAY_RX = re.compile(
@@ -201,18 +203,10 @@ def rop_master_rules():
     return ""
 
 
-def test_kits_block():
+def test_kits_block(query=None):
     """Точні назви тест-наборів з каталогу — щоб ШІ міг одразу оформити замовлення (18.09.2026, Олег)."""
-    try:
-        from apps.warehouse.models import Product
-        rows = list(Product.objects.filter(is_active=True, name__iregex=r"тестов|пробни")
-                    .order_by("name").values_list("name", "price")[:120])
-    except Exception:
-        rows = []
-    if not rows:
-        return ""
-    return ("\nТЕСТ-НАБОРИ В КАТАЛОЗІ (точні назви для поля order):\n"
-            + "\n".join("- %s — %s грн" % (n, ("%g" % float(p or 0))) for n, p in rows) + "\n")
+    from .live_catalog import kits_block
+    return kits_block(query)
 
 
 def _spec_seller(agent, msgs, model, context="", context_query=""):
@@ -231,19 +225,34 @@ def _spec_seller(agent, msgs, model, context="", context_query=""):
             items.append(item)
     # Mandatory rules must not disappear behind topic-order truncation. Cache the complete
     # stable approved rules with the seller system; reserve the user-context budget for facts.
-    rules = [i for i in items if i.kind == "rule"]
+    rules = []
+    for original in items:
+        if original.kind == "rule":
+            item = copy(original)
+            if item.topic in {"pricing", "materials", "test_sets", "application", "tinting"}:
+                item.text = MONEY_RX.sub("[актуальна ціна — у номенклатурі CRM нижче]", item.text)
+            rules.append(item)
     rule_text = "\n\n".join(catalog.render(i.title + "\n" + i.text) for i in rules)
-    facts = [i for i in items if i.kind != "rule"]
+    facts = []
+    for original in items:
+        if original.kind == "rule":
+            continue
+        item = copy(original)
+        if item.topic in {"pricing", "materials", "test_sets", "application", "tinting"}:
+            item.text = MONEY_RX.sub("[актуальна ціна — у номенклатурі CRM нижче]", item.text)
+            item.title = MONEY_RX.sub("[ціна з CRM]", item.title)
+        facts.append(item)
     kb = reader.render_items(facts, max_chars=6000)
     live_prices = catalog.prices_block(items, q)
     kb = "\n\n".join(x for x in (kb, live_prices) if x)
-    kits = test_kits_block()
+    kits = test_kits_block(q)
     user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n%s\n%sДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
             "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, (context + "\n\n") if context else "",
                                                _dialog(msgs), msgs[-1]["text"]))
     allowed = kb + "\n" + kits + "\n" + rule_text + "\n" + (context or "")
     spec = {"system": seller_system(CHANNEL[agent]) + "\n\nЗАТВЕРДЖЕНІ ПРАВИЛА WALLCOV:\n" + rule_text + "\n\nУТОЧНЕННЯ ПРІОРИТЕТУ: актуальна ціна з каталогу CRM вища за приклади та історію. На етапі оформлення можна питання-підтвердження; після погодження покупки, передачі менеджеру чи відмови зайве питання не потрібне. На пряме питання про ШІ відповідай чесно, що ти віртуальна консультантка.", "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": True, "allowed": allowed}
+    spec["catalog_check"] = (items, q, live_prices, kits)
     if not items:
         spec["empty"] = "для цього агента немає %s записів — ШІ не викликається, $0" % (
             "жодних" if reader.approved_for(agent) == [] else "підхожих")
@@ -287,12 +296,13 @@ def _spec_compose(agent, msgs, model):
 
 def _spec_funnel(agent, msgs, model):
     from apps.crm.agent import TOOLS, build_system
+    from .roles import CARD_TOOLS
     from apps.crm.models import AgentConfig
     system = build_system(SimpleNamespace(funnel_id=None), "lead")
     ctx = {"тип": "lead", "поточна_стадія": None, "сума": "", "днів_від_останнього_повідомлення_клієнта": 0,
            "діалог": _dialog(msgs, "Клієнт: ", "Ми: ")[-4500:]}
     user = "Контекст картки:\n" + json.dumps(ctx, ensure_ascii=False) + "\n\nПроаналізуй і виклич потрібні інструменти."
-    tools = [dict(t) for t in TOOLS if t.get("name") != "create_task"]  # як у crm/agent._call
+    tools = [dict(t) for t in TOOLS if t.get("name") in CARD_TOOLS]  # як у crm/agent._call
     return {"system": system, "user": user, "model": model or AgentConfig.get().model or HAIKU, "max_tokens": 1200,
             "mode": "funnel", "cache": True, "tools": tools}
 
@@ -380,8 +390,9 @@ def guard(reply, allowed, used, client_last):
     if CALL_RX.search(client_last or ""):
         problems.append("клієнт просить дзвінок — веде менеджер")
     nums = numbers_in(allowed)
+    money = {_num(m.group(1)) for m in MONEY_RX.finditer(allowed or "")}
     for m in MONEY_RX.finditer(reply or ""):
-        if _num(m.group(1)) not in nums:
+        if _num(m.group(1)) not in money:
             problems.append("сума «%s» не з каталогу CRM і не з бази" % m.group(0).strip())
     for m in PCT_RX.finditer(reply or ""):
         if _num(m.group(1)) not in nums:
@@ -512,4 +523,11 @@ def answer(agent, messages, include_drafts=False, topic=None, *, model=None, est
                    "in_tok": int(usage.get("input_tokens") or 0), "out_tok": int(usage.get("output_tokens") or 0),
                    "cache_read": int(usage.get("cache_read_input_tokens") or 0)}
     FINISH[spec["mode"]](res, resp, msgs, spec, used)
+    if spec.get("catalog_check"):
+        items, q, previous_prices, previous_kits = spec["catalog_check"]
+        if catalog.prices_block(items, q) != previous_prices or test_kits_block(q) != previous_kits:
+            res.update(text=HANDOFF_TEXT, handoff=True,
+                       handoff_reason="Номенклатура змінилася під час відповіді: потрібен новий розрахунок",
+                       draft_reply=res.get("text", ""))
+            res.pop("order", None)
     return res

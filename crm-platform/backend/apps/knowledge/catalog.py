@@ -48,7 +48,7 @@ def load_products(ids):
     if not ids:
         return {}
     return {p.id: p for p in Product.objects.filter(id__in=ids).only(
-        "id", "name", "price", "unit", "consumption_per_m2", "is_active")}
+        "id", "name", "price", "unit", "currency", "shop_specs", "consumption_per_m2", "is_active")}
 
 
 def _unit_suffix(product):
@@ -61,7 +61,8 @@ def _one(kind, pid, override, products):
     if not p or not p.is_active or not p.price or p.price <= 0:
         return UNKNOWN
     if kind == "price":
-        return "%s грн%s" % (fmt(p.price), _unit_suffix(p))
+        from .live_catalog import price_text
+        return price_text(p)
     cons = None
     if override:
         try:
@@ -112,26 +113,10 @@ def _line(p):
 
 def prices_block(items=None, query=None, max_lines=24, per_family=10):
     """Блок «Ціни з каталогу CRM» для товарів, привʼязаних до записів, і матеріалів, згаданих у розмові."""
-    try:
-        from apps.warehouse.models import Product
-        seen, lines = set(), []
-        for it in items or []:
-            for p in it.products.all():
-                if p.id not in seen and p.is_active and p.price and p.price > 0:
-                    seen.add(p.id)
-                    lines.append(_line(p))
-        for _label, term in mentioned_families(query):
-            rows = (Product.objects.filter(is_active=True, price__gt=0, name__icontains=term)
-                    .order_by("name")[:per_family])
-            for p in rows:
-                if p.id not in seen:
-                    seen.add(p.id)
-                    lines.append(_line(p))
-        prices = ("Ціни з каталогу CRM (актуальні зараз; інших цифр не називай):\n" + "\n".join(lines[:max_lines])) if lines else ""
-        facts = current_product_facts(items, query)
-        return "\n\n".join(x for x in [prices, facts] if x)
-    except Exception:
-        return ""
+    from .live_catalog import prices_block as current_prices
+    prices = current_prices(items, query, max_lines)
+    facts = current_product_facts(items, query)
+    return "\n\n".join(x for x in [prices, facts] if x)
 
 
 def current_product_facts(items=None, query=None, limit=6):

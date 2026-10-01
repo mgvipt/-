@@ -70,6 +70,9 @@ REVIEWER_SYSTEM = (
 )
 
 
+from .roles import instruction as _role_instruction
+REVIEWER_SYSTEM += "\n\nПРІОРИТЕТ РОЛІ: " + _role_instruction("analyst") + " Історичну ціну звіряй з датою повідомлення: сьогоднішня ціна сама по собі не доводить помилку в старій відповіді. Погодження замовлення, передача менеджеру та завершення розмови не потребують відкритого питання."
+
 def conv_link(conv_id):
     return "/inbox?c=%d" % conv_id
 
