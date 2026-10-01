@@ -1,12 +1,13 @@
 """Вбудований Claude-агент Wallcov-CRM. Автономно рухає лід/сделку по воронці
 та створює задачі співробітникам за глобальними правилами (GlobalRule).
 Кожна дія — у Історію змін (actor «AI-агент») + аудит AgentRun."""
-import json, os, urllib.request
+import hashlib, json, os, urllib.request
 from contextlib import nullcontext
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
 from .models import GlobalRule, Task, AgentRun, AgentConfig, log_activity
+from apps.knowledge.roles import CARD_TOOLS
 
 ROOMS = ["Кухня", "Спальня", "Вітальня", "Ванна", "Коридор", "Офіс", "Салон краси", "Кафе/ресторан", "Інше"]
 PREP = ["Ідеально гладкі (під фарбування)", "Можна дефекти (під шпалери)", "Не підготовлені"]
@@ -59,7 +60,7 @@ def _call(system, user_text, model, max_tokens=1200):
     from apps.crm.models import AgentConfig
     use_cache = AgentConfig.get().cache_enabled
     sys_block = [{"type": "text", "text": system}]
-    tools = [dict(t) for t in TOOLS]
+    tools = [dict(t) for t in TOOLS if t.get("name") in CARD_TOOLS]
     tools = [t for t in tools if t.get("name") != "create_task"]  # OLEG 2026-08-06: агент тимчасово НЕ ставить задачі (дожим/менеджер/тонування). Складські ставляться окремо (стадія «Оплату отримано»), ручні — менеджерами.
     if use_cache:
         sys_block[0]["cache_control"] = {"type": "ephemeral"}  # кешуємо системний промпт (правила+товари)
@@ -77,7 +78,7 @@ def _call(system, user_text, model, max_tokens=1200):
         resp = json.load(r)
     try:
         from apps.crm.ai import _log_usage
-        _log_usage("Помощник: напоминания дожать клиента", model, resp.get("usage") or {})
+        _log_usage("Агент воронки CRM", model, resp.get("usage") or {})
     except Exception:
         pass
     return resp
@@ -94,14 +95,6 @@ def build_system(entity, kind):
     if entity.funnel_id:
         stages = list(entity.funnel.stages.order_by("order").values_list("name", flat=True))
         parts.append("## Стадії воронки (по порядку): " + " → ".join(stages))
-    if kind == "deal" and entity.funnel_id and not entity.items.exists():
-        # тест-набори доступні у БУДЬ-ЯКІЙ воронці, поки у сделці немає товарів
-        # (клієнти обирають пробники і в «Основному продукті» — кейс Tatiana 04.07)
-        from apps.warehouse.models import Product
-        prods = list(Product.objects.filter(is_active=True).filter(name__iregex=r"\u0442\u0435\u0441\u0442\u043e\u0432|\u043f\u0440\u043e\u0431\u043d\u0438").order_by("name").values_list("name", "price")[:120])
-        if prods:
-            parts.append("## \u0414\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u043e\u0440\u0438 (\u043d\u0430\u0437\u0432\u0430 \u0422\u041e\u0427\u041d\u041e \u0434\u043b\u044f make_offer):\n" + "\n".join("- %s \u2014 %s \u0433\u0440\u043d" % (n, p) for n, p in prods))
-            parts.append("## \u041a\u041e\u041b\u0418 \u043a\u043b\u0456\u0454\u043d\u0442 \u044f\u0432\u043d\u043e \u043e\u0431\u0440\u0430\u0432 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u0456\u0440 \u2014 \u0412\u0406\u0414\u0420\u0410\u0417\u0423 \u0432\u0438\u043a\u043b\u0438\u0447 make_offer \u0437 \u0442\u043e\u0447\u043d\u043e\u044e \u043d\u0430\u0437\u0432\u043e\u044e. \u042f\u043a\u0449\u043e \u0449\u0435 \u043d\u0435 \u043e\u0431\u0440\u0430\u0432 \u2014 \u0443\u0442\u043e\u0447\u043d\u0438, \u043e\u0444\u0444\u0435\u0440 \u043d\u0435 \u0440\u043e\u0431\u0438.")
     # Єдина база знань AI ЦЕНТРУ (14.09): лише затверджене Олегом з позначкою «Агент воронки».
     # Порожньо → агент працює як раніше (глобальні правила вище). Обмеження 3000 симв.: агент
     # запускається ~12 тис. разів на місяць, кожна зайва тисяча токенів — гроші.
@@ -115,6 +108,7 @@ def build_system(entity, kind):
     cfg = AgentConfig.get()
     if cfg.system_extra:
         parts.append("## Додатково: " + cfg.system_extra)
+    parts.append("ПРІОРИТЕТ РОЛІ: ти внутрішня функція ПРОДАВЦЯ для карток CRM. Дозволені лише move_stage, fill_needs, no_action. Не створюй задач і не викликай make_offer: клієнтські відповіді й оформлення виконує єдиний продавець у чаті. Старі правила про інші інструменти тут не діють.")
     return "\n\n".join(parts)
 
 
@@ -123,7 +117,7 @@ def build_context(entity, kind):
     conv = Conversation.objects.filter(contact_id=entity.contact_id).order_by("-last_message_at").first() if entity.contact_id else None
     msgs = []
     if conv:
-        for m in list(Message.objects.filter(conversation=conv).order_by("created_at").values("direction", "text"))[-25:]:
+        for m in list(Message.objects.filter(conversation=conv, internal=False).order_by("created_at").values("direction", "text"))[-25:]:
             if m.get("text"):
                 msgs.append(("Клієнт: " if m["direction"] == "in" else "Ми: ") + m["text"])
     last_in = None
@@ -251,12 +245,24 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
     run = AgentRun(kind=kind, trigger=trigger, user=user, model=model)
     setattr(run, kind, entity)
     actions = []
+    input_hash = ""
     try:
-        resp = _call(build_system(entity, kind), build_context(entity, kind), model)
+        system, context = build_system(entity, kind), build_context(entity, kind)
+        input_hash = hashlib.sha256(json.dumps([system, context, model, cfg.autonomous],
+                                               ensure_ascii=False).encode()).hexdigest()
+        if trigger == "sweep":
+            previous = AgentRun.objects.filter(**{kind: entity}, error="",
+                created_at__gte=timezone.now() - timedelta(hours=24)).order_by("-created_at").first()
+            if previous and (previous.output or {}).get("input_hash") == input_hash:
+                return {"skipped": "same agent input already processed", "run_id": previous.id}
+        resp = _call(system, context, model)
         for block in resp.get("content", []):
             if block.get("type") != "tool_use":
                 continue
             name, inp = block.get("name"), block.get("input", {})
+            if name not in CARD_TOOLS:
+                actions.append({"tool": name, "result": {"ok": False, "msg": "tool not authorized"}})
+                continue
             if name == "move_stage":
                 r = _move_stage(entity, kind, inp.get("to_stage"), inp.get("reason", ""), user, cfg.autonomous)
             elif name == "create_task":
@@ -278,6 +284,6 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
             actions.append({"tool": name, "input": inp, "result": r})
     except Exception as e:
         run.error = str(e)[:500]
-    run.output = {"actions": actions}
+    run.output = {"actions": actions, "input_hash": input_hash}
     run.save()
     return {"actions": actions, "error": run.error, "run_id": run.id}

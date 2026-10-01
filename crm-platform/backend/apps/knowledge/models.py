@@ -38,13 +38,13 @@ class KnowledgeItem(models.Model):
         ("other", "Інше"),
     ]
     AGENTS = [
-        ("yulia_ig", "Юля Instagram (ChatPlace)"),
-        ("yulia_tiktok", "Юля TikTok (ChatPlace)"),
-        ("yulia_web", "Сайт — веб-чат (ШІ CRM)"),
-        ("funnel_agent", "Агент воронки CRM"),
-        ("rop_hint", "AI-РОП підказка"),
-        ("compose_assist", "Помічник ✨"),
-        ("analyst", "Аналітик / рецензент"),
+        ("yulia_ig", "Продавець · Instagram (ChatPlace)"),
+        ("yulia_tiktok", "Продавець · TikTok (ChatPlace)"),
+        ("yulia_web", "Продавець · чати CRM"),
+        ("funnel_agent", "Продавець · заповнення карток"),
+        ("rop_hint", "РОП · контроль і навчання"),
+        ("compose_assist", "Продавець · чернетка менеджера"),
+        ("analyst", "Аналітик · результати й витрати"),
     ]
     STATUS = [
         ("draft", "Чернетка"),

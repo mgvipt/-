@@ -147,7 +147,7 @@ def _manager_active(conv, hours):
     from .models import Message
     if hours <= 0:
         return False
-    return Message.objects.filter(conversation=conv, direction="out", sender__isnull=False,
+    return Message.objects.filter(conversation=conv, direction="out", internal=False, sender__isnull=False,
                                   created_at__gte=timezone.now() - timedelta(hours=hours)).exists()
 
 
@@ -181,17 +181,13 @@ def should_reply(conv, incoming):
         return False          # живий менеджер у чаті — ШІ мовчить (і в CRM, і далі)
     if _takeover_channel(ch) and not _took_over(conv, incoming):
         return False          # діалог поки веде Юля з ChatPlace — не заважаємо
-    if not _throttled(conv, max_per_day):
-        return True
     # 26.09.2026 (Олег, чат johnwayne2621): ліміт спрацював саме там, де клієнт просив змінити набір
     # і дати рахунок — і агент замовк. Питання про гроші й комплектацію пропускаємо навіть за лімітом,
     # але не безмежно: подвійний ліміт — це вже точно щось не так, там мовчимо.
     t = _recent_client_text(conv, incoming)
     critical = bool(BUY_RX.search(t) or REQ_ASK.search(t) or KIT_CHANGE_RX.search(t))
-    if critical and not _throttled(conv, max_per_day * 2):
-        _note(conv, "%s: добовий ліміт вичерпано, але клієнт пише про замовлення — відповідаю." % NOTE_PREFIX)
-        return True
-    return False
+    # Claim the 20-second gate only once; a second call used to block the exception itself.
+    return not _throttled(conv, max_per_day * 2 if critical else max_per_day)
 
 
 def _note(conv, text):
@@ -239,15 +235,25 @@ def _maybe_effect_photos(conv, text):
     mat = material_by_slug(slug)
     if not mat:
         return
-    mark = "фото ефектів %s" % slug
-    if Message.objects.filter(conversation=conv, internal=True, text__contains=mark).exists():
-        return                                    # у цьому діалозі вже показували
     # 23.09.2026: на запит про Галатею — фото Галатеї, про Елеганті — Елеганті (обидва «піщинки»)
     low = (text or "").lower()
     prefer = ("Galateya" if ("галате" in low or "galate" in low) else
               "Eleganti" if ("елеганті" in low or "eleganti" in low or "элеганти" in low) else "")
+    if slug == "pisochky" and not prefer:
+        # A presentation may contain only a URL. Preserve the explicit material from the
+        # customer's recent messages instead of mixing two products sharing one gallery.
+        for client_text in Message.objects.filter(conversation=conv, direction="in", internal=False).order_by("-id").values_list("text", flat=True)[:10]:
+            low = (client_text or "").lower()
+            gal = "галате" in low or "galate" in low
+            ele = "елегант" in low or "элегант" in low or "eleganti" in low
+            if gal != ele:
+                prefer = "Galateya" if gal else "Eleganti"
+                break
+    mark = "фото ефектів %s%s" % (slug, (" · " + prefer) if prefer else "")
+    if Message.objects.filter(conversation=conv, internal=True, text__contains=mark).exists():
+        return
     rows = effect_photos(mat["name"], limit=3, prefer=prefer)
-    if len(rows) < 2:
+    if not rows:
         return
     lines = ["Ось як %s виглядає в різних ефектах 👇" % mat["name"]]
     atts = []
@@ -513,6 +519,18 @@ def _switch_kit(conv, incoming):
     return True
 
 
+def _still_current(conv, incoming):
+    """Recheck after generation: a manager/new message/closed channel supersedes the draft."""
+    from .models import Conversation, Message
+    fresh = Conversation.objects.select_related("channel").filter(pk=conv.pk).first()
+    if not fresh or fresh.status != "open" or not channel_on(fresh.channel):
+        return False
+    if not _allowed_chat(fresh.channel, fresh) or _manager_active(fresh, _limits()[0]):
+        return False
+    latest = Message.objects.filter(conversation=fresh, direction="in", internal=False).order_by("-id").first()
+    return bool(latest and latest.pk == incoming.pk)
+
+
 def reply_now(conv_id):
     """Відповідь клієнту (виконується у окремому потоці)."""
     from apps.knowledge.answer import HANDOFF_TEXT, answer
@@ -524,7 +542,7 @@ def reply_now(conv_id):
     if conv is None:
         return
     incoming = conv.messages.filter(direction="in", internal=False).order_by("-id").first()
-    if incoming is None:
+    if incoming is None or not _still_current(conv, incoming):
         return
     try:
         # 26.09.2026: спершу дивимось, чи не просить клієнт змінити комплектацію набору —
@@ -579,6 +597,9 @@ def reply_now(conv_id):
         return
     # 23.09.2026 (Олег): «якщо мова про вибір кольору — спершу кілька фото, як це виглядає в інтерʼєрі,
     # і вже потім посилання на каталог матеріалу» — щоб у клієнта одразу була презентація.
+    if not _still_current(conv, incoming):
+        _note(conv, "%s: чернетку скасовано — діалог змінився під час генерації." % NOTE_PREFIX)
+        return
     _maybe_effect_photos(conv, text)
     _maybe_base_photos(conv, text)
     try:

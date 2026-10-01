@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 from .models import KnowledgeItem, KnowledgeSettings, log_version
 from .serializers import KnowledgeItemSerializer, VersionSerializer
 
-REVIEWER_MODELS = ["claude-haiku-4-5", "claude-sonnet-4-6"]
+REVIEWER_MODELS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5-5"]
 ORDERINGS = {"-popularity": ["-popularity", "id"], "-updated_at": ["-updated_at"], "topic": ["topic", "priority", "id"],
              "id": ["id"], "-id": ["-id"]}
 

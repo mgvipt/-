@@ -175,7 +175,7 @@ def real_photos(material, limit=3, prefer=""):
         row = (_effect_label(it, material), it)
         low = ("%s %s" % (it.title, it.tags)).lower()
         (mine if (prefer and prefer.lower() in low) else other).append(row)
-    rows = mine if (prefer and len(mine) >= 2) else (mine + other)
+    rows = mine if prefer else other
     return rows[:limit]
 
 
@@ -184,26 +184,9 @@ def effect_photos(material, code=None, limit=3, prefer=""):
     18.09.2026 (Олег): «коли запит на Патеру, треба відправляти фото ефектів, а не просто слова».
     23.09.2026: якщо для матеріалу є РЕАЛЬНІ фото обʼєктів — надсилаємо їх, а не згенеровані візуалізації."""
     real = real_photos(material, limit, prefer)
-    if len(real) >= 2:
-        return real
-    rows = []
-    for it in _items():
-        if (it.material or "") != material or it.kind != "image" or is_swatch(it):
-            continue
-        m = re.search(r"effect:([^|]+)", it.tags or "")
-        if not m:
-            continue
-        rows.append((m.group(1).split(",")[0].strip()[:40], it))
-    out, seen = [], set()
-    for want in ([code] if code else []) + [None]:
-        for eff, it in rows:
-            if eff in seen or (want and (it.color_code or "") != want):
-                continue
-            seen.add(eff)
-            out.append((eff, it))
-            if len(out) >= limit:
-                return out
-    return out[:limit]
+    # Automatic sales messages use verified real photos only, including a single available photo.
+    # Generated library images remain available on the presentation pages for manual review.
+    return real
 
 
 _LIGHT_CACHE = {}
