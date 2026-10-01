@@ -7,6 +7,41 @@ import { useLang } from "./i18n";
 const UNITS = ["шт", "кг", "г", "л", "мл", "м", "см", "м²", "м³", "пог.м", "рулон", "упаковка", "комплект", "набір", "пара", "відро", "банка", "пляшечка", "туба", "мішок", "пачка", "лист", "день", "година", "послуга"];
 interface Row { product: number; product_name: string; qty: string; price: string; retail: string; factor: string; unit: string; q: string; res: any[]; open: boolean; }
 
+/* 01.10.2026 (Олег): видима підказка про коефіцієнт — плутали ціну за упаковку з ціною за одиницю
+ * (ввели 119,24 за кг у поле, яке чекає ціну за відро 15 кг → собівартість стала 7,95 ₴/кг).
+ * Показуємо живий приклад із тієї ж позиції, а не абстрактне пояснення. */
+function PackHint({ rows, t }: { rows: Row[]; t: (ru: string, uk: string) => string }) {
+  const r = rows.find((x) => (Number(x.factor) || 1) !== 1 && !!x.product);
+  if (!r) return null;
+  const f = Number(r.factor) || 1;
+  const q = Number(r.qty) || 0;
+  const pr = Number(String(r.price).replace(",", ".")) || 0;
+  const u = r.unit || t("ед", "од");
+  const nf = (v: number) => v.toLocaleString("ru", { maximumFractionDigits: 2 });
+  return (
+    <div style={{ marginTop: 8, padding: "8px 11px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 12, lineHeight: 1.45, color: "#1e3a5f" }}>
+      <div style={{ fontWeight: 700, marginBottom: 2 }}>{t("Как работает коэффициент", "Як працює коефіцієнт")}</div>
+      <div>{t("Коэф " + f + " — сколько единиц в одной упаковке (ведро " + f + " " + u + " → коэф " + f + ").",
+              "Коеф " + f + " — скільки одиниць в одній упаковці (відро " + f + " " + u + " → коеф " + f + ").")}</div>
+      <div style={{ fontWeight: 700, color: "#b91c1c", margin: "3px 0" }}>
+        {t("В «Закупку» вводите цену за ВСЮ упаковку, а не за 1 " + u + ". Система сама поделит.",
+           "У «Закупку» вводьте ціну за ВСЮ упаковку, а не за 1 " + u + ". Система сама поділить.")}
+      </div>
+      {pr > 0 ? (
+        <div>{t("Сейчас: " + nf(q) + " × " + f + " = " + nf(q * f) + " " + u + " на склад · себестоимость " + nf(f ? pr / f : pr) + " ₴/" + u + " · сумма прихода " + nf(q * pr) + " ₴",
+                "Зараз: " + nf(q) + " × " + f + " = " + nf(q * f) + " " + u + " на склад · собівартість " + nf(f ? pr / f : pr) + " ₴/" + u + " · сума приходу " + nf(q * pr) + " ₴")}</div>
+      ) : (
+        <div className="muted">{t("Если цена за 1 " + u + " равна X — вводите X × " + f + ".",
+                                   "Якщо ціна за 1 " + u + " дорівнює X — вводьте X × " + f + ".")}</div>
+      )}
+      <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #bfdbfe", fontWeight: 600, color: "#15803d" }}>
+        {t("А «Розн.» — наоборот, за 1 " + u + ". Это цена продажи, она идёт в номенклатуру как есть.",
+           "А «Розн.» — навпаки, за 1 " + u + ". Це ціна продажу, вона йде в номенклатуру як є.")}
+      </div>
+    </div>
+  );
+}
+
 export default function ReceiptModal({ productId, productName, dealId, editDoc, onClose, onSaved }: {
   productId?: number; productName?: string; dealId?: number; editDoc?: any; onClose: () => void; onSaved?: () => void;
 }) {
@@ -197,8 +232,8 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
           <span>{t("ТОВАР","ТОВАР")}</span>
           <span style={{ textAlign: "center" }}>{t("К-ВО","К-СТЬ")}</span>
           <span style={{ textAlign: "center" }} title={t("Единица измерения (из номенклатуры)","Одиниця виміру (з номенклатури)")}>{t("ЕД.","ОД.")}</span>
-          <span style={{ textAlign: "center" }} title={t("Коэффициент: сколько единиц в 1 закупочной (ведро)","Коеф: скільки одиниць у 1 закупівельній (відро)")}>{t("КОЭФ","КОЕФ")}</span>
-          <span style={{ textAlign: "center" }} title={t("Закупка за 1 закупочную единицу (ведро)","Закупівля за 1 закупівельну одиницю (відро)")}>{t("ЗАКУПКА","ЗАКУПКА")}</span>
+          <span style={{ textAlign: "center" }} title={t("Коэффициент: сколько единиц номенклатуры в 1 упаковке. Ведро 15 кг → 15. На склад попадёт к-во × коэф.","Коефіцієнт: скільки одиниць номенклатури в 1 упаковці. Відро 15 кг → 15. На склад потрапить к-сть × коеф.")}>{t("КОЭФ","КОЕФ")}</span>
+          <span style={{ textAlign: "center" }} title={t("Цена за ВСЮ упаковку (ведро), не за кг/литр. Система сама поделит на коэффициент — результат видно подсказкой под полем.","Ціна за ВСЮ упаковку (відро), не за кг/літр. Система сама поділить на коефіцієнт — результат видно підказкою під полем.")}>{t("ЗАКУПКА","ЗАКУПКА")}</span>
           <span style={{ textAlign: "center" }}>{t("СУММА","СУМА")}</span>
           <span style={{ textAlign: "center" }} title={t("Розничная за единицу (из номенклатуры)","Роздрібна за одиницю (з номенклатури)")}>{t("РОЗН.","РОЗН.")}</span>
           <span></span>
@@ -222,22 +257,23 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
                 </div>
               )}
             </div>
-            <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Количество (в закупочных единицах)","Кількість (у закупівельних одиницях)")} placeholder={t("к-во","к-сть")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px" }} />
+            <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Сколько упаковок (вёдер, мешков). Единицы посчитаются сами: к-во × коэф.","Скільки упаковок (відер, мішків). Одиниці порахуються самі: к-сть × коеф.")} placeholder={t("к-во","к-сть")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px" }} />
             <select value={r.unit || ""} onChange={(e) => { const u = e.target.value; setRow(i, { unit: u }); if (r.product) api.patch(`/api/products/${r.product}/`, { unit: u }).catch(() => {}); }} title={t("Единица измерения — клик меняет список; сохраняется в номенклатуру (везде)","Одиниця виміру — клік відкриває список; зберігається в номенклатуру (всюди)")} style={{ border: "none", background: "transparent", fontSize: 12, color: "#0f172a", fontWeight: 600, textAlign: "center", textAlignLast: "center" as any, cursor: "pointer", width: "100%", appearance: "none" as any, padding: 0 }}><option value="">—</option>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
             <div style={{ minWidth: 0 }}>
-              <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Коэффициент: сколько единиц номенклатуры в 1 закупочной (ведро)","Коеф: скільки одиниць номенклатури в 1 закупівельній (відро)")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
+              <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Сколько единиц в 1 упаковке: ведро 15 кг → 15, мешок 25 кг → 25. Обычная штука без фасовки → 1.","Скільки одиниць в 1 упаковці: відро 15 кг → 15, мішок 25 кг → 25. Звичайна штука без фасування → 1.")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
               {(Number(r.factor) || 1) !== 1 && <div style={{ fontSize: 10, textAlign: "center", lineHeight: 1, marginTop: 1, color: "#2563eb", fontWeight: 700, whiteSpace: "nowrap" }}>= {((Number(r.qty) || 0) * (Number(r.factor) || 1)).toLocaleString()} {r.unit || t("ед","од")}</div>}
             </div>
             <div style={{ minWidth: 0 }}>
-              <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" title={t("Закупочная цена за 1 закупочную единицу (ведро)","Закупівельна ціна за 1 закупівельну одиницю (відро)")} placeholder={t("закуп","закуп")} style={{ ...inp, width: "100%", padding: "0 6px" }} />
+              <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" title={t("Цена за ВСЮ упаковку (ведро), НЕ за кг/литр. Цена за кг 119,24 при коэф 15 → вводите 1788,60. Под полем видно, что получилось за единицу.","Ціна за ВСЮ упаковку (відро), НЕ за кг/літр. Ціна за кг 119,24 при коеф 15 → вводьте 1788,60. Під полем видно, що вийшло за одиницю.")} placeholder={t("закуп","закуп")} style={{ ...inp, width: "100%", padding: "0 6px" }} />
               {(Number(r.factor) || 1) !== 1 && <div className="muted" style={{ fontSize: 9.5, textAlign: "center", lineHeight: 1, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>= {((Number(String(r.price).replace(",", ".")) || 0) / (Number(r.factor) || 1)).toLocaleString("ru", { maximumFractionDigits: 2 })}/{r.unit || t("ед","од")}</div>}
             </div>
             <span style={{ textAlign: "center", fontWeight: 700, fontSize: 12.5, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{Math.round((Number(r.qty) || 0) * (Number(String(r.price).replace(",", ".")) || 0)).toLocaleString("ru")} ₴</span>
-            <input value={r.retail} onChange={(e) => setRow(i, { retail: e.target.value })} type="number" title={t("Розничная за единицу — из номенклатуры, можно изменить","Роздрібна за одиницю — з номенклатури, можна змінити")} placeholder={t("розн.","розн.")} style={{ ...inp, width: "100%", padding: "0 6px", borderColor: "#a7f3d0" }} />
+            <input value={r.retail} onChange={(e) => setRow(i, { retail: e.target.value })} type="number" title={t("Цена продажи за 1 единицу (кг/литр/шт) — НЕ за упаковку. Подставляется из номенклатуры, можно изменить — новое значение туда и запишется.","Ціна продажу за 1 одиницю (кг/літр/шт) — НЕ за упаковку. Підставляється з номенклатури, можна змінити — нове значення туди й запишеться.")} placeholder={t("розн.","розн.")} style={{ ...inp, width: "100%", padding: "0 6px", borderColor: "#a7f3d0" }} />
             <span onClick={() => rows.length > 1 && setRows((rs) => rs.filter((_, j) => j !== i))} style={{ cursor: rows.length > 1 ? "pointer" : "default", color: rows.length > 1 ? "#ef4444" : "transparent", textAlign: "center", fontSize: 15 }}>✕</span>
           </div>
         ))}
         <span onClick={() => setRows((rs) => [...rs, { product: 0, product_name: "", qty: "1", price: "", retail: "", factor: "1", unit: "", q: "", res: [], open: false }])} style={{ cursor: "pointer", color: "#2563eb", fontSize: 13, fontWeight: 600 }}>+ {t("ещё позиция", "ще позиція")}</span>
+        <PackHint rows={rows} t={t} />
 
         {/* Оплата / долг */}
         <label style={lbl}>{t("Оплата поставщику", "Оплата постачальнику")}</label>
