@@ -1,4 +1,4 @@
-# AI sales corrections — prepared, not released (2026-10-01)
+# AI sales corrections — released (2026-10-01)
 
 This branch contains a first corrective package. It does not switch the production model, disable ChatPlace, change channel routing, edit customer data, or send messages.
 
@@ -43,4 +43,4 @@ Cost-report units: https://platform.claude.com/docs/en/manage-claude/usage-cost-
 - Historical paid orders are not repriced. Package board/tint options remain defined by the exact kit variant; warehouse components describe material quantities.
 - 150 isolated tests passed in the combined release regression suite, including live price updates, changed kit composition, unknown/zero prices, exact currency/units, changed catalogue during generation and blocked parallel offer creation. Four baseline failures were reproduced separately and excluded: the two order tests above and tests_volume.TaraTests.test_tara_by_density / TintTests.test_color_from_library (unchanged volume code, original catalogue).
 
-Prepared for gated release. ChatPlace cutover and model activation remain separate unfinished steps.
+Released through deploy.sh web at runtime commit 2a637ccc; 198/198 gated smoke checks passed and public health is HTTP 200. ChangeLogEntry 263 describes the employee workflow. Live Galateya/Luna prompt assembly was checked without paid generation or customer sends. ChatPlace cutover and model activation remain separate unfinished steps.
