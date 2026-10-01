@@ -47,7 +47,7 @@ def _limits():
 
 def channel_on(channel):
     cfg = (channel.config or {}) if channel else {}
-    return bool(cfg.get("ai_reply"))
+    return bool(channel and channel.is_active and cfg.get("ai_reply"))
 
 
 # ── 21.09.2026 (Олег): КОМАНДА «Юля ChatPlace → продавець CRM» ─────────────────
@@ -151,10 +151,10 @@ def _manager_active(conv, hours):
                                   created_at__gte=timezone.now() - timedelta(hours=hours)).exists()
 
 
-def _throttled(conv, max_per_day):
+def _throttled(conv, max_per_day, short_gate=True):
     from .models import Message
     key = "ai_reply_%s" % conv.id
-    if not cache.add(key, 1, MIN_SECONDS):
+    if short_gate and not cache.add(key, 1, MIN_SECONDS):
         return True
     from django.db.models import Q
     by_ai = Q()
@@ -165,7 +165,7 @@ def _throttled(conv, max_per_day):
     return day >= max_per_day
 
 
-def should_reply(conv, incoming):
+def should_reply(conv, incoming, *, short_gate=True):
     """Чи має ШІ відповісти на це повідомлення (лише читання, без мережі)."""
     if incoming is None or incoming.direction != "in" or incoming.internal:
         return False
@@ -187,7 +187,7 @@ def should_reply(conv, incoming):
     t = _recent_client_text(conv, incoming)
     critical = bool(BUY_RX.search(t) or REQ_ASK.search(t) or KIT_CHANGE_RX.search(t))
     # Claim the 20-second gate only once; a second call used to block the exception itself.
-    return not _throttled(conv, max_per_day * 2 if critical else max_per_day)
+    return not _throttled(conv, max_per_day * 2 if critical else max_per_day, short_gate=short_gate)
 
 
 def _note(conv, text):
@@ -531,7 +531,7 @@ def _still_current(conv, incoming):
     return bool(latest and latest.pk == incoming.pk)
 
 
-def reply_now(conv_id):
+def _reply_once(conv_id, expected_incoming_id=None):
     """Відповідь клієнту (виконується у окремому потоці)."""
     from apps.knowledge.answer import HANDOFF_TEXT, answer
     from apps.knowledge.models import KnowledgeSettings
@@ -542,7 +542,7 @@ def reply_now(conv_id):
     if conv is None:
         return
     incoming = conv.messages.filter(direction="in", internal=False).order_by("-id").first()
-    if incoming is None or not _still_current(conv, incoming):
+    if incoming is None or (expected_incoming_id is not None and incoming.pk != expected_incoming_id) or not _still_current(conv, incoming):
         return
     try:
         # 26.09.2026: спершу дивимось, чи не просить клієнт змінити комплектацію набору —
@@ -594,26 +594,36 @@ def reply_now(conv_id):
     except Exception as e:
         _note(conv, "%s: не зміг відповісти (%s). Клієнту нічого не надіслано — дайте відповідь вручну."
               % (NOTE_PREFIX, str(e)[:200]))
-        return
+        return "failed"
     # 23.09.2026 (Олег): «якщо мова про вибір кольору — спершу кілька фото, як це виглядає в інтерʼєрі,
     # і вже потім посилання на каталог матеріалу» — щоб у клієнта одразу була презентація.
     if not _still_current(conv, incoming):
         _note(conv, "%s: чернетку скасовано — діалог змінився під час генерації." % NOTE_PREFIX)
         return
     _maybe_effect_photos(conv, text)
+    if not _still_current(conv, incoming):
+        return
     _maybe_base_photos(conv, text)
+    if not _still_current(conv, incoming):
+        return
     try:
         msg = send_message(conv, text)
         Message.objects.filter(id=msg.id).update(sender_name="%s · %s" % (NOTE_PREFIX, conv.channel.name))
     except Exception as e:
         _note(conv, "%s: не вдалося надіслати (%s). Текст: «%s»" % (NOTE_PREFIX, str(e)[:200], text[:600]))
-        return
+        return "failed"
     _note(conv, note)
+    if not _still_current(conv, incoming):
+        return
     if first:
         _first_presentation(conv, msgs, ad_q, text)
     if _takeover_channel(conv.channel):
         hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
+    if not _still_current(conv, incoming):
+        return
     _maybe_volume_doc(conv, calc, r.get("order"))
+    if not _still_current(conv, incoming):
+        return
     if r.get("order") and r["order"].get("volume"):
         from apps.knowledge.volume_calc import shown_to_client
         if shown_to_client(msgs, calc):
@@ -840,12 +850,17 @@ def _make_kit_offer(conv, order):
               % (NOTE_PREFIX, deal.id, res.get("msg") or "—"))
 
 
+def reply_now(conv_id):
+    """Serialize workers and claim the incoming message before any side effect."""
+    from .ai_reply_claim import run_claimed
+    return run_claimed(conv_id)
+
+
 def maybe_reply(conv, incoming):
-    """Викликається з ingest(): якщо канал увімкнено — відповідаємо окремим потоком."""
-    try:
-        if not should_reply(conv, incoming):
-            return False
-        threading.Thread(target=reply_now, args=(conv.id,), daemon=True).start()
-        return True
-    except Exception:
+    """Queue only after the inbound transaction commits; eligibility is checked under lock."""
+    from django.db import transaction
+    if (incoming is None or incoming.direction != "in" or incoming.internal
+            or not (incoming.text or "").strip() or not channel_on(conv.channel)):
         return False
+    transaction.on_commit(lambda: threading.Thread(target=reply_now, args=(conv.id,), daemon=True).start())
+    return True

@@ -401,7 +401,7 @@ def handle_event(event: dict) -> int:
         text = "[%s] непідтримуваний тип повідомлення TikTok" % mtype
 
     ts = content.get("timestamp")
-    Message.objects.create(
+    msg = Message.objects.create(
         conversation=conv, direction=("in" if incoming else "out"), text=text[:5000],
         attachments=atts, external_id=msg_id,
         sender_name=("" if incoming else "ai_assistant"))  # echo без нашого Message = Юля/відповідь поза CRM
@@ -410,6 +410,9 @@ def handle_event(event: dict) -> int:
     if incoming and client_name and conv.title in ("", "TikTok"):
         conv.title = client_name[:160]
     conv.save()
+    if incoming and mtype == "text":
+        from .ai_reply import maybe_reply
+        maybe_reply(conv, msg)
     return 1
 
 

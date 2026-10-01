@@ -17,7 +17,7 @@ INVARIANTS -- NE LAMATY pry hlobalnyh perevirkah/refaktori (rehlament Oleha 22.0
    (guard na start/pauzu/stop zminy); (c) sweep_worktime.py -- zve apply_yulia_shift_toggle()
    u kintsi (kron */3) dlya SVERKY, bo avto-pauza/avto-zakryttya zminy ydut povz hook.
    Yakshcho des lyshyty tilky "Prodazh" -- stan Yuli dreyfuye (Oleh/Kerivnytstvo ne tryheryt).
-2. answerOnMessageEnabled -- ZAVZHDY True (Yulya nikoly povnistyu ne vymykayetsya).
+2. Legacy ChatPlace only: answerOnMessageEnabled=True. CRM-owned bots are never changed by this module.
 3. apply_yulia_shift_toggle() bez force chipaye ChatPlace LYShE koly want != zberezhenyy stan
    (stabilno = 0 zayvyh zapytiv; sweep mozhe zvaty shchohvylyny bezpechno).
 """
@@ -88,6 +88,11 @@ def _tg_notify(text):
 
 def _cp_update(bot_id, silence_on):
     """«Відповідати в Direct» ЗАВЖДИ true; перемикаємо тільки паузу після відповіді менеджера."""
+    from apps.inbox.models import Channel
+    # A CRM-owned bot must never be re-enabled by shift changes or the periodic sweep.
+    if Channel.objects.filter(config__crm_seller_primary=True,
+                              config__crm_seller_chatplace_bot_id=bot_id).exists():
+        return {"managed_by": "crm", "answerOnMessageEnabled": False}
     from apps.inbox.chatplace import _mcp
     args = {
         "botId": bot_id,
@@ -112,6 +117,8 @@ def _check(r, silence_on):
             return False
     if not isinstance(r, dict):
         return False
+    if r.get("managed_by") == "crm":
+        return True
     return (bool(r.get("silenceAfterHumanReplyEnabled")) == bool(silence_on)
             and bool(r.get("answerOnMessageEnabled")) is True)
 
