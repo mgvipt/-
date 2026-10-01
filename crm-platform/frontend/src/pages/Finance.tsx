@@ -2806,7 +2806,7 @@ function Debts() {
   const [payFopDoc, setPayFopDoc] = useState<any>(null);
   const [linkR, setLinkR] = useState<any>(null);   // кредиторка для привʼязки платежу з журналу
   const payFop = (r: any, e: any) => { e.stopPropagation(); setPayFopDoc(r); };
-  const Section = ({ kind, title, color }: any) => {
+  const Section = ({ kind, title, color, loans }: any) => {
     const arw = (f: string) => (sortF === f ? " ▲" : sortF === "-" + f ? " ▼" : "");
     const Hh = (f: string, label: string) => <th style={{ padding: "4px", cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => setSortF(sortF === f ? "-" + f : f)}>{label}{arw(f)}</th>;
     const sortRows = (arr: any[]) => {
@@ -2821,10 +2821,16 @@ function Debts() {
       return [...arr].sort((a, b) => { const x = g(a), y = g(b); const c = x < y ? -1 : x > y ? 1 : 0; return desc ? -c : c; });
     };
     const list = sortRows(rows.filter((r) => r.kind === kind && !r.is_internal
+      && (loans === undefined || Boolean(r.is_loan) === Boolean(loans))
       && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase()))
       && (!dirFilter || r.fin_direction_name === dirFilter)
       && (!catFilter || String(r.category || "") === catFilter)));
-    const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
+    // 01.10.2026 (Олег): у «Запланованих» показуємо ЗАЛИШОК боргу, а не початкову суму —
+    // частково оплачений борг (Корженевський 249 260 → залишок 54 260) роздував підсумок.
+    // В «Оплачених»/«Скасованих» лишається повна сума — там це сума самої операції.
+    const total = list.reduce((sm, r) => sm + (st === "planned"
+      ? (r.remaining !== undefined && r.remaining !== null ? Number(r.remaining) : Number(r.amount || 0) - Number(r.paid_amount || 0))
+      : Number(r.amount || 0)), 0);
     if (isMobile) return (
       <div className="panel" style={{ margin: "0 0 12px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
@@ -2945,7 +2951,8 @@ function Debts() {
       </div>
       {linkR && <LinkPaymentModal row={linkR} onClose={() => setLinkR(null)} onDone={() => { setLinkR(null); load(); }} />}
       {payFopDoc && <PayFopModal r={payFopDoc} onClose={() => setPayFopDoc(null)} onDone={load} />}
-      <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
+      <Section kind="payable" loans={false} title={"🔻 " + t("Кредиторка — мы должны (товары и услуги)", "Кредиторка — ми винні (товари і послуги)")} color="#dc2626" />
+      <Section kind="payable" loans={true} title={"🏦 " + t("Кредиты и займы — мы должны", "Кредити і позики — ми винні")} color="#7c3aed" />
       <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
       {(() => {
         const intl = rows.filter((r: any) => r.is_internal && (!cpFilter || (String(r.counterparty || "") + " " + String(r.contact_name || "")).toLowerCase().includes(cpFilter.toLowerCase())));
@@ -2998,7 +3005,7 @@ function Planning() {
   const [auto, setAuto] = useState(false);       // модалка авто-розподілу виручки
   const [openAlloc, setOpenAlloc] = useState<number | null>(null); // розгорнутий список розподілів фонду
   const [spend, setSpend] = useState<any>(null); // фонд, з якого робимо витрата
-  const [debts, setDebts] = useState<any>({ pay: 0, rec: 0, payN: 0, recN: 0 });
+  const [debts, setDebts] = useState<any>({ pay: 0, rec: 0, loan: 0, payN: 0, recN: 0, loanN: 0 });
   const load = () => api.get<any>(`/api/finance/funds/?period=${period}`).then(setData);
   useEffect(() => { setData(null); load(); }, [period]);
   useEffect(() => { const iv = setInterval(() => { api.get<any>(`/api/finance/funds/?period=${period}`).then((d) => setData((prev: any) => JSON.stringify(prev) === JSON.stringify(d) ? prev : d)).catch(() => {}); }, 10000); return () => clearInterval(iv); }, [period]);
@@ -3007,8 +3014,13 @@ function Planning() {
       const rows = d.results || d;
       const pay = rows.filter((r: any) => r.kind === "payable");
       const rec = rows.filter((r: any) => r.kind === "receivable");
-      setDebts({ pay: pay.reduce((s: number, r: any) => s + Number(r.amount || 0), 0), payN: pay.length,
-                 rec: rec.reduce((s: number, r: any) => s + Number(r.amount || 0), 0), recN: rec.length });
+      const left = (r: any) => (r.remaining !== undefined && r.remaining !== null
+        ? Number(r.remaining) : Number(r.amount || 0) - Number(r.paid_amount || 0));
+      const payGoods = pay.filter((r: any) => !r.is_loan);
+      const payLoans = pay.filter((r: any) => r.is_loan);
+      setDebts({ pay: payGoods.reduce((s: number, r: any) => s + left(r), 0), payN: payGoods.length,
+                 loan: payLoans.reduce((s: number, r: any) => s + left(r), 0), loanN: payLoans.length,
+                 rec: rec.reduce((s: number, r: any) => s + left(r), 0), recN: rec.length });
     }).catch(() => {});
   }, []);
   useEffect(() => { api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d)); }, []);
@@ -3034,8 +3046,11 @@ function Planning() {
   }
 
   if (!data) return <div className="spin">{t("Загрузка фондов…","Завантаження фондів…")}</div>;
-  const debtsBar = (debts.payN > 0 || debts.recN > 0) ? (
+  const debtsBar = (debts.payN > 0 || debts.recN > 0 || debts.loanN > 0) ? (
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+      {debts.loanN > 0 && <div className="panel" style={{ margin: 0, padding: "8px 14px", borderLeft: "4px solid #7c3aed" }}>
+        🏦 {t("Кредиты и займы:", "Кредити і позики:")} <b style={{ color: "#7c3aed" }}>{money(debts.loan)}</b> <span className="muted" style={{ fontSize: 11 }}>({debts.loanN})</span>
+      </div>}
       {debts.payN > 0 && <div className="panel" style={{ margin: 0, padding: "8px 14px", borderLeft: "4px solid #dc2626" }}>
         🔻 {t("Кредиторка (мы должны):", "Кредиторка (ми винні):")} <b style={{ color: "#dc2626" }}>{money(debts.pay)}</b> <span className="muted" style={{ fontSize: 11 }}>({debts.payN} {t("платежей — учитывай в планах", "платежів — враховуй у планах")})</span>
       </div>}
