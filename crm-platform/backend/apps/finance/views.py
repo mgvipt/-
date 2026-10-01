@@ -3933,9 +3933,12 @@ class LoanViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def pull_payments(self, request, pk=None):
         """Підтягнути з журналу платежі цьому кредитору, яких ще немає в кредиті."""
-        from .loans import pull_payments as _pull
+        from .loans import pull_interest as _pint, pull_payments as _pull
         ln = self.get_object()
-        made = _pull(ln, dry=bool(request.data.get("dry")))
+        dry = bool(request.data.get("dry"))
+        made = _pull(ln, dry=dry)
+        # кредитний ліміт: ще й нарахування/сплата відсотків (тіло не чіпають)
+        made += _pint(ln, dry=dry)
         return Response({"created": len(made), "balance": float(ln.balance)})
 
     @action(detail=True, methods=["post"])

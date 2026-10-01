@@ -347,6 +347,11 @@ class Loan(models.Model):
     comment = models.TextField("Коментар", blank=True, default="")
     planned_payment = models.ForeignKey("PlannedPayment", null=True, blank=True, on_delete=models.SET_NULL,
                                         related_name="+", help_text="Дзеркало в Дт/Кт — сума оновлюється автоматично")
+    account = models.ForeignKey("Account", null=True, blank=True, on_delete=models.SET_NULL, related_name="loans",
+                                help_text="Рахунок, на якому живе цей кредит — щоб платежі підтягувались саме сюди, "
+                                          "а не до всіх кредитів того самого банку")
+    pull_from = models.DateField("Підтягувати з дати", null=True, blank=True,
+                                 help_text="Операції до цієї дати вже внесені вручну — не дублювати")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -383,7 +388,9 @@ class Loan(models.Model):
 class LoanEntry(models.Model):
     """Рух по кредиту: нарахували відсотки, заплатили, довзяли ще."""
     KIND = [("accrual", "Нарахування відсотків"), ("payment", "Платіж"),
-            ("draw", "Довзяли"), ("adjust", "Коригування")]
+            ("interest", "Сплата відсотків"), ("draw", "Довзяли"), ("adjust", "Коригування")]
+    # «interest» — відсотки сплатили окремо, тіло боргу не змінилось
+    # (так працює кредитний ліміт: відсотки списують, тіло лишається)
     loan = models.ForeignKey(Loan, on_delete=models.CASCADE, related_name="entries")
     kind = models.CharField(max_length=10, choices=KIND, db_index=True)
     date = models.DateField(db_index=True)

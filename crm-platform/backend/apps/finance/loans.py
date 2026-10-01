@@ -189,6 +189,8 @@ def summary():
 
 
 PAY_CATEGORIES = ("Кредиты — возврат тела", "Погашение кредита")
+ACCRUAL_MARK = "Нарахування % за користування кредитним"
+INTEREST_MARK = "Погашення вiдсоткiв за користування"
 
 
 def pull_payments(loan: Loan, since: date = None, dry: bool = False):
@@ -206,16 +208,23 @@ def pull_payments(loan: Loan, since: date = None, dry: bool = False):
         return []
     qs = Transaction.objects.filter(direction="out", category_id__in=cats).exclude(
         id__in=LoanEntry.objects.filter(loan=loan).exclude(transaction=None).values_list("transaction_id", flat=True))
+    since = since or loan.pull_from
     if since:
         qs = qs.filter(date__gte=since)
-    # контрагент — цей кредитор: або за звʼязком contact, або за назвою
-    name = (str(loan.creditor) or "").strip()
-    parts = [w for w in name.replace(",", " ").split() if len(w) > 3]
-    from django.db.models import Q
-    cond = Q(contact_id=loan.creditor_id)
-    for w in parts:
-        cond |= Q(counterparty__icontains=w)
-    qs = qs.filter(cond).order_by("date", "id")
+    # відсотки — це НЕ погашення тіла: їх підтягує pull_interest
+    qs = qs.exclude(comment__icontains=ACCRUAL_MARK).exclude(comment__icontains=INTEREST_MARK)
+    if loan.account_id:
+        # у банку кілька кредитів на одного кредитора — розрізняємо за рахунком
+        qs = qs.filter(account_id=loan.account_id)
+    else:
+        name = (str(loan.creditor) or "").strip()
+        parts = [w for w in name.replace(",", " ").split() if len(w) > 3]
+        from django.db.models import Q
+        cond = Q(contact_id=loan.creditor_id)
+        for w in parts:
+            cond |= Q(counterparty__icontains=w)
+        qs = qs.filter(cond)
+    qs = qs.order_by("date", "id")
 
     made = []
     for t in qs:
@@ -235,4 +244,38 @@ def pull_payments(loan: Loan, since: date = None, dry: bool = False):
     if made and not dry:
         loan.save(update_fields=["balance"])
         sync_planned(loan)
+    return made
+
+
+def pull_interest(loan: Loan, dry: bool = False):
+    """Для кредитного ліміту: підтягнути з журналу нарахування і сплату відсотків.
+
+    На ліміті відсотки списують окремим платежем, а тіло лишається тим самим —
+    тому ці рухи тіло НЕ змінюють, вони лише показують, у що обходиться кредит.
+    01.10.2026 (Олег): «перевір по журналу всі рухи і додай, щоб дзеркально
+    відображалось в аналітиці».
+    """
+    from .models import Transaction
+    done = set(LoanEntry.objects.filter(loan=loan).exclude(transaction=None)
+               .values_list("transaction_id", flat=True))
+    rows = []
+    for mark, kind, sign, label in ((ACCRUAL_MARK, "accrual", 1, "Нараховано відсотки"),
+                                    (INTEREST_MARK, "interest", -1, "Сплачено відсотки")):
+        q = Transaction.objects.filter(comment__icontains=mark)
+        if loan.pull_from:
+            q = q.filter(date__gte=loan.pull_from)
+        for t in q.order_by("date", "id"):
+            if t.id in done:
+                continue
+            rows.append((kind, t, D(sign) * D(t.amount_uah or 0), label))
+    rows.sort(key=lambda r: (r[1].date, r[1].id))
+    made = []
+    for kind, t, amt, label in rows:
+        if dry:
+            made.append(dict(date=t.date, kind=kind, amount=amt))
+            continue
+        made.append(LoanEntry.objects.create(
+            loan=loan, kind=kind, date=t.date, amount=amt, rate_uah=D("1"), amount_uah=amt,
+            balance_after=loan.balance, transaction=t,
+            comment=("%s · %s" % (label, (t.comment or "")[:60]))[:255]))
     return made
