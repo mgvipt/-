@@ -153,8 +153,12 @@ def sync_planned(loan: Loan):
         loan.save(update_fields=["planned_payment"])
         return pp
     pp.amount = uah
+    # 01.10.2026 (Олег): у картці показувало 983 404 замість 1 083 404 — борг віднімався двічі.
+    # `amount` тут уже ПОТОЧНИЙ залишок кредиту, тож «погашено» мусить бути нулем,
+    # інакше платіж зменшує і тіло кредиту, і цю ж суму ще раз у Дт/Кт.
+    pp.paid_amount = D("0")
     pp.status = "planned" if (loan.is_active and uah > 0) else "paid"
-    pp.save(update_fields=["amount", "status"])
+    pp.save(update_fields=["amount", "paid_amount", "status"])
     return pp
 
 
