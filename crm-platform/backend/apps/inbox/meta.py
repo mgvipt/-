@@ -1044,6 +1044,16 @@ def handle_webhook(payload: dict):
             from django.utils import timezone
             conv.last_message_at = timezone.now()
             conv.save()
+            # Only explicitly CRM-owned chats: legacy ChatPlace keeps its current owner.
+            # Queue after saving/reopening so the worker sees the committed incoming message.
+            if not is_echo and ((conv.config or {}).get("seller_acceptance_test")
+                                or (ch.config or {}).get("crm_seller_primary")):
+                try:
+                    from .ai_reply import maybe_reply
+                    maybe_reply(conv, created_message)
+                except Exception:
+                    __import__("logging").getLogger(__name__).exception(
+                        "Could not queue CRM seller for Meta conversation %s", conv.pk)
             n_msg += 1
         # 2) Коментарі (changes → field comments/feed): чат = «клієнт + публікація»
         for chg in changes:
