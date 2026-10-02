@@ -606,16 +606,9 @@ def _reply_once(conv_id, expected_incoming_id=None):
         ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), color_ctx, language_hint(incoming.text),
                                       hello if first else "", crm_context(conv, incoming),
                                       ("ОФОРМЛЕННЯ ЗУПИНЕНО: " + action_hold + " Не обіцяй створений рахунок/посилання. Покажи склад як чернетку.") if action_hold else "") if x)
-        from apps.knowledge.volume_calc import final_quote_reply, confirmed_volume_order
+        from apps.knowledge.volume_calc import final_quote_reply
         own_deep = saved_selection.get("fields", {}).get("deep_primer_available", {}).get("value") is True
         r = final_quote_reply(calc, incoming.text, deep_available=own_deep)
-        confirmed = confirmed_volume_order(msgs, calc)
-        if confirmed and not action_hold:
-            r = {"text": "Дякую! Перевіряю склад і суму для оформлення.", "order": confirmed,
-                 "handoff": False, "used_items": [], "cost": {"usd": 0}}
-        elif confirmed and action_hold:
-            r = {"text": "Оформлення зараз призупинене. " + action_hold,
-                 "handoff": False, "used_items": [], "cost": {"usd": 0}}
         if r is None:
             r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                        source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
@@ -650,6 +643,8 @@ def _reply_once(conv_id, expected_incoming_id=None):
     except Exception as e:
         _note(conv, "%s: не вдалося надіслати (%s). Текст: «%s»" % (NOTE_PREFIX, str(e)[:200], text[:600]))
         return "failed"
+    if r.get("intent"):
+        note += " Намір: %s. %s" % (r["intent"], r.get("intent_reason") or "")
     _note(conv, note)
     if not _still_current(conv, incoming):
         return

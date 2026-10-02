@@ -151,7 +151,7 @@ class SellerVolumeOrderTests(TestCase):
         self.assertNotIn("order",res)
 
     def test_volume_order_only_with_crm_calc(self):
-        j = '{"reply": "Оформлюю: разом 3080 грн", "handoff": false, "order": {"volume": true, "tint": true}}'
+        j = '{"intent":"confirm_order", "reply": "Оформлюю: разом 3080 грн", "handoff": false, "order": {"volume": true, "tint": true}}'
         ok = self._finish(j, "РОЗРАХУНОК CRM ... Разом: 3080 грн")
         self.assertEqual(ok.get("order"), {"volume": True, "tint": True})
         self.assertFalse(ok.get("handoff"))
@@ -331,16 +331,18 @@ class InvoiceFlowTests(TestCase):
 
 
 class CheckoutAcceptanceTests(InvoiceFlowTests):
-    def test_explicit_checkout_but_not_pause_or_question(self):
-        self.calc['color']='MSK20-3'
-        for text, expected in [('Так, оформлюйте',True),('Оформіть рахунок',True),
-                               ('Дякую я подумаю',False),('А якщо оформити?',False),
-                               ('Да',False),('Не оформляйте',False)]:
-            result=vc.confirmed_volume_order([{'role':'agent','text':'Разом — 5624 грн.'},
-                                              {'role':'client','text':text}],self.calc)
-            self.assertEqual(bool(result),expected,text)
-        self.assertIsNone(vc.confirmed_volume_order([{'role':'agent','text':'Разом — 4920 грн.'},
-                                                     {'role':'client','text':'Так, оформлюйте'}],self.calc))
+    def test_order_requires_contextual_model_confirmation(self):
+        import json
+        from apps.knowledge.answer import _finish_seller
+        for intent in ['confirm_order','acknowledge','hesitation','pause','clarify',None]:
+            res={}
+            raw=json.dumps({'reply':'Добре, перевіряю склад.', 'intent':intent,
+                            'intent_reason':'Погоджено остаточний склад і суму' if intent=='confirm_order' else 'Покупку не погоджено',
+                            'order':{'volume':True,'tint':True}})
+            _finish_seller(res,{'content':[{'type':'text','text':raw}]},[{'role':'client','text':'Ок'}],
+                           {'allowed':'РОЗРАХУНОК CRM'},[])
+            self.assertEqual(bool(res.get('order')),intent=='confirm_order')
+            self.assertNotIn('Погоджено остаточний',res['text'])
 
     def test_actual_document_and_saved_color(self):
         from apps.inbox.ai_reply import _make_volume_offer

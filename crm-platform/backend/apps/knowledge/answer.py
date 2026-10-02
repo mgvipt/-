@@ -54,10 +54,17 @@ from .seller_prompt import system_for as _seller_system_for
 
 SELLER_CONTRACT = (
     'Поверни СТРОГО JSON: {"reply": "текст клієнту", "handoff": true або false, "reason": "чому передаєш менеджеру", '
+    '"intent": "confirm_order|acknowledge|question|hesitation|pause|change_selection|clarify", '
+    '"intent_reason": "коротко: до чого відноситься остання репліка, тільки для CRM", '
     '"order": {"product": "точна назва тест-набору", "qty": 1} або {"volume": true, "tint": true} або null}. '
     "handoff=true — якщо не впевнена або потрібних фактів у базі немає. Лише коли клієнт явно погодив купівлю ТЕСТ-НАБОРУ за названою ціною і варіант "
     "зрозумілий — не передавай менеджеру, а поверни order. Клієнт погодився оформити ОБʼЄМ за «РОЗРАХУНКОМ CRM» — "
     "поверни order {\"volume\": true, \"tint\": true} (tint=false лише якщо клієнт хоче без тонування / білий). "
+    "Згоду визначай за всім змістом діалогу, не за списком слів. Після остаточного складу й суми коротке позитивне "
+    "підтвердження означає confirm_order та order, якщо немає заперечення чи умови. Та сама відповідь після палітри, "
+    "пояснення або проміжного питання не підтверджує купівлю. Не вимагай спеціальної команди чи повторного погодження "
+    "вже погодженого замовлення. Якщо неясно, що саме погодили, clarify та одне конкретне питання. "
+    "При hesitation/pause/acknowledge/question/change_selection order=null. Внутрішній intent_reason не потрапляє у reply. "
     "Оплата іншим способом, дзвінок — менеджеру."
 )
 
@@ -429,7 +436,10 @@ def _finish_seller(res, resp, msgs, spec, used):
                    handoff_reason="Невірний формат відповіді моделі; службовий текст не надіслано", draft_reply="")
         return
     reply = data["reply"].strip()
-    order = data.get("order") if isinstance(data.get("order"), dict) else None
+    intent = data.get("intent")
+    res["intent"] = intent if intent in ("confirm_order", "acknowledge", "question", "hesitation", "pause", "change_selection", "clarify") else "unknown"
+    res["intent_reason"] = str(data.get("intent_reason") or "")[:240]
+    order = data.get("order") if intent == "confirm_order" and isinstance(data.get("order"), dict) else None
     if spec.get("actions_blocked"):
         order = None
         # Test/paid-order holds must not invite an unavailable checkout action.
