@@ -2180,9 +2180,18 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         if _date_s in ("?", "-"):
             _date_s = ""
         _tmpl = ((getattr(pp.contact, "payment_purpose", "") or "").strip()) if pp.contact_id else ""
-        if _tmpl and _inv_s:
+        if _tmpl:
+            # 02.10.2026 (Олег): раніше шаблон постачальника працював ЛИШЕ коли розпізнався
+            # номер накладної — інакше в Приват24 летіла заглушка «Оплата за товар згідно
+            # рахунку постачальника» замість його тексту. Тепер шаблон застосовуємо завжди,
+            # а порожні місця від {номер}/{дата} прибираємо, щоб не лишалось «Оплата рахунку , від  р.»
             dest = (_tmpl.replace("{номер}", _inv_s).replace("{дата}", _date_s)
-                         .replace("{number}", _inv_s).replace("{date}", _date_s)).strip()
+                         .replace("{number}", _inv_s).replace("{date}", _date_s))
+            if not _inv_s or not _date_s:
+                dest = _redst.sub(r"\s*(?:№|N)?\s*,\s*(?=від|$)", " ", dest)   # «рахунку , від» → «рахунку від»
+                dest = _redst.sub(r"\s+від\s+(?:р\.?)?\s*$", "", dest)         # хвіст «від  р.» без дати
+                dest = _redst.sub(r"\s{2,}", " ", dest).strip(" ,;")
+            dest = dest.strip()
         elif _inv_s and _date_s:
             dest = "Оплата рахунку №%s від %s" % (_inv_s, _date_s)
         elif _inv_s:

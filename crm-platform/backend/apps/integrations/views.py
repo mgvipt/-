@@ -758,6 +758,20 @@ class IncomingDocUploadView(APIView):
                 except Exception:
                     pass
         inv = act.get("invoice_number")
+        # 02.10.2026 (Олег): у назві файла номер і дата часто є, а в тексті — ні
+        # («№ 5927 от 02 октября 2026 г..xls»). Беремо звідти, інакше в призначення
+        # платежу йде заглушка замість шаблону постачальника.
+        if not inv:
+            _mfn = _re.search(r"[№N]\s*([0-9][^\s,;]*)", name or "")
+            if not _mfn:
+                _mfn = _re.search(r"(?:видаткова\s+)?накладн\w*\s*[№N]?\s*([0-9][^\s,;.]*)", name or "", _re.I)
+            if _mfn:
+                inv = _mfn.group(1).strip().rstrip(".")
+        if not act.get("invoice_date"):
+            from apps.integrations.supplier_act import _ua_date as _uad
+            _dfn = _uad(name or "")
+            if _dfn:
+                act["invoice_date"] = _dfn
         _sup = act.get("supplier") or {}
         _nml = (name or "").lower()
         _is_np = ("нова пошта" in (str(_sup.get("name") or "")).lower()) or (str(_sup.get("ipn") or "") == "31316718") or ("нова пошта" in _nml) or ("нп-" in _nml) or ("акту" in _nml and "нп" in _nml)
