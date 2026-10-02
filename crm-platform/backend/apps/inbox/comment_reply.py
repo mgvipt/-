@@ -91,6 +91,10 @@ def maybe_send(conv, comment_id, comment_text):
         if not comment_id or already_sent(conv):
             return False
         from .ai_reply import channel_on
+        cfg = conv.channel.config or {}
+        # ChatPlace owns comment campaigns until an explicit CRM cutover.
+        if cfg.get("ai_reply_after_handoff") and not cfg.get("crm_seller_primary"):
+            return False
         if not channel_on(conv.channel):
             return False
         card = (conv.config or {}).get("source_card") or {}

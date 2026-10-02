@@ -106,14 +106,15 @@ def _takeover_until(conv):
 
 def hold_chat(conv, hours=TAKEOVER_HOURS):
     """Продавець CRM бере чат на себе на N годин (вікно продовжується з кожною відповіддю)."""
-    cfg = dict(conv.config or {})
-    cfg["ai_takeover_until"] = (timezone.now() + timedelta(hours=hours)).isoformat()
-    conv.config = cfg
-    conv.save(update_fields=["config"])
+    from .ai_reply_claim import set_state
+    set_state(conv.pk, ai_takeover_until=(timezone.now() + timedelta(hours=hours)).isoformat())
+    conv.refresh_from_db(fields=["config"])
 
 
 def _took_over(conv, incoming):
     """Чи вже час продавцю CRM вести цей чат (і фіксуємо момент передачі)."""
+    if (conv.config or {}).get("seller_acceptance_test"):
+        return True
     until = _takeover_until(conv)
     if until and until > timezone.now():
         return True
@@ -353,6 +354,9 @@ def _maybe_requisites(conv, incoming):
     """Клієнт просить рахунок/реквізити — надсилаємо їх самі, а не передаємо менеджеру."""
     from .services import send_message
     from .models import Message
+    from apps.knowledge.seller_state import action_blocked
+    if action_blocked(conv):
+        return False
     text_in = (incoming.text or "")
     if not REQ_ASK.search(text_in) or REQ_PAID.search(text_in):
         return False
@@ -470,13 +474,20 @@ def _switch_kit(conv, incoming):
     True — зробили, далі звичайна відповідь не потрібна."""
     from apps.crm.models import Deal
     from apps.crm.views import make_offer
+    from apps.knowledge.seller_state import action_blocked
+    if action_blocked(conv):
+        return False
     said = _recent_client_text(conv, incoming)
     if not conv.contact_id or not KIT_CHANGE_RX.search(said):
         return False
-    deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
-            .filter(items__product__name__icontains="тестовий набір")
-            .order_by("-created_at").distinct().first())
+    from apps.knowledge.seller_state import active_order
+    deal, ambiguous = active_order(conv)
+    if ambiguous:
+        return False
     if deal is None:
+        return False
+    if deal.items.count() != 1:
+        _note(conv, NOTE_PREFIX + ": зміна багатопозиційного замовлення потребує менеджера; інші товари збережено.")
         return False
     paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
     if paid > 0:
@@ -544,17 +555,20 @@ def _reply_once(conv_id, expected_incoming_id=None):
     incoming = conv.messages.filter(direction="in", internal=False).order_by("-id").first()
     if incoming is None or (expected_incoming_id is not None and incoming.pk != expected_incoming_id) or not _still_current(conv, incoming):
         return
+    from apps.knowledge.seller_state import refresh, action_blocked
+    saved_selection = refresh(conv, incoming)
+    action_hold = action_blocked(conv)
     try:
         # 26.09.2026: спершу дивимось, чи не просить клієнт змінити комплектацію набору —
         # інакше агент відповідав текстом, а сделка лишалась зі старим набором і старою сумою.
-        if _switch_kit(conv, incoming):
+        if not action_hold and _switch_kit(conv, incoming):
             if _takeover_channel(conv.channel):
                 hold_chat(conv)
             return
     except Exception as e:
         _note(conv, "%s: не вдалося змінити комплектацію (%s)." % (NOTE_PREFIX, str(e)[:200]))
     try:
-        if _maybe_requisites(conv, incoming):
+        if not action_hold and _maybe_requisites(conv, incoming):
             if _takeover_channel(conv.channel):
                 hold_chat(conv)
             return
@@ -566,7 +580,14 @@ def _reply_once(conv_id, expected_incoming_id=None):
         ad_ctx = ad_prompt(conv)   # 22.09.2026: продавець знає, з якої реклами клієнт
         ad_q = ad_topic(ad_info(conv).get("ad_title")) if ad_ctx else ""
         msgs = history(conv, incoming)
-        calc = _volume_calc(msgs, ad_q)   # 22.09.2026: обʼєм рахує CRM з карток каталогу
+        project_start = saved_selection.get("project_start_id")
+        if project_start:
+            rows = list(conv.messages.filter(internal=False,id__gte=project_start,id__lte=incoming.pk).order_by("-id").values("direction","text")[:20])
+            msgs = [{"role":"client" if x["direction"]=="in" else "agent","text":x["text"] or ""} for x in reversed(rows)]
+        # Explicit persisted client facts also feed the deterministic calculator.
+        saved_quotes = [v["quote"] for k,v in sorted(saved_selection.get("fields",{}).items(),key=lambda kv:kv[1]["message_id"]) if k in ("material","wall_area_m2","color","deep_primer_request")]
+        calc_msgs = [{"role":"client","text":q} for q in dict.fromkeys(saved_quotes)] + [m for m in msgs if m.get("role")=="client"]
+        calc = _volume_calc(calc_msgs, ad_q)   # 22.09.2026: обʼєм рахує CRM з карток каталогу
         from apps.knowledge.volume_calc import language_hint, prompt_block
         first = not Message.objects.filter(conversation=conv, direction="out", internal=False).exists()
         # 23.09.2026 (Олег): «просто, без зайвого пафосу» — тільки імʼя, без посади й компанії;
@@ -582,7 +603,8 @@ def _reply_once(conv_id, expected_incoming_id=None):
             color_ctx = ""
         from apps.knowledge.conversation_context import prompt_block as crm_context
         ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), color_ctx, language_hint(incoming.text),
-                                      hello if first else "", crm_context(conv, incoming)) if x)
+                                      hello if first else "", crm_context(conv, incoming),
+                                      ("ОФОРМЛЕННЯ ЗУПИНЕНО: " + action_hold + " Не обіцяй створений рахунок/посилання. Покажи склад як чернетку.") if action_hold else "") if x)
         r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
                    context=ctx, context_query=ad_q, contact_id=conv.contact_id)
@@ -621,6 +643,11 @@ def _reply_once(conv_id, expected_incoming_id=None):
     if _takeover_channel(conv.channel):
         hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
     if not _still_current(conv, incoming):
+        return
+    action_hold = action_blocked(conv)  # Payments/orders can change during generation.
+    if action_hold:
+        if r.get("order") or BUY_RX.search(incoming.text or ""):
+            _note(conv, NOTE_PREFIX + ": " + action_hold)
         return
     _maybe_volume_doc(conv, calc, r.get("order"))
     if not _still_current(conv, incoming):
@@ -670,10 +697,13 @@ def _maybe_volume_doc(conv, calc, order):
     """26.09.2026 (Олег): «ШІ тут не надіслав накладну — краще одразу скидати накладну,
     щоб клієнт побачив». Клієнт питає ціну на площу → CRM збирає сделку з позиціями
     і надсилає ОДНЕ посилання на накладну. Оплату не нав\u02bcязуємо: кнопка є в самому документі."""
+    from apps.knowledge.seller_state import action_blocked
+    if action_blocked(conv):
+        return
     try:
         if order and order.get("volume"):
             return                       # клієнт уже погодився — оформлює _make_volume_offer
-        if not calc or not calc.get("ok") or not conv.contact_id:
+        if not calc or not calc.get("ok") or calc.get("missing") or not conv.contact_id:
             return
         if float(calc.get("area") or 0) < DOC_MIN_M2:
             return
@@ -706,9 +736,12 @@ def _make_volume_offer(conv, calc, order):
     Сделка «21 Основний продукт» з позиціями РОЗРАХУНКУ CRM (площа × витрата з картки). Прорахунок клієнту
     надсилає make_offer. Тонування обʼєму в каталозі ціни не має → з тонуванням посилання на оплату НЕ шлемо,
     менеджер додає тонування і надсилає посилання; без тонування — посилання LiqPay одразу."""
+    from apps.knowledge.seller_state import action_blocked
+    if action_blocked(conv):
+        return
     from apps.crm.models import Deal, Funnel
     from apps.crm.views import make_offer
-    if not calc or not calc.get("ok"):
+    if not calc or not calc.get("ok") or calc.get("missing"):
         _note(conv, "%s: клієнт погодився на обʼєм, але розрахунку немає (площа чи матеріал невідомі) — оформіть вручну."
               % NOTE_PREFIX)
         return
@@ -776,6 +809,9 @@ MAX_AUTO_ORDER = 2000        # ₴ — вище цієї суми оформлю
 def _make_kit_offer(conv, order):
     """18.09.2026 (Олег): «клієнт погодився — скидай посилання на тест-набір, а про обʼєм питай потім».
     Створюємо сделку з обраним тест-набором і CRM сама надсилає прорахунок + посилання LiqPay (make_offer)."""
+    from apps.knowledge.seller_state import action_blocked
+    if action_blocked(conv):
+        return
     from apps.crm.models import Deal, Funnel
     from apps.crm.views import _find_product, make_offer
     name = (order.get("product") or "").strip()

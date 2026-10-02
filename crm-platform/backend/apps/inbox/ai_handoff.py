@@ -17,6 +17,9 @@ def after_yulia_handoff(sender, instance, created, **kwargs):
     if not created or instance.direction != "out" or instance.internal or instance.sender_name != "ai_assistant":
         return
     try:
+        cfg = instance.conversation.channel.config or {}
+        if cfg.get("crm_seller_primary") or (instance.conversation.config or {}).get("seller_acceptance_test"):
+            return  # No supplementary automation from external echoes in CRM-owned chats.
         from .ai_reply import HANDOFF_RX, _maybe_effect_photos, _takeover_channel, channel_on, reply_now, should_reply
         # 23.09.2026 (Олег): «якщо мова про вибір кольору — одразу кілька фото, як це виглядає в інтерʼєрі,
         # а вже потім посилання». Юля в ChatPlace фото не надсилає — щойно вона дала сторінку кольорів,

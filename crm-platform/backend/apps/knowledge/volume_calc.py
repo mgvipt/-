@@ -44,7 +44,7 @@ _M = [
     (r"velvet\s*lux|вельвет\s*л[юу]кс|велвет\s*л[юу]кс", 1650, "facture"),
     (r"(?:velvet\s*luna|вельвет|велвет|луна)[^.\n]{0,25}(?:gold|голд|золот)|(?:gold|золот)\w*\s+(?:velvet|вельвет)", 1648, "velvet_luna"),
     (r"(?:velvet\s*luna|вельвет|велвет|луна)[^.\n]{0,25}(?:bianco|б[іи]ан|б[іе]л)", 1647, "velvet_luna"),
-    (r"velvet\s*luna|вельвет|велвет|\bлун[аиі]\b", 1649, "velvet_luna"),
+    (r"velvet\s*luna|вельвет|велвет|\bлун[ауиі]\b", 1649, "velvet_luna"),
     (r"pattera\s*grose|грос[еє]|gros[es]", 1640, "facture"),
     (r"pattera\s*micro|патер\w*\s*м[іи]кро|гротто|грото|м[іи]кро\s*патер", 1641, "facture"),
     (r"pattera|патер|травертин|марморин|арт.?бетон", 1639, "facture"),
@@ -101,10 +101,12 @@ def _g(x):
     return ("%.2f" % float(x)).rstrip("0").rstrip(".")
 
 
-def estimate(material_id, base, area):
+def estimate(material_id, base, area, include_deep=True):
     """Розрахунок «пирога» на площу — лише з карток каталогу."""
     from apps.warehouse.models import Product
     ids = [material_id] + list(BASE.get(base) or ())
+    if not include_deep:
+        ids = [pid for pid in ids if pid not in (PRIMER_DEEP, PRIMER_DEEP_L)]
     if float(area or 0) > PRIMER_BIG_FROM_M2 and PRIMER_DEEP in ids:
         # 100 м²: 17 пакетиків × 80 = 1360 грн проти 2 л × 450 = 900 грн
         ids[ids.index(PRIMER_DEEP)] = PRIMER_DEEP_L
@@ -138,19 +140,9 @@ def short_name(name):
 
 
 def _underlay_note(calc):
-    """Підкладку можна не брати, якщо стіна вже готова (Олег 26.09.2026) — рахуємо, скільки тоді вийде."""
-    und = next((l for l in calc.get("lines") or [] if l.get("product_id") == SECOND_LAYER), None)
-    if not und:
-        return ""
-    taras = [l for l in (calc.get("tara_lines") or [])]
-    # без підкладки не потрібна і тара під неї
-    saved = und["total"]
-    if taras:
-        per = tara_lines([l for l in calc["lines"] if l.get("product_id") != SECOND_LAYER])
-        saved += sum((l["total"] for l in taras), Decimal("0")) - sum((l["total"] for l in per), Decimal("0"))
-    return ("ПІДКЛАДКУ (%s) МОЖНА ПРИБРАТИ, якщо стіна вже підготовлена під тонкошарове покриття — "
-            "тоді разом %s грн замість %s грн. Скажи про це клієнту одним рядком, не нав\u02bcязуй.\n"
-            % (und["short"], _g(calc["total"] - saved), _g(calc["total"])))
+    return ("Підкладка — це ґрунт-фарба під декор; вона входить у розрахунок. "
+            "Глибокий ґрунт не замінює підкладку. Окремо уточни, чи є глибокий ґрунт у клієнта; "
+            "якщо немає — запропонуй потрібну кількість за чинною ціною CRM, додай лише після згоди.\n")
 
 
 def prompt_block(calc):
@@ -164,7 +156,7 @@ def prompt_block(calc):
     mat = calc["material"]
     tara_total = sum((l["total"] for l in taras), Decimal("0"))
     out = ("РОЗРАХУНОК CRM на %s м² (рахувала CRM з карток каталогу — цифри точні, сам нічого не перераховуй):\n%s\n"
-           "Разом: %s грн (≈ %s грн за 1 м² з усіма шарами). Лише декоративний матеріал: %s грн. "
+           "Разом: %s грн (≈ %s грн за 1 м² за переліченими позиціями). Лише декоративний матеріал: %s грн. "
            "Ґрунти й основа разом: %s грн. Тара під розлив: %s грн.\n"
            "Жодних інших сум не складай і не рахуй — називай лише цифри з цього блоку.\n"
            "Захисного покриття в розрахунку НЕМАЄ — не називай ґрунти «захистом».\n"
@@ -172,6 +164,8 @@ def prompt_block(calc):
            % (_g(calc["area"]), "\n".join(rows), _g(calc["total"]), _g(calc["total"] / Decimal(str(calc["area"]))),
               _g(mat["total"]), _g(calc["total"] - mat["total"] - tara_total), _g(tara_total),
               _underlay_note(calc)))
+    for deep in calc.get("optional_deep", []):
+        out += "\nОКРЕМО, НЕ ВКЛЮЧЕНО: %s — %s %s, %s грн за цю кількість. Запропонуй, якщо немає власного; додавати лише після згоди.\n" % (deep["short"], _g(deep["qty"]), deep["unit"], _g(deep["total"]))
     t = calc.get("tint") or tint_estimate(calc, None)
     if t and not t["need_color"]:
         out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг, тара: %s): послуга %s грн + колорант %s мл × 6 грн = %s грн. "
@@ -452,7 +446,11 @@ def for_dialog(msgs, extra=""):
     mat = find_material([m["text"] for m in msgs], extra)
     if not mat:
         return None
-    calc = estimate(mat[0], mat[1], area)
+    deep_mentions = [m["text"] for m in msgs if m.get("role")=="client" and re.search(r"(?:глибок|глубок)",m["text"],re.I)]
+    add_deep = bool(deep_mentions and re.search(r"(?:додайте|добавьте|добавте|додати|добавить)[^.!?]{0,70}(?:глибок|глубок)",deep_mentions[-1],re.I) and "?" not in deep_mentions[-1] and not re.search(r"\b(?:не|ні|нет|є|есть)\b",deep_mentions[-1],re.I))
+    calc = estimate(mat[0], mat[1], area, include_deep=add_deep)
+    complete = estimate(mat[0], mat[1], area, include_deep=True)
+    calc["optional_deep"] = [] if add_deep else [l for l in complete["lines"] if l["product_id"] in (PRIMER_DEEP, PRIMER_DEEP_L)]
     col = find_color(msgs, mat[0])
     calc["color"], dose = (col[0], col[1]) if col else ("", None)
     calc["color_in_library"] = bool(col and col[2])
