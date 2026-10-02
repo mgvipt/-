@@ -96,6 +96,14 @@ class EstimateTests(TestCase):
         self.assertIn("матеріалів з тонуванням для прицінки: 4938 грн", block)
         self.assertIn("рахунок з тарою і тонуванням при оформленні: 5068 грн", block)
         self.assertEqual(calc["total"], Decimal("4920"))
+        # Exact computed subtotal must pass the unchanged money guard; invented values must not.
+        from apps.knowledge.answer import guard, HANDOFF_TEXT
+        calc["tint"].update(service=Decimal("200"), ml=Decimal("84"),
+                            toner=Decimal("504"), total=Decimal("704"))
+        block = vc.prompt_block(calc)
+        self.assertEqual(guard("Тонування — 704 грн. Разом 5624 грн", block, [], "Покажи розрахунок"), [])
+        self.assertTrue(guard("Тонування — 705 грн", block, [], "Покажи розрахунок"))
+        self.assertNotIn("номер", HANDOFF_TEXT)
 
 
 class SellerVolumeOrderTests(TestCase):

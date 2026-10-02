@@ -179,12 +179,13 @@ def prompt_block(calc):
     t = calc.get("tint") or tint_estimate(calc, None)
     if t and not t["need_color"]:
         out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг, тара: %s): послуга %s грн + колорант %s мл × 6 грн = %s грн. "
+                "Разом тонування (послуга + колорант): %s грн. "
                 "Вартість матеріалів з тонуванням для прицінки: %s грн. "
                 "Повний рахунок з тарою і тонуванням при оформленні: %s грн."
                 % (calc.get("color") or "—", "" if calc.get("color_in_library") else " (цього коду немає в бібліотеці —"
                    " рахую за кодом, який назвав клієнт)", t["what"], _g(t["kg"]), t["tara_parts"],
                    _g(t["service"]), _g(t["ml"]),
-                   _g(t["toner"]), _g(materials_total + t["total"]), _g(calc["total"] + t["total"])))
+                   _g(t["toner"]), _g(t["total"]), _g(materials_total + t["total"]), _g(calc["total"] + t["total"])))
     elif t and calc.get("color"):
         out += ("\nТОНУВАННЯ у колір %s: послуга %s грн; у цього кольору формула на два шари, тому точну суму "
                 "колоранта порахує менеджер — так і скажи клієнту, суму не вигадуй."
