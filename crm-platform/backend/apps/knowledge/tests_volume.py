@@ -73,6 +73,31 @@ class EstimateTests(TestCase):
         self.assertEqual(vc.prompt_block(vc.estimate(1640, "facture", 10)), "")
 
 
+    def test_preliminary_materials_exclude_packaging_invoice_preserves_it(self):
+        self._p(1623, "Galateya Silver", "1330", "кг", "0.15")
+        self._p(1571, "Second Layer", "200", "кг", "0.2")
+        packaging = [{"short": "Тара", "qty": Decimal("2"), "unit": "шт",
+                      "price": Decimal("65"), "total": Decimal("130")}]
+        with mock.patch.object(vc, "BASE", {"thin": [1571]}), mock.patch.object(vc, "tara_lines", return_value=packaging):
+            calc = vc.estimate(1623, "thin", 20, include_deep=False)
+        self.assertEqual(calc["total"], Decimal("4920"))
+        self.assertEqual(calc["tara_lines"], packaging)
+        block = vc.prompt_block(calc)
+        preliminary = block.split("ЕТАП ПРИЦІНКИ:")[0]
+        self.assertIn("Вартість матеріалів: 4790 грн", preliminary)
+        self.assertNotIn("130 грн", preliminary)
+        self.assertNotIn("Тара", preliminary)
+        self.assertIn("Разом: 4920 грн", block)
+        calc["color"] = "MSK14/08"
+        calc["tint"] = {"need_color": False, "what": "декор", "kg": Decimal("3"),
+                       "tara_parts": "1", "service": Decimal("100"), "ml": Decimal("8"),
+                       "toner": Decimal("48"), "total": Decimal("148")}
+        block = vc.prompt_block(calc)
+        self.assertIn("матеріалів з тонуванням для прицінки: 4938 грн", block)
+        self.assertIn("рахунок з тарою і тонуванням при оформленні: 5068 грн", block)
+        self.assertEqual(calc["total"], Decimal("4920"))
+
+
 class SellerVolumeOrderTests(TestCase):
     def _finish(self, reply_json, allowed):
         from apps.knowledge.answer import _finish_seller
