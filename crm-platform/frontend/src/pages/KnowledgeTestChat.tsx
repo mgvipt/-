@@ -10,7 +10,9 @@ import { errText, usd } from "./KnowledgeTools";
 type Choice = { value: string; label: string };
 type AgentInfo = { value: string; label: string; model: string; note: string };
 type Used = { id: number; title: string; status: string; topic: string; kind: string };
+type ChannelInfo = { id: number; name: string; kind: string; route: string; active: boolean };
 type Reply = {
+  simulation_token?: string; simulation?: { channel: ChannelInfo; actions: string[]; limitations: string[]; invoice?: { total: number; area?: number; color?: string; lines: { product_id: number; name?: string; qty: number; price: number }[] }; selection: unknown };
   text: string; handoff: boolean; handoff_reason: string; draft_reply: string; used_items: Used[]; prices: string[];
   extra?: { context?: string; points?: string[] }; actions?: string[];
   cost: { usd: number; model: string; in_tok: number; out_tok: number };
@@ -89,6 +91,20 @@ function AgentBubble({ m, onPeek }: { m: Msg; onPeek: (id: number) => void }) {
               {r.draft_reply && <div style={{ color: "#64748b", whiteSpace: "pre-wrap" }}>ШІ хотів відповісти: «{r.draft_reply}»</div>}
             </div>
           )}
+          {r.simulation && <div style={{ border: "1px solid #bfdbfe", padding: 8, borderRadius: 8, marginTop: 6 }}>
+            <b>Робочий продавець CRM · {r.simulation.channel.name}</b>
+            <div style={small}>Маршрут каналу: {r.simulation.channel.route}</div>
+            {r.simulation.actions.map((a, i) => <div key={i} style={{ marginTop: 4 }}>{a}</div>)}
+            {r.simulation.invoice && <div style={{ marginTop: 8 }}>
+              <b>Тестова накладна · {r.simulation.invoice.area || "—"} м² · {r.simulation.invoice.color || "—"}</b>
+              {r.simulation.invoice.lines.map((l, i) => <div key={i}>{l.name || `Товар #${l.product_id}`} · {l.qty} × {l.price} грн = {(Number(l.qty)*Number(l.price)).toFixed(2)} грн</div>)}
+              <b>Разом: {Number(r.simulation.invoice.total).toFixed(2)} грн</b>
+            </div>}
+            <details><summary>Межі перевірки та пам’ять</summary>
+              {r.simulation.limitations.map((l,i) => <div key={i} style={small}>{l}</div>)}
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 11 }}>{JSON.stringify(r.simulation.selection,null,2)}</pre>
+            </details>
+          </div>}
           {r.extra?.context && <div style={{ fontSize: 12, color: "#334155" }}><Icon n="🎯" size={12} /> {r.extra.context}</div>}
           {(r.extra?.points || []).map((p, i) => <div key={i} style={{ fontSize: 12, color: "#475569" }}>• {p}</div>)}
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 3 }}>
@@ -118,7 +134,11 @@ export default function KnowledgeTestChat({ topics }: { topics: Choice[] }) {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [canTest, setCanTest] = useState(false);
   const [agent, setAgent] = useState<string>(() => { try { return localStorage.getItem("kbTestAgent") || "yulia_web"; } catch { return "yulia_web"; } });
-  const [drafts, setDrafts] = useState(true);
+  const [runtimeSeller, setRuntimeSeller] = useState(true);
+  const [channels, setChannels] = useState<ChannelInfo[]>([]);
+  const [channelId, setChannelId] = useState(12);
+  const [simulationToken, setSimulationToken] = useState<string | undefined>();
+  const [drafts, setDrafts] = useState(false);
   const [topic, setTopic] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -130,22 +150,22 @@ export default function KnowledgeTestChat({ topics }: { topics: Choice[] }) {
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.get<{ agents: AgentInfo[]; can_test: boolean }>("/api/knowledge/test-chat/")
-      .then((d) => { setAgents(d.agents); setCanTest(d.can_test); })
+    api.get<{ agents: AgentInfo[]; can_test: boolean; channels: ChannelInfo[] }>("/api/knowledge/test-chat/")
+      .then((d) => { setAgents(d.agents); setCanTest(d.can_test); setChannels(d.channels || []); })
       .catch((e) => setLoadErr(errText(e)));
   }, []);
   useEffect(() => { try { localStorage.setItem("kbTestAgent", agent); } catch { /* немає сховища */ } }, [agent]);
   useEffect(() => { const b = boxRef.current; if (b) b.scrollTop = b.scrollHeight; }, [msgs, busy]);
   const history = (list: Msg[]) => list.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text }));
   useEffect(() => {  // оцінка вартості наступної відповіді — ШІ не викликається, $0
-    if (!canTest) return;
+    if (!canTest || runtimeSeller) { setEst(null); return; }
     const id = window.setTimeout(() => {
       api.post<Reply>("/api/knowledge/test-chat/", { agent, include_drafts: drafts, topic, messages: history(msgs), estimate_only: true })
         .then((r) => setEst(r.estimate)).catch(() => setEst(null));
     }, 400);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agent, drafts, topic, canTest, msgs.length]);
+  }, [agent, drafts, topic, canTest, msgs.length, runtimeSeller]);
 
   async function send() {
     const text = input.trim();
@@ -153,14 +173,15 @@ export default function KnowledgeTestChat({ topics }: { topics: Choice[] }) {
     const next: Msg[] = [...msgs, { role: "client", text }];
     setMsgs(next); setInput(""); setBusy(true);
     try {
-      const r = await api.post<Reply>("/api/knowledge/test-chat/", { agent, include_drafts: drafts, topic, messages: history(next) });
+      const r = await api.post<Reply>("/api/knowledge/test-chat/", runtimeSeller ? { runtime_seller: true, channel_id: channelId, simulation_token: simulationToken, text } : { agent, include_drafts: drafts, topic, messages: history(next) });
+      setSimulationToken(r.simulation_token);
       setMsgs([...next, { role: "agent", text: r.text, reply: r }]);
       setSpent((s) => s + (r.cost?.usd || 0));
     } catch (e) {
       setMsgs([...next, { role: "agent", text: "⚠️ " + errText(e), error: true }]);
     } finally { setBusy(false); }
   }
-  function reset() { setMsgs([]); setSpent(0); setPeek(null); setInput(""); }
+  function reset() { setSimulationToken(undefined); setMsgs([]); setSpent(0); setPeek(null); setInput(""); }
   async function askChatPlace(idx: number) {
     const bot = agent === "yulia_ig" ? "ig" : "tt";
     setMsgs((ms) => ms.map((m, i) => (i === idx ? { ...m, cpBusy: true } : m)));
@@ -171,12 +192,19 @@ export default function KnowledgeTestChat({ topics }: { topics: Choice[] }) {
   }
 
   const info = agents.find((a) => a.value === agent);
-  const cpAgent = agent === "yulia_ig" || agent === "yulia_tiktok";
+  const cpAgent = !runtimeSeller && (agent === "yulia_ig" || agent === "yulia_tiktok");
   if (loadErr) return <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 10 }}>{loadErr}</div>;
   return (
     <div style={{ marginTop: 10 }}>
+      <div style={{ padding: 10, background: "#eff6ff", borderRadius: 8, marginBottom: 8 }}>
+        <label><input type="checkbox" checked={runtimeSeller} disabled={busy} onChange={(e) => { setRuntimeSeller(e.target.checked); reset(); }} /> Перевіряти робочого продавця CRM</label>
+        <div style={small}>{runtimeSeller ? "Та сама модель, затверджені правила, пам’ять і розрахунок. Дії — лише попередній перегляд. Доставка через соцмережу не виконується." : "Лабораторія бази знань: можна враховувати чернетки й порівнювати зовнішню Юлю."}</div>
+      </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={agent} onChange={(e) => setAgent(e.target.value)} style={sel}>
+        {runtimeSeller && <select value={channelId} disabled={busy} onChange={(e) => { setChannelId(Number(e.target.value)); reset(); }} style={sel}>
+          {channels.map(c => <option key={c.id} value={c.id}>{c.name} · {c.route}</option>)}
+        </select>}
+        {!runtimeSeller && <><select value={agent} onChange={(e) => setAgent(e.target.value)} style={sel}>
           {agents.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
         </select>
         <label style={{ fontSize: 12.5, display: "flex", gap: 4, alignItems: "center" }} title="Показати, як агент відповідатиме ПІСЛЯ затвердження чернеток">
@@ -185,12 +213,12 @@ export default function KnowledgeTestChat({ topics }: { topics: Choice[] }) {
         <select value={topic} onChange={(e) => setTopic(e.target.value)} style={sel}>
           <option value="">Усі теми</option>{topics.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <button className="btn btn-light" onClick={reset}>↺ Почати заново</button>
+        </>}<button className="btn btn-light" disabled={busy} onClick={reset}>↺ Почати заново</button>
       </div>
-      {info && <div style={{ fontSize: 12, color: "#475569", marginTop: 6 }}>{info.note}</div>}
+      {!runtimeSeller && info && <div style={{ fontSize: 12, color: "#475569", marginTop: 6 }}>{info.note}</div>}
       <div style={{ ...small, marginTop: 4 }}>
-        Модель: {est?.model || info?.model || "—"} · ≈ {usd(est?.usd)} за відповідь · витрачено в цьому тесті: {usd(spent)} ·
-        {drafts ? " чернетки враховуються (як буде після затвердження)" : " лише затверджене (як зараз у справжнього агента)"} ·
+        Модель: {runtimeSeller ? ([...msgs].reverse().find(m=>m.reply)?.reply?.cost.model || "з налаштувань продавця CRM") : est?.model || info?.model || "—"} · ≈ {usd(est?.usd)} за відповідь · витрачено в цьому тесті: {usd(spent)} ·
+        {runtimeSeller ? " лише затверджене; модель робочого продавця" : drafts ? " чернетки враховуються (як буде після затвердження)" : " лише затверджене (як зараз у справжнього агента)"} ·
         розмова не зберігається і клієнтам не надсилається
       </div>
       {!canTest && <div style={{ fontSize: 12.5, color: "#b45309", marginTop: 6 }}>Тестувати може співробітник із правом «База знань: додавати й правити чернетки».</div>}

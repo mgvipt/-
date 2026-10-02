@@ -66,6 +66,7 @@ class TestChatView(APIView):
         return Response({
             "agents": [{"value": c, "label": l, "model": _agent_model(c), "note": AGENT_NOTES.get(c, "")}
                        for c, l in TEST_AGENTS],
+            "channels": __import__("apps.knowledge.seller_simulation", fromlist=["channels"]).channels(),
             "roles": [{"value": c, **r} for c, r in ROLES.items()],
             "can_test": can_edit(request.user), "stored": False,
         })
@@ -74,6 +75,14 @@ class TestChatView(APIView):
         if not can_edit(request.user):
             return _deny("Тестувати може співробітник із правом «База знань: додавати й правити чернетки»")
         d = request.data
+        if d.get("runtime_seller"):
+            if not _owner(request.user):
+                return _deny("Перевірка робочого продавця — лише власнику")
+            from .seller_simulation import run
+            try:
+                return Response(run(d, request.user.pk))
+            except ValueError as e:
+                return Response({"detail": str(e)}, status=400)
         agent = str(d.get("agent") or "")
         if agent not in dict(TEST_AGENTS):
             return Response({"detail": "Невідомий агент"}, status=400)

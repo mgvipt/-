@@ -585,34 +585,12 @@ def _reply_once(conv_id, expected_incoming_id=None):
         if project_start:
             rows = list(conv.messages.filter(internal=False,id__gte=project_start,id__lte=incoming.pk).order_by("-id").values("direction","text")[:20])
             msgs = [{"role":"client" if x["direction"]=="in" else "agent","text":x["text"] or ""} for x in reversed(rows)]
-        # Explicit persisted client facts also feed the deterministic calculator.
-        saved_quotes = [v["quote"] for k,v in sorted(saved_selection.get("fields",{}).items(),key=lambda kv:kv[1]["message_id"]) if k in ("material","wall_area_m2","color","deep_primer_request")]
-        calc_msgs = [{"role":"client","text":q} for q in dict.fromkeys(saved_quotes)] + [m for m in msgs if m.get("role")=="client"]
-        calc = _volume_calc(calc_msgs, ad_q)   # 22.09.2026: обʼєм рахує CRM з карток каталогу
-        from apps.knowledge.volume_calc import language_hint, prompt_block
         first = not Message.objects.filter(conversation=conv, direction="out", internal=False).exists()
-        # 23.09.2026 (Олег): «просто, без зайвого пафосу» — тільки імʼя, без посади й компанії;
-        # у першому повідомленні одразу орієнтир ціни, презентація йде другим повідомленням.
-        hello = ("ПЕРШИЙ КОНТАКТ у цьому чаті: почни просто — «Вітаю! Мене звати Юля 😊» (без посади і назви "
-                 "компанії), далі коротко по суті запиту і ОРІЄНТИР ЦІНИ (ціна тест-набору або за 1 м², "
-                 "залежно від питання). Одне відкрите питання лише якщо бракує даних. Фото матеріалу і сторінку кольорів CRM "
-                 "надішле окремим повідомленням — не дублюй їх у своєму тексті. Далі в діалозі не вітайся.")
-        try:  # 25.09.2026 (Олег): клієнт назвав RAL/NCS — CRM сама підбирає наші кольори, агент лише переказує
-            from apps.knowledge.colors import prompt_block as color_block
-            color_ctx = color_block(incoming.text or "")
-        except Exception:
-            color_ctx = ""
         from apps.knowledge.conversation_context import prompt_block as crm_context
-        ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), color_ctx, language_hint(incoming.text),
-                                      hello if first else "", crm_context(conv, incoming),
-                                      ("ОФОРМЛЕННЯ ЗУПИНЕНО: " + action_hold + " Не обіцяй створений рахунок/посилання. Покажи склад як чернетку.") if action_hold else "") if x)
-        from apps.knowledge.volume_calc import final_quote_reply
-        own_deep = saved_selection.get("fields", {}).get("deep_primer_available", {}).get("value") is True
-        r = final_quote_reply(calc, incoming.text, deep_available=own_deep)
-        if r is None:
-            r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
-                       source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
-                       context=ctx, context_query=ad_q, contact_id=conv.contact_id)
+        from apps.knowledge.seller_decision import decide
+        r, calc = decide(msgs, saved_selection, incoming.text, first=first, ad_context=ad_ctx, ad_query=ad_q,
+                         crm_context=crm_context(conv, incoming), action_hold=action_hold, contact_id=conv.contact_id,
+                         source="%s: %s" % (NOTE_PREFIX, conv.channel.name))
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         if r.get("order") and not action_hold:
             # The offer routine sends the actual invoice. Generation cannot promise its success.
@@ -775,16 +753,12 @@ def _make_volume_offer(conv, calc, order):
             return
         deal = Deal.objects.create(title="Обʼєм %s м² · %s" % (_money(calc["area"]), str(conv.contact)[:40]),
                                    funnel=f, stage=st, contact_id=conv.contact_id, owner=conv.assigned_to)
-    tint = order.get("tint", True)
-    from apps.knowledge.volume_calc import TINT_PRODUCT
-    lines = list(calc["lines"]) + list(calc.get("tara_lines") or [])
-    t = calc.get("tint") if tint else None
-    if tint and (not t or t.get("need_color") or t.get("total") is None):
+    from apps.knowledge.seller_decision import volume_invoice_lines
+    lines = volume_invoice_lines(calc, order)
+    if lines is None:
         _note(conv, "%s: тонування не розраховано — рахунок не створено." % NOTE_PREFIX)
         _send(conv, "Для точного рахунку ще потрібно уточнити тонування. Передала це колезі — продовжимо тут у чаті.")
         return
-    if t:
-        lines.append({"product_id": TINT_PRODUCT, "qty": 1, "price": t["total"]})
     try:
         # All components must exist before invoice rendering or a payment URL is issued.
         color = calc.get("color") or ""

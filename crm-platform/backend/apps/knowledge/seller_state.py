@@ -4,7 +4,7 @@ from django.db import transaction
 
 KEY = 'seller_state_v1'
 SELECT = re.compile(r'тепер|теперь|обираю|обрала|обрав|выбираю|выбрала|выбрал|беру|беремо|замовляю|заказываю|зупинил\w* на|остановил\w* на', re.I)
-RESET = re.compile(r'новий (?:об.?єкт|проект|будинок)|новый (?:объект|проект|дом)|інш\w* квартир|друг\w* квартир', re.I)
+RESET = re.compile(r'новий (?:об.?єкт|проект|будинок)|новый (?:объект|проект|дом)|інш\w* (?:квартир|об.?єкт|проект|будинок)|друг\w* (?:квартир|объект|проект|дом)', re.I)
 
 
 def reduce_message(state, msg):
@@ -21,7 +21,7 @@ def reduce_message(state, msg):
     def save(k, value):
         fields[k] = {'value': value, 'message_id': msg.pk, 'quote': t[:500]}
     # Questions and comparisons are evidence, never a committed selection.
-    selecting = bool(SELECT.search(t)) and '?' not in t and not re.search(r'\b(?:не|ні|нет|або|или|чи)\b', t, re.I)
+    selecting = bool(SELECT.search(t) or RESET.search(t)) and '?' not in t and not re.search(r'\b(?:не|ні|нет|або|или|чи)\b', t, re.I)
     if selecting:
         mat = find_material([t])
         if mat and not re.search(r'\b(?:або|или|чи|не)\b', t, re.I):
@@ -33,6 +33,8 @@ def reduce_message(state, msg):
     if len(codes) == 1 and (selecting or COLOR.fullmatch(t) or re.fullmatch(r'(?:колір|цвет|код)\s*[:—-]?\s*'+re.escape(codes[0]), t, re.I)):
         save('color', codes[0])
     area = re.search(r'(?:площа|площадь)\s+(?:стін|стен)\s*[:—-]?\s*(\d+(?:[.,]\d+)?)\s*(?:м²|м2|кв)', t, re.I)
+    if not area and selecting:
+        area = re.search(r'на\s+(\d+(?:[.,]\d+)?)\s*(?:м²|м2|кв)', t, re.I)
     if not area and 'wall_area_m2' in fields:
         area = re.fullmatch(r'(?:тепер|теперь)?\s*(\d+(?:[.,]\d+)?)\s*(?:м²|м2|кв\.?м)', t, re.I)
     if area and '?' not in t:
