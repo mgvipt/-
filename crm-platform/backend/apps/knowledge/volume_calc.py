@@ -281,7 +281,7 @@ def find_color(msgs, material_id=None):
         if mc:
             return mc.group(1).strip(), None, True
         for mt in COLOR_RX.finditer(t):
-            if not (_COLOR_WORDS.search(t) or mt.group(1) or len(t.strip()) <= 24):
+            if not (_COLOR_WORDS.search(t) or re.search(r"\b(?:обрала|обрав|обираю|выбрала|выбрал|выбираю)\b", t, re.I) or mt.group(1) or len(t.strip()) <= 24):
                 continue
             dose = color_dose(mt.group(3))
             if dose is None:
@@ -446,9 +446,12 @@ def shown_to_client(msgs, calc):
     """Чи клієнт уже бачив цю суму (у нашій попередній відповіді) — лише тоді можна оформлювати обʼєм."""
     if not calc or not calc.get("ok"):
         return False
-    tot = _g(calc["total"])
-    variants = {tot, "{:,}".format(int(calc["total"])).replace(",", " "), "{:,}".format(int(calc["total"])).replace(",", "\u00a0")}
-    return any(any(v in (m.get("text") or "") for v in variants) for m in msgs[:-1] if m.get("role") == "agent")
+    tint = calc.get("tint") or {}
+    total = calc["total"] + (tint.get("total") or Decimal("0"))
+    tot = _g(total)
+    variants = {tot, "{:,}".format(int(total)).replace(",", " "), "{:,}".format(int(total)).replace(",", "\u00a0")}
+    return any(any(re.search(r"(?<![\d])" + re.escape(v) + r"(?![\d])", m.get("text") or "") for v in variants)
+               for m in msgs[:-1] if m.get("role") == "agent")
 
 
 def for_dialog(msgs, extra=""):
@@ -469,3 +472,30 @@ def for_dialog(msgs, extra=""):
     calc["color_in_library"] = bool(col and col[2])
     calc["tint"] = tint_estimate(calc, dose)
     return calc
+
+
+def final_quote_reply(calc, client_text, deep_available=False):
+    """Exact final-price requests use catalog arithmetic, never model arithmetic or actions."""
+    request = re.search(r"(?:^|[.!?]\s*)\s*(?:покажи|покажіть|покажите|дай|дайте|надішліть|пришлите)?\s*(?:мені|мне)?\s*(?:остаточний|фінальний|итоговый|окончательный)\s+(?:розрахунок|расчет|расчёт)\s*[.!?]*\s*$", client_text or "", re.I)
+    if not request or not calc or not calc.get("ok") or calc.get("missing"):
+        return None
+    tint = calc.get("tint")
+    if not tint or tint.get("need_color") or tint.get("total") is None or not calc.get("color"):
+        return None
+    ru = bool(language_hint(client_text))
+    lines = [("Посчитала для Вас 😊" if ru else "Порахувала для Вас 😊"), "",
+             ("На %s м², цвет %s:" if ru else "На %s м², колір %s:") % (_g(calc["area"]), calc["color"])]
+    for row in calc["lines"]:
+        label = row["short"]
+        if row["product_id"] in (SECOND_LAYER, FONDO, QUARTZ):
+            label += " (грунт-краска под декор)" if ru else " (ґрунт-фарба під декор)"
+        lines.append("• %s — %s %s, %s грн" % (label, _g(row["qty"]), row["unit"], _g(row["total"])))
+    lines.append(("• Тонирование — %s грн" if ru else "• Тонування — %s грн") % _g(tint["total"]))
+    taras = calc.get("tara_lines") or []
+    if taras:
+        lines.append(("• Тара — %s грн") % _g(sum((r["total"] for r in taras), Decimal("0"))))
+    lines += ["", ("Итого — %s грн." if ru else "Разом — %s грн.") % _g(calc["total"] + tint["total"])]
+    if deep_available:
+        lines += ["", "Грунт глубокого проникновения у Вас есть, поэтому его не добавляю." if ru else "Ґрунт глибокого проникнення у Вас є, тому його не додаю."]
+    return {"text": "\n".join(lines), "handoff": False, "handoff_reason": "", "used_items": [],
+            "actions": [], "cost": {"usd": 0, "model": "crm_calculator"}}

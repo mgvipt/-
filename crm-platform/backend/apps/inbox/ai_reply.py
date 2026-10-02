@@ -594,7 +594,7 @@ def _reply_once(conv_id, expected_incoming_id=None):
         # у першому повідомленні одразу орієнтир ціни, презентація йде другим повідомленням.
         hello = ("ПЕРШИЙ КОНТАКТ у цьому чаті: почни просто — «Вітаю! Мене звати Юля 😊» (без посади і назви "
                  "компанії), далі коротко по суті запиту і ОРІЄНТИР ЦІНИ (ціна тест-набору або за 1 м², "
-                 "залежно від питання) + одне відкрите питання. Фото матеріалу і сторінку кольорів CRM "
+                 "залежно від питання). Одне відкрите питання лише якщо бракує даних. Фото матеріалу і сторінку кольорів CRM "
                  "надішле окремим повідомленням — не дублюй їх у своєму тексті. Далі в діалозі не вітайся.")
         try:  # 25.09.2026 (Олег): клієнт назвав RAL/NCS — CRM сама підбирає наші кольори, агент лише переказує
             from apps.knowledge.colors import prompt_block as color_block
@@ -605,10 +605,17 @@ def _reply_once(conv_id, expected_incoming_id=None):
         ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), color_ctx, language_hint(incoming.text),
                                       hello if first else "", crm_context(conv, incoming),
                                       ("ОФОРМЛЕННЯ ЗУПИНЕНО: " + action_hold + " Не обіцяй створений рахунок/посилання. Покажи склад як чернетку.") if action_hold else "") if x)
-        r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
-                   source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
-                   context=ctx, context_query=ad_q, contact_id=conv.contact_id)
+        from apps.knowledge.volume_calc import final_quote_reply
+        own_deep = saved_selection.get("fields", {}).get("deep_primer_available", {}).get("value") is True
+        r = final_quote_reply(calc, incoming.text, deep_available=own_deep)
+        if r is None:
+            r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
+                       source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
+                       context=ctx, context_query=ad_q, contact_id=conv.contact_id)
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
+        if r.get("order") and not action_hold:
+            # The offer routine sends the actual invoice. Generation cannot promise its success.
+            text = "Дякую! Перевіряю склад і суму для оформлення."
         text = _fix_pages(text, msgs)
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         note = ("%s передав менеджеру: %s. Записи: %s." % (NOTE_PREFIX, r.get("handoff_reason") or "—", used)
@@ -674,7 +681,7 @@ def _first_presentation(conv, msgs, ad_topic_name="", sent_text=""):
         url = COLORS_BY_ID.get(mat[0], COLORS.get(mat[1], ""))
         if not url:
             return
-        text = "Покажу, як це виглядає в інтерʼєрі 👇\n\nТут уся палітра, фото і відео: %s\n\nНапишіть код кольору, який сподобався 🎨" % url
+        text = "Покажу, як це виглядає в інтерʼєрі 👇\n\nТут уся палітра, фото і відео: %s\n\nКоли оберете колір, надішліть його код або скриншот 🎨" % url
         _maybe_effect_photos(conv, text)     # спершу фото
         _send(conv, text)                    # потім посилання
         _note(conv, "%s: перший контакт — надіслав презентацію (%s)." % (NOTE_PREFIX, url))
@@ -767,40 +774,28 @@ def _make_volume_offer(conv, calc, order):
                                    funnel=f, stage=st, contact_id=conv.contact_id, owner=conv.assigned_to)
     tint = order.get("tint", True)
     from apps.knowledge.volume_calc import TINT_PRODUCT
-    items = [{"name": l["name"], "qty": l["qty"]} for l in calc["lines"]]
+    lines = list(calc["lines"]) + list(calc.get("tara_lines") or [])
     t = calc.get("tint") if tint else None
-    if t and t.get("need_color"):
-        # 22.09.2026: колорант рахується за кодом кольору — без коду суму не вигадуємо
-        _note(conv, "%s: клієнт хоче тонування, але коду кольору ще немає — сделку роблю без тонування, "
-              "посилання на оплату НЕ надсилаю." % NOTE_PREFIX)
-        t = None
+    if tint and (not t or t.get("need_color") or t.get("total") is None):
+        _note(conv, "%s: тонування не розраховано — рахунок не створено." % NOTE_PREFIX)
+        _send(conv, "Для точного рахунку ще потрібно уточнити тонування. Передала це колезі — продовжимо тут у чаті.")
+        return
+    if t:
+        lines.append({"product_id": TINT_PRODUCT, "qty": 1, "price": t["total"]})
     try:
-        res = make_offer(deal, items, send_pay=bool(t) or not tint, as_invoice=True)
+        # All components must exist before invoice rendering or a payment URL is issued.
+        res = make_offer(deal, [], send_pay=True, as_invoice=True, calculated_lines=lines)
     except Exception as e:
-        _note(conv, "%s: не вдалося оформити обʼєм (%s) — зробіть вручну." % (NOTE_PREFIX, str(e)[:200]))
+        _note(conv, "%s: не вдалося оформити обʼєм (%s)." % (NOTE_PREFIX, str(e)[:200]))
+        _send(conv, "Рахунок поки не вдалося сформувати. Передала питання колезі — допоможемо тут у чаті.")
         return
-    if not res.get("ok"):
-        _note(conv, "%s: сделка #%s — прорахунок обʼєму не створено (%s), перевірте вручну."
-              % (NOTE_PREFIX, deal.id, res.get("msg") or "—"))
+    if not res.get("ok") or not res.get("sent_quote"):
+        _note(conv, "%s: рахунок #%s не надіслано (%s)." % (NOTE_PREFIX, deal.id, res.get("msg") or "помилка надсилання"))
+        _send(conv, "Рахунок поки не вдалося надіслати. Передала питання колезі — допоможемо тут у чаті.")
         return
-    miss = (" Без витрати в картці (не пораховано): %s." % "; ".join(calc["missing"])[:300]) if calc["missing"] else ""
-    tnote = ""
-    if t:   # тонування за регламентом: послуга + тонер (обʼєм тонера орієнтовний — до підбору кольору)
-        try:
-            from apps.crm.models import DealItem
-            from apps.warehouse.models import Product
-            p = Product.objects.filter(id=TINT_PRODUCT).first()
-            if p:
-                DealItem.objects.create(deal=deal, product=p, quantity=1, price=t["total"], cost=0)
-                deal.amount = sum((i.total for i in deal.items.all()), 0)
-                deal.save(update_fields=["amount"])
-                tnote = (" Тонування %s ₴ (колір %s: послуга %s + колорант %s мл)."
-                         % (t["total"], calc.get("color") or "—", t["service"], t["ml"]))
-        except Exception as e:
-            tnote = " Тонування не додано (%s) — додайте вручну." % str(e)[:120]
-    _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, надіслав накладну %s (оплата %s).%s%s"
-          % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), res.get("doc_url") or "—",
-             res.get("url") or "—", tnote, miss))
+    _note(conv, "%s: рахунок #%s на %s ₴ надіслано; документ %s; оплата %s."
+          % (NOTE_PREFIX, deal.id, res.get("amount"), res.get("doc_url") or "—", res.get("url") or "—"))
+
 
 
 MAX_AUTO_ORDER = 2000        # ₴ — вище цієї суми оформлює менеджер

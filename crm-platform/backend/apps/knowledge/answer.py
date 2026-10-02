@@ -55,7 +55,7 @@ from .seller_prompt import system_for as _seller_system_for
 SELLER_CONTRACT = (
     'Поверни СТРОГО JSON: {"reply": "текст клієнту", "handoff": true або false, "reason": "чому передаєш менеджеру", '
     '"order": {"product": "точна назва тест-набору", "qty": 1} або {"volume": true, "tint": true} або null}. '
-    "handoff=true — якщо не впевнена або потрібних фактів у базі немає. Коли клієнт хоче саме ТЕСТ-НАБІР і варіант "
+    "handoff=true — якщо не впевнена або потрібних фактів у базі немає. Лише коли клієнт явно погодив купівлю ТЕСТ-НАБОРУ за названою ціною і варіант "
     "зрозумілий — не передавай менеджеру, а поверни order. Клієнт погодився оформити ОБʼЄМ за «РОЗРАХУНКОМ CRM» — "
     "поверни order {\"volume\": true, \"tint\": true} (tint=false лише якщо клієнт хоче без тонування / білий). "
     "Оплата іншим способом, дзвінок — менеджеру."
@@ -250,8 +250,10 @@ def _spec_seller(agent, msgs, model, context="", context_query=""):
             "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, (context + "\n\n") if context else "",
                                                _dialog(msgs), msgs[-1]["text"]))
     allowed = kb + "\n" + kits + "\n" + rule_text + "\n" + (context or "")
-    spec = {"system": seller_system(CHANNEL[agent]) + "\n\nЗАТВЕРДЖЕНІ ПРАВИЛА WALLCOV:\n" + rule_text + "\n\nУТОЧНЕННЯ ПРІОРИТЕТУ: актуальна ціна з каталогу CRM вища за приклади та історію. На етапі оформлення можна питання-підтвердження; після погодження покупки, передачі менеджеру чи відмови зайве питання не потрібне. На пряме питання про ШІ відповідай чесно, що ти віртуальна консультантка.", "user": user, "model": model or HAIKU, "max_tokens": 600,
+    spec = {"system": seller_system(CHANNEL[agent]) + "\n\nЗАТВЕРДЖЕНІ ПРАВИЛА WALLCOV:\n" + rule_text + "\n\nУТОЧНЕННЯ ПРІОРИТЕТУ: актуальна ціна з каталогу CRM вища за приклади та історію. Питання не обов’язкове: пауза, подяка, відмова чи завершений розрахунок не потребують допиту. Вибір кольору не є згодою на замовлення. При ОФОРМЛЕННЯ ЗУПИНЕНО повний розрахунок дозволений, але order, запит оплати й пропозиція оформлення заборонені. Клієнтський reply не містить внутрішнього аналізу чи фраз про CRM. На пряме питання про ШІ відповідай чесно, що ти віртуальна консультантка.", "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": True, "allowed": allowed}
+    spec["actions_blocked"] = "ОФОРМЛЕННЯ ЗУПИНЕНО" in (context or "")
+    spec["owner_test"] = spec["actions_blocked"] and "тест" in (context or "").lower()
     spec["catalog_check"] = (items, q, live_prices, kits)
     if not items:
         spec["empty"] = "для цього агента немає %s записів — ШІ не викликається, $0" % (
@@ -407,8 +409,28 @@ def guard(reply, allowed, used, client_last):
 def _finish_seller(res, resp, msgs, spec, used):
     txt = resp_text(resp)
     data = parse_json(txt)
-    reply = str(data.get("reply") or ("" if data else txt)).strip()
+    if not isinstance(data, dict) or not isinstance(data.get("reply"), str):
+        res.update(text=HANDOFF_TEXT, handoff=True,
+                   handoff_reason="Невірний формат відповіді моделі; службовий текст не надіслано", draft_reply="")
+        return
+    reply = data["reply"].strip()
     order = data.get("order") if isinstance(data.get("order"), dict) else None
+    if spec.get("actions_blocked"):
+        order = None
+        # Test/paid-order holds must not invite an unavailable checkout action.
+        parts = reply.split("\n\n")
+        if parts and re.search(r"(?:оформлю|оформля|готую|готовлю|підготую|подготовлю|надішлю\s+(?:рахунок|посилання)|пришлю\s+сч[её]т)", parts[-1], re.I):
+            parts.pop()
+            reply = "\n\n".join(parts).strip()
+        if not reply:
+            reply = ("У цьому тестовому чаті створення рахунків і оплат вимкнено. Розрахунок можна перевірити вище."
+                     if spec.get("owner_test") else
+                     "Зараз оформлення призупинене. Потрібно перевірити поточне замовлення перед створенням нового рахунку.")
+
+    if re.search(r"```|\"reply\"\s*:|клієнт\s+уточнив|клиент\s+уточнил|розрахунок\s+CRM|расч[её]т\s+CRM", reply, re.I):
+        res.update(text=HANDOFF_TEXT, handoff=True,
+                   handoff_reason="Службовий текст у відповіді моделі; клієнтський текст заблоковано", draft_reply="")
+        return
     problems = guard(reply, spec["allowed"], used, msgs[-1]["text"])
     if order and order.get("volume") and "РОЗРАХУНОК CRM" not in (spec.get("allowed") or ""):
         order = None      # 22.09.2026: обʼєм оформлюємо лише за розрахунком CRM, не «з голови»

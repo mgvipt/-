@@ -1171,7 +1171,7 @@ def send_requisites(deal, conv=None, user=None, sender_name=""):
     return {"ok": sent, "amount": amount, "text": text}
 
 
-def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_invoice=False):
+def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_invoice=False, calculated_lines=None):
     """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату».
     replace=True (26.09.2026, Олег): клієнт передумав щодо комплектації («можна без дощечки») —
     перескладаємо ТУ САМУ сделку, якщо по ній ще немає оплати. З оплатою нічого не міняємо.
@@ -1192,14 +1192,36 @@ def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_inv
         return {"ok": False, "msg": "товари вже є — оффер не повторюємо"}
     if deal.stage_id and deal.stage.order >= 2 and not replace:
         return {"ok": False, "msg": "сделка вже на оплаті/далі"}
+    # Only trusted server calculator callers provide calculated_lines. Never accept model/API prices.
+    prepared = []
+    if calculated_lines is not None:
+        from apps.warehouse.models import Product
+        from apps.knowledge.volume_calc import TINT_PRODUCT
+        for line in calculated_lines:
+            prod = Product.objects.filter(pk=line["product_id"], is_active=True).first()
+            qty, price = Decimal(str(line["qty"])), Decimal(str(line["price"]))
+            if not prod or not qty.is_finite() or not price.is_finite() or qty <= 0 or price < 0:
+                return {"ok": False, "msg": "неповний розрахунок номенклатури"}
+            if prod.pk != TINT_PRODUCT and price != prod.price:
+                return {"ok": False, "msg": "ціна змінилася — потрібен новий розрахунок"}
+            prepared.append((prod, qty, price))
+        if not prepared:
+            return {"ok": False, "msg": "порожній розрахунок"}
     added, missing = [], []
-    for spec in (items_spec or []):
+    for spec in (items_spec or []) if calculated_lines is None else []:
         prod = _find_product((spec or {}).get("name"))
         if not prod:
             missing.append((spec or {}).get("name")); continue
         qty = Decimal(str((spec or {}).get("qty") or 1))
         DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=prod.price, cost=_deal_item_cost(prod, prod.price, qty))
         added.append("%s x %s" % (prod.name[:40], qty))
+    if prepared:
+        from django.db import transaction
+        with transaction.atomic():
+            for prod, qty, price in prepared:
+                DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=price,
+                                       cost=_deal_item_cost(prod, price, qty))
+                added.append("%s x %s" % (prod.name[:40], qty))
     if not added:
         return {"ok": False, "missing": missing, "msg": "товар не знайдено в номенклатурі"}
     items = list(deal.items.all())

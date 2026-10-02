@@ -104,6 +104,23 @@ class EstimateTests(TestCase):
         self.assertEqual(guard("Тонування — 704 грн. Разом 5624 грн", block, [], "Покажи розрахунок"), [])
         self.assertTrue(guard("Тонування — 705 грн", block, [], "Покажи розрахунок"))
         self.assertNotIn("номер", HANDOFF_TEXT)
+        calc["color"] = "20-3"
+        reply = vc.final_quote_reply(calc, "Покажи остаточний розрахунок", deep_available=True)
+        self.assertIn("5624 грн", reply["text"])
+        self.assertIn("Тара — 130 грн", reply["text"])
+        self.assertNotIn("CRM", reply["text"])
+        self.assertNotIn("×", reply["text"])
+        self.assertNotIn("order", reply)
+        self.assertIsNotNone(vc.final_quote_reply(calc, "Обрала 20-3. Покажи остаточний розрахунок."))
+        with mock.patch.object(vc, "lib_color", return_value=None):
+            self.assertEqual(vc.find_color([{"role":"client", "text":"Обрала 20-3. Покажи остаточний розрахунок."}], 1623)[0], "20-3")
+        self.assertEqual(reply["cost"]["usd"], 0)
+        self.assertIn("Итого", vc.final_quote_reply(calc, "Покажи итоговый расчет")["text"])
+        self.assertIsNone(vc.final_quote_reply(calc, "Поки тільки прицінююся"))
+        self.assertIsNone(vc.final_quote_reply(calc, "Покажи остаточний розрахунок і передзвони"))
+        calc["tint"]["need_color"] = True
+        self.assertIsNone(vc.final_quote_reply(calc, "Покажи остаточний розрахунок"))
+
 
 
 class SellerVolumeOrderTests(TestCase):
@@ -113,6 +130,25 @@ class SellerVolumeOrderTests(TestCase):
         resp = {"content": [{"type": "text", "text": reply_json}]}
         _finish_seller(res, resp, [{"role": "client", "text": "давайте сразу"}], {"allowed": allowed}, [])
         return res
+
+    def test_service_text_and_truncated_json_never_reach_client(self):
+        for raw in ('Думаю про клієнта... ```json {"reply":',
+                    '{"reply":"Клієнт уточнив колір, розрахунок CRM", "handoff":false}'):
+            result = self._finish(raw, "РОЗРАХУНОК CRM")
+            self.assertTrue(result["handoff"])
+            self.assertNotIn("```", result["text"])
+            self.assertNotIn("CRM", result["text"])
+            self.assertNotIn("order", result)
+
+    def test_blocked_checkout_has_no_order_or_checkout_question(self):
+        from apps.knowledge.answer import _finish_seller
+        res = {}
+        raw = '{"reply":"Без дощечки — 395 грн.\\n\\nГотую цей варіант?", "order":{"product":"Luna"}}'
+        _finish_seller(res, {"content":[{"type":"text","text":raw}]},
+                       [{"role":"client","text":"Без дощечки"}],
+                       {"allowed":"395 грн", "actions_blocked":True}, [])
+        self.assertEqual(res["text"], "Без дощечки — 395 грн.")
+        self.assertNotIn("order",res)
 
     def test_volume_order_only_with_crm_calc(self):
         j = '{"reply": "Оформлюю: разом 3080 грн", "handoff": false, "order": {"volume": true, "tint": true}}'
@@ -227,3 +263,68 @@ class TaraTests(TestCase):
     def test_without_density_fallback(self):
         n, label, by_density = vc.tara_for(Decimal("12"), None)
         self.assertEqual((n, by_density), (3, False))   # запасний варіант: 5 кг на тару
+
+
+class InvoiceFlowTests(TestCase):
+    def setUp(self):
+        from apps.crm.models import Contact, Funnel, Stage
+        from apps.inbox.models import Channel, Conversation
+        from apps.warehouse.models import Product
+        self.contact = Contact.objects.create(first_name='Invoice acceptance')
+        self.funnel = Funnel.objects.create(name='21 Основний продукт')
+        self.stage = Stage.objects.create(funnel=self.funnel, name='Новий', order=0)
+        self.conv = Conversation.objects.create(contact=self.contact,
+            channel=Channel.objects.create(name='Isolated test', kind='instagram'), external_chat_id='invoice-test')
+        self.lines = []
+        for pid, name, price, qty in [(1623,'Galateya Silver','1330',3),(1571,'Second Layer','200',4),(99901,'Тара','65',2)]:
+            Product.objects.create(id=pid,name=name,price=Decimal(price),is_active=True)
+            self.lines.append({'product_id':pid,'name':name,'price':Decimal(price),'qty':Decimal(qty)})
+        Product.objects.create(id=vc.TINT_PRODUCT,name='Тонування',price=Decimal('100'),is_active=True)
+        self.calc = {'ok':True,'missing':[],'area':20,'material':self.lines[0],
+                     'lines':self.lines[:2],'tara_lines':self.lines[2:],'total':Decimal('4920'),
+                     'tint':{'need_color':False,'total':Decimal('704')}}
+
+    def test_full_sum_seen_including_tint(self):
+        for amount, expected in [('5624',True),('4920',False),('15624',False)]:
+            self.assertEqual(vc.shown_to_client([{'role':'agent','text':'Разом: '+amount+' грн'},
+                                                {'role':'client','text':'Да'}],self.calc),expected)
+
+    def test_invoice_and_payment_built_after_all_four_lines(self):
+        from apps.inbox.ai_reply import _make_volume_offer
+        from apps.crm.models import Deal
+        observed = []
+        def document(deal, pay_url=''):
+            observed.append((deal.amount, sum((i.total for i in deal.items.all()), Decimal('0')), deal.items.count()))
+            return 'https://example.invalid/invoice-test'
+        with self.settings(LIQPAY_PUBLIC_KEY='test-public', LIQPAY_PRIVATE_KEY='test-private'), \
+             mock.patch('apps.knowledge.seller_state.action_blocked',return_value=''), \
+             mock.patch('apps.crm.views._route_deal_funnel'), mock.patch('apps.crm.views._advance_deal_stage'), \
+             mock.patch('apps.crm.views._deal_item_cost',return_value=0), \
+             mock.patch('apps.crm.liqpay.build_checkout_url',return_value='https://example.invalid/pay') as payment, \
+             mock.patch('apps.crm.invoice.invoice_link',side_effect=document), \
+             mock.patch('apps.inbox.services.send_message') as send, mock.patch('apps.inbox.ai_reply._note'):
+            _make_volume_offer(self.conv,self.calc,{'volume':True,'tint':True})
+        self.assertEqual(observed,[(Decimal('5624'),Decimal('5624'),4)])
+        self.assertEqual(payment.call_args.args[2],Decimal('5624'))
+        self.assertIn('https://example.invalid/invoice-test',send.call_args.args[1])
+        self.assertEqual(Deal.objects.get(contact=self.contact).amount,Decimal('5624'))
+
+    def test_owner_test_cannot_create_invoice(self):
+        from apps.inbox.ai_reply import _make_volume_offer
+        from apps.crm.models import Deal
+        self.conv.config={'seller_acceptance_test':True};self.conv.save()
+        with mock.patch('apps.crm.views.make_offer') as make:
+            _make_volume_offer(self.conv,self.calc,{'volume':True})
+        make.assert_not_called()
+        self.assertFalse(Deal.objects.filter(contact=self.contact).exists())
+
+    def test_owner_promise_replaced_with_truth(self):
+        import json
+        from apps.knowledge.answer import _finish_seller
+        res={}
+        raw=json.dumps({'reply':'Оформлюю замовлення. Зараз надішлю посилання на оплату 😊','order':{'volume':True}})
+        _finish_seller(res,{'content':[{'type':'text','text':raw}]},[{'role':'client','text':'Да'}],
+                       {'allowed':'','actions_blocked':True,'owner_test':True},[])
+        self.assertIn('вимкнено',res['text'])
+        self.assertNotIn('order',res)
+        self.assertFalse(res.get('handoff'))
