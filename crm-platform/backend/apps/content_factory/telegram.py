@@ -284,6 +284,11 @@ def publish(post_id):
             return post
         if post.status != TgPost.Status.APPROVED:
             raise PublishError("Публікуються лише схвалені пости.")
+        from .campaigns import require_current_approval
+        try:
+            require_current_approval(post)
+        except ValueError as exc:
+            raise PublishError(str(exc)) from exc
         try:
             ids = send(post, channel)
         except PublishError as e:

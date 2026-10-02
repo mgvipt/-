@@ -586,3 +586,5 @@ class VoiceWord(models.Model):
     class Meta:
         ordering = ["word"]
 
+
+from .campaign_models import ContentCampaign, CampaignMaterial  # noqa: E402,F401

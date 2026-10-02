@@ -25,6 +25,9 @@ HOST = "crm.wallcovdec.com.ua"
 
 # (назва, роль, url, допустимі статуси, обов'язкові ключі верхнього рівня)
 CHECKS = [
+    ("Контент-завод: кампании", "owner", "/api/content-factory/campaigns/", {200}, ["campaigns"]),
+    ("Контент-завод: товары кампании", "owner", "/api/content-factory/campaigns/choices/?q=Galatea", {200}, ["products", "blogs"]),
+    ("Контент-завод: кампании закрыты менеджеру", "manager", "/api/content-factory/campaigns/", {403}, []),
     # 26.09.2026 (Олег): тара входить у розрахунок обʼєму; агент надсилає накладну посиланням
     ("Кольори: підбір RAL/NCS", "owner", "/api/knowledge/colors/?q=RAL%201013", {200}, ["found"]),
     ("Інструкції: бібліотека менеджера", "manager", "/api/content-library/instructions/", {200}, ["items"]),

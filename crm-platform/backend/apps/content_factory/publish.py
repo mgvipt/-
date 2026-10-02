@@ -124,6 +124,11 @@ def tiktok_reel(reel, video_link_id=None):
 # ── Точки входу ──────────────────────────────────────────────────────────────────────────────────
 
 def publish_reel(reel, platform):
+    from .campaigns import require_current_approval
+    try:
+        require_current_approval(reel)
+    except ValueError as exc:
+        raise PublishError(str(exc)) from exc
     if not can_publish(reel.blog):
         raise PublishError("Акаунти цього блогу ще не підключені до бізнес-менеджера — публікація лише в Wallcov.")
     done = dict(reel.published or {})
@@ -141,6 +146,11 @@ def publish_reel(reel, platform):
 
 
 def publish_carousel(c):
+    from .campaigns import require_current_approval
+    try:
+        require_current_approval(c)
+    except ValueError as exc:
+        raise PublishError(str(exc)) from exc
     if not can_publish(c.blog):
         raise PublishError("Акаунти цього блогу ще не підключені до бізнес-менеджера — публікація лише в Wallcov.")
     done = dict(c.published or {})
