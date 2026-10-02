@@ -499,3 +499,25 @@ def final_quote_reply(calc, client_text, deep_available=False):
         lines += ["", "Грунт глубокого проникновения у Вас есть, поэтому его не добавляю." if ru else "Ґрунт глибокого проникнення у Вас є, тому його не додаю."]
     return {"text": "\n".join(lines), "handoff": False, "handoff_reason": "", "used_items": [],
             "actions": [], "cost": {"usd": 0, "model": "crm_calculator"}}
+
+
+def confirmed_volume_order(msgs, calc):
+    """Explicit checkout after the immediately preceding complete quote; no LLM decision needed."""
+    if not calc or not calc.get("ok") or calc.get("missing") or len(msgs) < 2:
+        return None
+    tint = calc.get("tint") or {}
+    if tint.get("need_color") or tint.get("total") is None:
+        return None
+    last = msgs[-1]
+    previous = msgs[-2]
+    if last.get("role") != "client" or previous.get("role") != "agent":
+        return None
+    text = (last.get("text") or "").strip()
+    explicit = re.fullmatch(r"(?:(?:так|да|добре|ок)[, .!]*\s*)?(?:оформлюйте|оформляйте|оформіть|оформите)(?:\s+(?:замовлення|заказ|рахунок|сч[её]т))?[.! ]*", text, re.I)
+    yes = re.fullmatch(r"(?:так|да)[.! ]*", text, re.I)
+    offer = re.search(r"(?:оформлю|оформля|оформити|оформить)[^?]*\?", previous.get("text") or "", re.I)
+    if not explicit and not (yes and offer):
+        return None
+    if not shown_to_client([previous,last],calc):
+        return None
+    return {"volume": True, "tint": True}

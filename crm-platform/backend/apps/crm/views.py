@@ -1171,7 +1171,7 @@ def send_requisites(deal, conv=None, user=None, sender_name=""):
     return {"ok": sent, "amount": amount, "text": text}
 
 
-def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_invoice=False, calculated_lines=None):
+def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_invoice=False, calculated_lines=None, invoice_note=""):
     """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату».
     replace=True (26.09.2026, Олег): клієнт передумав щодо комплектації («можна без дощечки») —
     перескладаємо ТУ САМУ сделку, якщо по ній ще немає оплати. З оплатою нічого не міняємо.
@@ -1275,7 +1275,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True, replace=False, as_inv
         # накладну збирає сервер (apps/crm/invoice.py) — той самий документ, що й у менеджера
         try:
             from .invoice import invoice_link
-            doc_url = invoice_link(deal, pay_url=url)
+            doc_url = invoice_link(deal, pay_url=url, note=invoice_note)
             if conv:
                 txt = ("Зібрала все у накладну — там склад замовлення, сума й реквізити:\n%s" % doc_url)
                 if url:

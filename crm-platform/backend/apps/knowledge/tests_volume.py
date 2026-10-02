@@ -293,7 +293,7 @@ class InvoiceFlowTests(TestCase):
         from apps.inbox.ai_reply import _make_volume_offer
         from apps.crm.models import Deal
         observed = []
-        def document(deal, pay_url=''):
+        def document(deal, pay_url='', note=''):
             observed.append((deal.amount, sum((i.total for i in deal.items.all()), Decimal('0')), deal.items.count()))
             return 'https://example.invalid/invoice-test'
         with self.settings(LIQPAY_PUBLIC_KEY='test-public', LIQPAY_PRIVATE_KEY='test-private'), \
@@ -328,3 +328,60 @@ class InvoiceFlowTests(TestCase):
         self.assertIn('вимкнено',res['text'])
         self.assertNotIn('order',res)
         self.assertFalse(res.get('handoff'))
+
+
+class CheckoutAcceptanceTests(InvoiceFlowTests):
+    def test_explicit_checkout_but_not_pause_or_question(self):
+        self.calc['color']='MSK20-3'
+        for text, expected in [('Так, оформлюйте',True),('Оформіть рахунок',True),
+                               ('Дякую я подумаю',False),('А якщо оформити?',False),
+                               ('Да',False),('Не оформляйте',False)]:
+            result=vc.confirmed_volume_order([{'role':'agent','text':'Разом — 5624 грн.'},
+                                              {'role':'client','text':text}],self.calc)
+            self.assertEqual(bool(result),expected,text)
+        self.assertIsNone(vc.confirmed_volume_order([{'role':'agent','text':'Разом — 4920 грн.'},
+                                                     {'role':'client','text':'Так, оформлюйте'}],self.calc))
+
+    def test_actual_document_and_saved_color(self):
+        from apps.inbox.ai_reply import _make_volume_offer
+        from apps.crm.models import Deal,KpLink
+        self.calc['color']='MSK20-3'
+        with self.settings(LIQPAY_PUBLIC_KEY='test-public', LIQPAY_PRIVATE_KEY='test-private'), \
+             mock.patch('apps.knowledge.seller_state.action_blocked',return_value=''), \
+             mock.patch('apps.crm.views._route_deal_funnel'), mock.patch('apps.crm.views._advance_deal_stage'), \
+             mock.patch('apps.crm.views._deal_item_cost',return_value=0), \
+             mock.patch('apps.crm.liqpay.build_checkout_url',return_value='https://example.invalid/pay'), \
+             mock.patch('apps.inbox.services.send_message') as send, mock.patch('apps.inbox.ai_reply._note'):
+            _make_volume_offer(self.conv,self.calc,{'volume':True,'tint':True})
+        deal=Deal.objects.get(contact=self.contact)
+        link=KpLink.objects.get(deal=deal)
+        self.assertIn('MSK20-3',link.html)
+        self.assertIn('Galateya',link.html)
+        self.assertIn('Тара',link.html)
+        self.assertIn('Тонування',link.html)
+        import re
+        self.assertIn('5624',re.sub(r'\s|&nbsp;','',link.html))
+        self.assertIn('/d/'+link.code+'/',send.call_args.args[1])
+        self.assertEqual(deal.area_m2,Decimal('20'))
+        self.assertIn({'label':'Колір','value':'MSK20-3'},deal.card_fields)
+
+
+class ObjectionProbeTests(TestCase):
+    def test_probe_only_once_for_bare_hesitation(self):
+        from apps.knowledge.answer import needs_objection_probe
+        quote={'role':'agent','text':'Повний розрахунок — 5624 грн.'}
+        self.assertTrue(needs_objection_probe([quote,{'role':'client','text':'Дякую я подумаю'}]))
+        for text in ['Я напишу пізніше','Поки не турбуйте','Дякую','Я подумаю і напишу пізніше']:
+            self.assertFalse(needs_objection_probe([quote,{'role':'client','text':text}]))
+        self.assertFalse(needs_objection_probe([{'role':'client','text':'Я подумаю'},quote,{'role':'client','text':'Дякую я подумаю'}]))
+        self.assertFalse(needs_objection_probe([{'role':'client','text':'Дорого'},quote,{'role':'client','text':'Я подумаю'}]))
+
+    def test_passive_answer_becomes_one_gentle_question(self):
+        import json
+        from apps.knowledge.answer import _finish_seller
+        res={}
+        _finish_seller(res,{'content':[{'type':'text','text':json.dumps({'reply':'Звісно, не поспішайте.'})}]},
+            [{'role':'client','text':'Дякую я подумаю'}],{'allowed':'','objection_probe':True},[])
+        self.assertEqual(res['text'].count('?'),1)
+        self.assertIn('з’ясувати',res['text'])
+        self.assertNotIn('order',res)

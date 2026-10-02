@@ -209,6 +209,20 @@ def test_kits_block(query=None):
     return kits_block(query)
 
 
+def needs_objection_probe(msgs):
+    """One gentle probe for a bare first hesitation; never for an explicit or repeated pause."""
+    bare = re.compile(r"[\s,.!]*(?:(?:дякую|спасибо)[\s,.!]*)?(?:я\s+)?(?:ще\s+|пока\s+|поки\s+)?подумаю[\s,.!]*", re.I)
+    if not msgs or not bare.fullmatch(msgs[-1].get("text") or ""):
+        return False
+    clients = [m.get("text") or "" for m in msgs[:-1] if m.get("role") == "client"]
+    if any(bare.fullmatch(t) for t in clients):
+        return False
+    # Known objections need a context-specific answer rather than another generic question.
+    if any(re.search(r"дорого|задорого|боюс|боюся|не вмію|не умею",t,re.I) for t in clients[-3:]):
+        return False
+    return any(m.get("role") == "agent" for m in msgs[:-1])
+
+
 def _spec_seller(agent, msgs, model, context="", context_query=""):
     # 22.09.2026: context — напр. реклама, з якої прийшов клієнт (apps/inbox/ad_context.py);
     # context_query — матеріал реклами, щоб база знань підтягнула каталог/ціни саме його
@@ -250,10 +264,11 @@ def _spec_seller(agent, msgs, model, context="", context_query=""):
             "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, (context + "\n\n") if context else "",
                                                _dialog(msgs), msgs[-1]["text"]))
     allowed = kb + "\n" + kits + "\n" + rule_text + "\n" + (context or "")
-    spec = {"system": seller_system(CHANNEL[agent]) + "\n\nЗАТВЕРДЖЕНІ ПРАВИЛА WALLCOV:\n" + rule_text + "\n\nУТОЧНЕННЯ ПРІОРИТЕТУ: актуальна ціна з каталогу CRM вища за приклади та історію. Питання не обов’язкове: пауза, подяка, відмова чи завершений розрахунок не потребують допиту. Вибір кольору не є згодою на замовлення. При ОФОРМЛЕННЯ ЗУПИНЕНО повний розрахунок дозволений, але order, запит оплати й пропозиція оформлення заборонені. Клієнтський reply не містить внутрішнього аналізу чи фраз про CRM. На пряме питання про ШІ відповідай чесно, що ти віртуальна консультантка.", "user": user, "model": model or HAIKU, "max_tokens": 600,
+    spec = {"system": seller_system(CHANNEL[agent]) + "\n\nЗАТВЕРДЖЕНІ ПРАВИЛА WALLCOV:\n" + rule_text + "\n\nУТОЧНЕННЯ ПРІОРИТЕТУ: актуальна ціна з каталогу CRM вища за приклади та історію. Питання не обов’язкове. Коротке «я подумаю» після пропозиції — один раз м’яко уточни сумнів; відому причину відпрацюй по суті. Явне «напишу пізніше», «не турбуйте», повторна пауза, подяка чи відмова — без нового питання. Вибір кольору не є згодою на замовлення. При ОФОРМЛЕННЯ ЗУПИНЕНО повний розрахунок дозволений, але order, запит оплати й пропозиція оформлення заборонені. Клієнтський reply не містить внутрішнього аналізу чи фраз про CRM. На пряме питання про ШІ відповідай чесно, що ти віртуальна консультантка.", "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": True, "allowed": allowed}
     spec["actions_blocked"] = "ОФОРМЛЕННЯ ЗУПИНЕНО" in (context or "")
     spec["owner_test"] = spec["actions_blocked"] and "тест" in (context or "").lower()
+    spec["objection_probe"] = needs_objection_probe(msgs)
     spec["catalog_check"] = (items, q, live_prices, kits)
     if not items:
         spec["empty"] = "для цього агента немає %s записів — ШІ не викликається, $0" % (
@@ -431,6 +446,11 @@ def _finish_seller(res, resp, msgs, spec, used):
         res.update(text=HANDOFF_TEXT, handoff=True,
                    handoff_reason="Службовий текст у відповіді моделі; клієнтський текст заблоковано", draft_reply="")
         return
+    if spec.get("objection_probe") and not data.get("handoff") and "?" not in reply:
+        ru = bool(re.search(r"спасибо|пока", msgs[-1].get("text") or "", re.I))
+        reply = ("Конечно 😊 Подскажите, что хотели бы ещё уточнить перед решением?" if ru else
+                 "Звісно 😊 Підкажіть, що хотіли б ще з’ясувати перед рішенням?")
+        order = None
     problems = guard(reply, spec["allowed"], used, msgs[-1]["text"])
     if order and order.get("volume") and "РОЗРАХУНОК CRM" not in (spec.get("allowed") or ""):
         order = None      # 22.09.2026: обʼєм оформлюємо лише за розрахунком CRM, не «з голови»
