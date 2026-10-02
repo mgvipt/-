@@ -1047,6 +1047,7 @@ def handle_webhook(payload: dict):
             # Only explicitly CRM-owned chats: legacy ChatPlace keeps its current owner.
             # Queue after saving/reopening so the worker sees the committed incoming message.
             if not is_echo and ((conv.config or {}).get("seller_acceptance_test")
+                                or (conv.config or {}).get("crm_seller_primary")
                                 or (ch.config or {}).get("crm_seller_primary")):
                 try:
                     from .ai_reply import maybe_reply

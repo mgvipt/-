@@ -58,3 +58,40 @@ class MetaSellerIngressTests(TestCase):
         with patch("apps.inbox.ai_reply.maybe_reply") as reply:
             handle_webhook(self.payload()); reply.assert_called_once()
             self.assertEqual(reply.call_args.args[0].status, "open")
+
+
+    def test_primary_conversation_routes_without_financial_test_mode(self, *_):
+        self.conv.config = {"crm_seller_primary": True, "seller_acceptance_test": False}
+        self.conv.save(update_fields=["config"])
+        from .ai_reply import _took_over
+        from apps.knowledge.seller_state import action_blocked
+        with patch("apps.inbox.ai_reply.maybe_reply") as reply:
+            handle_webhook(self.payload()); reply.assert_called_once()
+        self.assertTrue(_took_over(self.conv, None))
+        self.assertEqual(action_blocked(self.conv), "")
+
+    def test_quote_does_not_create_invoice_without_consent(self, *_):
+        from types import SimpleNamespace
+        from .models import Message
+        from .ai_reply import _reply_once
+        self.conv.config={"crm_seller_primary":True,"seller_acceptance_test":False}
+        self.conv.save(update_fields=["config"])
+        incoming=Message.objects.create(conversation=self.conv,direction="in",text="Покажи остаточний розрахунок")
+        with patch('apps.knowledge.seller_state.refresh',return_value={}), \
+             patch('apps.knowledge.seller_state.action_blocked',return_value=''), \
+             patch('apps.inbox.ai_reply._still_current',return_value=True), \
+             patch('apps.inbox.ai_reply._switch_kit',return_value=False), \
+             patch('apps.inbox.ai_reply._maybe_requisites',return_value=False), \
+             patch('apps.inbox.ai_reply._volume_calc',return_value=None), \
+             patch('apps.knowledge.conversation_context.prompt_block',return_value=''), \
+             patch('apps.knowledge.volume_calc.final_quote_reply',return_value={'text':'Порахувала: 5624 грн.','handoff':False}), \
+             patch('apps.inbox.ai_reply._maybe_effect_photos'), patch('apps.inbox.ai_reply._maybe_base_photos'), \
+             patch('apps.inbox.ai_reply._first_presentation'), patch('apps.inbox.ai_reply._note'), \
+             patch('apps.inbox.ai_reply._takeover_channel',return_value=False), \
+             patch('apps.inbox.services.send_message',return_value=SimpleNamespace(id=99999)) as send, \
+             patch('apps.inbox.ai_reply._maybe_volume_doc') as document, \
+             patch('apps.inbox.ai_reply._make_volume_offer') as checkout:
+            _reply_once(self.conv.pk, expected_incoming_id=incoming.pk)
+        send.assert_called_once()
+        document.assert_not_called()
+        checkout.assert_not_called()

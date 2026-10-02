@@ -113,7 +113,8 @@ def hold_chat(conv, hours=TAKEOVER_HOURS):
 
 def _took_over(conv, incoming):
     """Чи вже час продавцю CRM вести цей чат (і фіксуємо момент передачі)."""
-    if (conv.config or {}).get("seller_acceptance_test"):
+    if ((conv.config or {}).get("seller_acceptance_test")
+            or (conv.config or {}).get("crm_seller_primary")):
         return True
     until = _takeover_until(conv)
     if until and until > timezone.now():
@@ -663,7 +664,7 @@ def _reply_once(conv_id, expected_incoming_id=None):
         if r.get("order") or BUY_RX.search(incoming.text or ""):
             _note(conv, NOTE_PREFIX + ": " + action_hold)
         return
-    _maybe_volume_doc(conv, calc, r.get("order"))
+    # A quote or hesitation must not create a financial document; checkout requires consent.
     if not _still_current(conv, incoming):
         return
     if r.get("order") and r["order"].get("volume"):
