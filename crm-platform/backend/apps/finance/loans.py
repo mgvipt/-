@@ -197,6 +197,16 @@ ACCRUAL_MARK = "Нарахування % за користування кред�
 INTEREST_MARK = "Погашення вiдсоткiв за користування"
 
 
+def _already(loan: Loan, d, amount) -> bool:
+    """Чи є вже такий рух у цьому кредиті.
+
+    01.10.2026: банк показує один платіж ДВОМА рядками (`/C` і `/D` — списання
+    з одного рахунку і зарахування на інший), а ручний запис і автопідтягнутий
+    із журналу — це теж та сама подія. Тому ключ — дата + сума, а не id операції.
+    """
+    return LoanEntry.objects.filter(loan=loan, date=d, amount=amount).exists()
+
+
 def pull_payments(loan: Loan, since: date = None, dry: bool = False):
     """Підтягнути з журналу платежі, які стосуються цього кредиту.
 
@@ -217,17 +227,19 @@ def pull_payments(loan: Loan, since: date = None, dry: bool = False):
         qs = qs.filter(date__gte=since)
     # відсотки — це НЕ погашення тіла: їх підтягує pull_interest
     qs = qs.exclude(comment__icontains=ACCRUAL_MARK).exclude(comment__icontains=INTEREST_MARK)
+    # кредитор: за звʼязком з контактом або за іменем у полі «кому»
+    from django.db.models import Q
+    name = (str(loan.creditor) or "").strip()
+    parts = [w for w in name.replace(",", " ").split() if len(w) > 3]
+    cond = Q(contact_id=loan.creditor_id)
+    for w in parts:
+        cond |= Q(counterparty__icontains=w)
+    qs = qs.filter(cond)
+    # 02.10.2026: рахунок — ДОДАТКОВА умова, а не заміна кредитору.
+    # Інакше платіж Ризі з рахунку 7404 зарахувався б і в кредитний ліміт ФОП
+    # лише тому, що гроші пішли з того самого рахунку.
     if loan.account_id:
-        # у банку кілька кредитів на одного кредитора — розрізняємо за рахунком
         qs = qs.filter(account_id=loan.account_id)
-    else:
-        name = (str(loan.creditor) or "").strip()
-        parts = [w for w in name.replace(",", " ").split() if len(w) > 3]
-        from django.db.models import Q
-        cond = Q(contact_id=loan.creditor_id)
-        for w in parts:
-            cond |= Q(counterparty__icontains=w)
-        qs = qs.filter(cond)
     qs = qs.order_by("date", "id")
 
     made = []
@@ -235,6 +247,8 @@ def pull_payments(loan: Loan, since: date = None, dry: bool = False):
         rate = fx_rate(loan.currency, None) or D("1")
         amt = (D(t.amount_uah or 0) / rate).quantize(D("0.01"))
         if amt <= 0:
+            continue
+        if _already(loan, t.date, -amt):
             continue
         if dry:
             made.append(dict(date=t.date, amount=amt, uah=t.amount_uah, tx=t.id))
@@ -275,6 +289,8 @@ def pull_interest(loan: Loan, dry: bool = False):
     rows.sort(key=lambda r: (r[1].date, r[1].id))
     made = []
     for kind, t, amt, label in rows:
+        if _already(loan, t.date, amt):
+            continue
         if dry:
             made.append(dict(date=t.date, kind=kind, amount=amt))
             continue
