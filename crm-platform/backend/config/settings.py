@@ -126,6 +126,16 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG
+# 03.10.2026: заявки з лендингів не доходили в CRM — браузер блокував запит,
+# бо сервер не дозволяв звернення з домену лендинга (CORS). Дозволяємо наші сайти
+# і лише публічні форми (вікно заявки і довідник контактів), решта API — без змін.
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()] or [
+    "https://wallcov.com.ua", "https://www.wallcov.com.ua",
+    "https://dekoratyvna-shtukaturka.com.ua", "https://www.dekoratyvna-shtukaturka.com.ua",
+    "https://wallcovdliastin.com.ua", "https://www.wallcovdliastin.com.ua",
+    "https://shtukaturka.kiev.ua", "https://www.shtukaturka.kiev.ua",
+]
+CORS_URLS_REGEX = r"^/api/(inbox/web-chat|contact-form-config)(/.*)?$"
 
 LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = "Europe/Kyiv"
