@@ -55,6 +55,10 @@ def link_statement_transfer(source_account, source_csv, source_key, destination_
                 directions=('out','transfer') if attrs['direction']=='out' else ('in',)
                 direct=Transaction.objects.filter(account=acc,date=attrs['date'],amount=attrs['amount'],currency=attrs['currency'],direction__in=directions)
                 incoming=Transaction.objects.filter(direction='transfer',transfer_account=acc,date=attrs['date']).filter(Q(transfer_amount=attrs['amount']) | Q(transfer_amount__isnull=True,amount=attrs['amount'],currency=attrs['currency']))
+                # A different full content key is a distinct bank row, not an untracked legacy candidate.
+                # Bank-ID identities remain conservative when the supplied file has no Bank ID.
+                identified=StatementRow.objects.filter(bank_id='',source_data__schema='privat-card-v1').values('transaction_id')
+                direct=direct.exclude(pk__in=identified);incoming=incoming.exclude(pk__in=identified)
                 if direct.exists() or (attrs['direction']=='in' and incoming.exists()):
                     raise ValueError('Є кандидати старого журналу: спершу підтвердіть існуючий переказ, не створюємо новий')
             if a['rate'] is None:

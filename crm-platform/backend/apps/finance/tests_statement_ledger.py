@@ -63,6 +63,16 @@ class LedgerIdentityTests(TestCase):
   with self.assertRaises(ValueError):link_statement_transfer(self.a,s,sk,self.b,d,dk,commit=True)
   self.assertEqual(Transaction.objects.count(),1);self.assertEqual(StatementRow.objects.count(),0)
 
+ def test_distinct_full_bank_expense_same_day_amount_does_not_block_pair(self):
+  s,d,sk,dk=self.pair()
+  expense=H+self.row(desc='different merchant',amount='-400',balance='100',original='400',stamp='2026-10-03 10:48:52')
+  self.assertEqual(import_statement(expense,self.a,commit=True)['created'],1)
+  old=Transaction.objects.get();old_id=old.pk;old_comment=old.comment
+  r=link_statement_transfer(self.a,s,sk,self.b,d,dk,commit=True);self.assertEqual(r['new_transactions'],1)
+  self.assertEqual(Transaction.objects.count(),2);self.assertEqual(StatementRow.objects.count(),3)
+  old.refresh_from_db();self.assertEqual((old.pk,old.comment),(old_id,old_comment))
+  self.assertEqual(link_statement_transfer(self.a,s,sk,self.b,d,dk,commit=True)['new_transactions'],0)
+
  def test_source_card_provenance_survives_different_crm_label(self):
   self.a.name='TEST *3580';self.a.save();src,dst,_,_=self.pair()
   src=src.replace(H,H.rstrip('\n')+';card\n').replace('12:00:00;','12:00:00;').rstrip('\n')+';3095\n'
