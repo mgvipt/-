@@ -1203,14 +1203,18 @@ function Journal() {
             const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
             const text = await f.text();
             try {
-              const dry: any = await api.post("/api/transactions/import-statement/", { data: text, commit: false });
+              const account = Number(prompt(t("Выберите ID счёта", "Оберіть ID рахунку") + "\n" + accounts.map(a => `${a.id}: ${a.name}`).join("\n"), ""));
+              if (!accounts.some(a => a.id === account)) return;
+              const currency = (prompt(t("Валюта выписки", "Валюта виписки"), "UAH") || "").toUpperCase();
+              if (!currency) return;
+              const dry: any = await api.post("/api/transactions/import-statement/", { data: text, account, currency, commit: false });
               const msg = t("Импорт выписки на счёт","Імпорт виписки на рахунок") + ` «${dry.account}»:\n` +
                 t("Новых операций","Нових операцій") + `: ${dry.created}\n` + t("Дубликатов (пропустим)","Дублікатів (пропустимо)") + `: ${dry.duplicates}\n` +
                 t("Ошибок строк","Помилок рядків") + `: ${dry.errors}\n\n` +
-                (dry.preview || []).map((p: any) => `${p.date} ${p.dir === "in" ? "+" : "−"}${p.amount} ${p.osnd}`).join("\n") +
+                (dry.preview || []).map((p: any) => `${p.date} ${p.time || ""} ${p.dir === "in" ? "+" : "−"}${p.amount} ${p.currency} ${p.osnd} · ${p.status} ${p.reason || ""}`).join("\n") +
                 "\n\n" + t("Применить?","Застосувати?");
               if (!confirm(msg)) return;
-              const done: any = await api.post("/api/transactions/import-statement/", { data: text, commit: true });
+              const done: any = await api.post("/api/transactions/import-statement/", { data: text, account, currency, commit: true });
               alert(t("Готово ✓ Добавлено","Готово ✓ Додано") + `: ${done.created}`); load();
             } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось импортировать","Не вдалося імпортувати")); }
           }} />
@@ -1233,14 +1237,18 @@ function Journal() {
                     const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = ""; setActMenu(false);
                     const text = await f.text();
                     try {
-                      const dry: any = await api.post("/api/transactions/import-statement/", { data: text, commit: false });
+                      const account = Number(prompt(t("Выберите ID счёта", "Оберіть ID рахунку") + "\n" + accounts.map(a => `${a.id}: ${a.name}`).join("\n"), ""));
+              if (!accounts.some(a => a.id === account)) return;
+              const currency = (prompt(t("Валюта выписки", "Валюта виписки"), "UAH") || "").toUpperCase();
+              if (!currency) return;
+              const dry: any = await api.post("/api/transactions/import-statement/", { data: text, account, currency, commit: false });
                       const msg = t("Импорт выписки на счёт","Імпорт виписки на рахунок") + ` «${dry.account}»:\n` +
                         t("Новых операций","Нових операцій") + `: ${dry.created}\n` + t("Дубликатов (пропустим)","Дублікатів (пропустимо)") + `: ${dry.duplicates}\n` +
                         t("Ошибок строк","Помилок рядків") + `: ${dry.errors}\n\n` +
-                        (dry.preview || []).map((p: any) => `${p.date} ${p.dir === "in" ? "+" : "−"}${p.amount} ${p.osnd}`).join("\n") +
+                        (dry.preview || []).map((p: any) => `${p.date} ${p.time || ""} ${p.dir === "in" ? "+" : "−"}${p.amount} ${p.currency} ${p.osnd} · ${p.status} ${p.reason || ""}`).join("\n") +
                         "\n\n" + t("Применить?","Застосувати?");
                       if (!confirm(msg)) return;
-                      const done: any = await api.post("/api/transactions/import-statement/", { data: text, commit: true });
+                      const done: any = await api.post("/api/transactions/import-statement/", { data: text, account, currency, commit: true });
                       alert(t("Готово ✓ Добавлено","Готово ✓ Додано") + `: ${done.created}`); load();
                     } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось импортировать","Не вдалося імпортувати")); }
                   }} />
@@ -4211,6 +4219,8 @@ function PrivatBankImport() {
   const { t } = useLang();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [account, setAccount] = useState<number | 0>(0);
+  const [currency, setCurrency] = useState("UAH");
+  const [rate, setRate] = useState("");
   const [csv, setCsv] = useState("");
   const [fname, setFname] = useState("");
   const [prev, setPrev] = useState<any>(null);
@@ -4219,13 +4229,12 @@ function PrivatBankImport() {
     api.get<any>("/api/accounts/?page_size=200").then((x) => {
       const a = (x.results || x) as any[];
       setAccounts(a);
-      const cc = a.find((z) => /кредит|картк|card|4627/i.test(z.name || ""));
-      setAccount((cc || a[0])?.id || 0);
+      setAccount(0);
     }).catch(() => {});
   }, []);
   const preview = async (data: string, acc: number) => {
-    const p: any = await api.post("/api/transactions/import-statement/", { data, account: acc || undefined, commit: false });
-    setPrev(p);
+    const p: any = await api.post("/api/transactions/import-statement/", { data, account: acc, currency, rate: rate || undefined, commit: false });
+    setPrev({ ...p, selectedAccount: acc, selectedCurrency: currency, selectedRate: rate });
   };
   const onFile = async (f: File) => {
     setBusy(true); setPrev(null); setCsv("");
@@ -4238,17 +4247,18 @@ function PrivatBankImport() {
     finally { setBusy(false); }
   };
   const doImport = async () => {
-    if (!csv) return;
+    if (!csv || !account || !prev || prev.selectedAccount !== account || prev.selectedCurrency !== currency || prev.selectedRate !== rate) return;
     const accName = accounts.find((a) => a.id === account)?.name || "?";
     if (!confirm(t("Импортировать операции в журнал на счёт", "Імпортувати операції в журнал на рахунок") + ` «${accName}»?
 ` + t("Автоправила проставят фонды и категории. Дубли пропустятся.", "Автоправила проставлять фонди й категорії. Дублі пропустяться."))) return;
     setBusy(true);
     try {
-      const p: any = await api.post("/api/transactions/import-statement/", { data: csv, account: account || undefined, commit: true });
+      const p: any = await api.post("/api/transactions/import-statement/", { data: csv, account, currency, rate: rate || undefined, commit: true });
       alert("✓ " + t("Импортировано", "Імпортовано") + `: ${p.created}
 ` + t("дубли", "дублі") + `: ${p.duplicates}, ` + t("ошибки", "помилки") + `: ${p.errors}` + (p.skipped_bank ? `
 ${t("пропущено (уже тянется с банка)", "пропущено (вже тягнеться з банку)")}: ${p.skipped_bank}` : ""));
-      setCsv(""); setPrev(null); setFname("");
+      if (p.review || p.errors) await preview(csv, account);
+      else { setCsv(""); setPrev(null); setFname(""); }
     } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); }
     finally { setBusy(false); }
   };
@@ -4260,12 +4270,16 @@ ${t("пропущено (уже тянется с банка)", "пропуще�
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Счёт", "Рахунок")}:</span>
-        <select value={account} onChange={(e) => { const a = Number(e.target.value); setAccount(a); if (csv) preview(csv, a); }} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", minWidth: 200 }}>
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        <select value={account} onChange={(e) => { const a = Number(e.target.value); setAccount(a); setPrev(null); }} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", minWidth: 200 }}>
+          <option value={0}>{t("Выберите счёт", "Оберіть рахунок")}</option>
+          {accounts.filter(a => a.is_active !== false).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        <select value={currency} onChange={e => { setCurrency(e.target.value); setPrev(null); }}>{["UAH","USD","EUR","PLN","GBP"].map(c => <option key={c}>{c}</option>)}</select>
+        <input placeholder={t("Курс на дату операции (или колонка Курс)", "Курс на дату операції (або колонка Курс)")} value={rate} onChange={e => { setRate(e.target.value); setPrev(null); }}/>
+        {csv && <button className="btn btn-light" disabled={!account || busy} onClick={() => preview(csv, account).catch(e => alert(e?.response?.data?.detail || "Помилка"))}>{t("Проверить", "Перевірити")}</button>}
         <label className="btn btn-primary" style={{ cursor: "pointer" }}>
           <Icon n="📤" size={14} /> {busy ? "…" : t("Загрузить выписку .xlsx", "Завантажити виписку .xlsx")}
-          <input type="file" accept=".xlsx" style={{ display: "none" }} disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); (e.target as any).value = ""; }} />
+          <input type="file" accept=".xlsx" style={{ display: "none" }} disabled={busy || !account} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); (e.target as any).value = ""; }} />
         </label>
         {fname && <span className="muted" style={{ fontSize: 12 }}>{fname}</span>}
       </div>
@@ -4273,6 +4287,7 @@ ${t("пропущено (уже тянется с банка)", "пропуще�
         <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, background: "#f8fafc" }}>
           <div style={{ fontSize: 13, marginBottom: 8 }}>
             <b>{t("Будет добавлено", "Буде додано")}: {prev.created}</b> · {t("дубли", "дублі")}: {prev.duplicates} · {t("ошибки", "помилки")}: {prev.errors}
+            {prev.review ? ` · На уточнення: ${prev.review}` : ""}
             {prev.skipped_bank ? " · " + t("пропущено (с банка)", "пропущено (з банку)") + ": " + prev.skipped_bank : ""}
           </div>
           {(prev.preview || []).length > 0 && (
@@ -4282,15 +4297,16 @@ ${t("пропущено (уже тянется с банка)", "пропуще�
                 {prev.preview.map((p: any, i: number) => (
                   <tr key={i} style={{ borderTop: "1px solid #eef2f7" }}>
                     <td style={{ padding: 3 }}>{p.date}</td>
-                    <td>{p.osnd}</td>
+                    <td>{p.osnd}<br/><small>{p.time} · {p.currency} · {p.status} {p.reason}</small></td>
                     <td style={{ textAlign: "right", color: p.dir === "out" ? "#dc2626" : "#16a34a", fontWeight: 600 }}>{p.dir === "out" ? "−" : "+"}{Number(p.amount).toLocaleString("ru")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <button className="btn btn-primary" disabled={busy || !prev.created} onClick={doImport}>{busy ? "…" : "✓ " + t("Импортировать в журнал", "Імпортувати в журнал") + (prev.created ? ` (${prev.created})` : "")}</button>
-          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("Показаны первые несколько строк. Импортируются все распознанные, кроме дублей.", "Показані перші кілька рядків. Імпортуються всі розпізнані, крім дублів.")}</div>
+          {(prev.issues || []).length > 0 && <details><summary>{t("Ошибки строк", "Помилки рядків")}</summary>{prev.issues.map((issue: any) => <div key={issue.line}>{issue.line}: {issue.reason}</div>)}</details>}
+          <button className="btn btn-primary" disabled={busy || !prev.created || prev.selectedAccount !== account || prev.selectedCurrency !== currency || prev.selectedRate !== rate} onClick={doImport}>{busy ? "…" : "✓ " + t("Импортировать в журнал", "Імпортувати в журнал") + (prev.created ? ` (${prev.created})` : "")}</button>
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("Показаны все распознанные строки. Спорные операции не импортируются.", "Показані всі розпізнані рядки. Спірні операції не імпортуються.")}</div>
         </div>
       )}
     </div>

@@ -127,6 +127,13 @@ def _closed_until():
         return None
 
 
+def _statement_closed_until():
+    # Imports must respect both accounting lock and closed-day snapshots, for every user.
+    from .day_close import day_closed_until
+    dates = [d for d in (_closed_until(), day_closed_until()) if d]
+    return max(dates) if dates else None
+
+
 def _guard_period(request, tx_date):
     """Заборона правок у закритому періоді (крім права finance.period.close)."""
     cu = _closed_until()
@@ -921,109 +928,74 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="import-statement")
     def import_statement(self, request):
-        """Імпорт банківської виписки (CSV) у журнал. {data, account, commit}.
-        Гнучкий парс колонок (дата/сума/призначення/контрагент/тип). Дедуп: дата+сума+призначення."""
-        import csv
-        import io as _io
-        from datetime import datetime as _dtm
-        u = request.user
-        if not (u.is_superuser or u.has_perm_code("finance.manage")):
-            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
-        raw = request.data.get("data") or ""
-        commit = bool(request.data.get("commit"))
-        acc = Account.objects.filter(id=request.data.get("account")).first() or Account.objects.first()
-        if not raw.strip():
-            return Response({"detail": "Порожній файл"}, status=400)
-        delim = ";" if raw.count(";") >= raw.count(",") else ","
-        rows = list(csv.reader(_io.StringIO(raw), delimiter=delim))
-        if not rows:
-            return Response({"detail": "Немає рядків"}, status=400)
-        hdr = [str(c).strip().lower() for c in rows[0]]
+        """Explicit account, preserved FX/source identity, conservative overlap review."""
+        if not (request.user.is_superuser or request.user.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право finance.manage"}, status=403)
+        acc = Account.objects.filter(id=request.data.get("account"), is_active=True).first()
+        if not acc:
+            return Response({"detail": "Оберіть активний рахунок для виписки"}, status=400)
+        allowed = request.user.allowed_fin("fin_accounts")
+        if allowed is not None and acc.id not in allowed:
+            return Response({"detail": "Немає доступу до рахунку"}, status=403)
+        from .statement_import import import_statement
+        try:
+            from .statement_history import historical_context
+            with historical_context(request.user, request.data.get("historical_approval"), [(acc, request.data.get("data") or "")], kind="import", commit=request.data.get("commit") is True) as scope:
+                result = import_statement(request.data.get("data") or "", acc,
+                    commit=request.data.get("commit") is True,
+                    currency=request.data.get("currency") or "UAH", rate=None if scope is not None else request.data.get("rate"),
+                    date_from=request.data.get("from"), date_to=request.data.get("to"),
+                    closed_until=_closed_until() if scope is not None else _statement_closed_until(),
+                    apply_rules=None if scope is not None else apply_bank_rules,
+                    approved_keys=scope["new_keys"] if scope is not None else None, rates=scope["rates"] if scope is not None else None)
+                if scope is not None: scope["result"] = {k:result[k] for k in ("created","duplicates","review","errors","skipped_closed","batch")}
+        except (ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result)
 
-        def col(*keys):
-            for i, h in enumerate(hdr):
-                if any(k in h for k in keys):
-                    return i
-            return None
-        i_date = col("дата")
-        i_sum = col("сума", "сумма", "sum")
-        i_osnd = col("призначення", "опис", "назначение", "osnd", "категор")
-        i_cp = col("контрагент", "кореспондент", "назва")
-        i_type = col("тип", "дебет")
-        if i_date is None or i_sum is None:
-            return Response({"detail": "Не знайдено колонки Дата/Сума. Заголовки: %s" % hdr[:8]}, status=400)
+    @action(detail=False, methods=["post"], url_path="link-statement-row")
+    def link_statement_row(self, request):
+        if not (request.user.is_superuser or request.user.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право керування фінмоделлю"}, status=403)
+        account = Account.objects.filter(pk=request.data.get("account"), is_active=True).first()
+        allowed = request.user.allowed_fin("fin_accounts")
+        if not account or (allowed is not None and account.pk not in allowed):
+            return Response({"detail": "Підтвердіть доступний власний рахунок"}, status=400)
+        from .statement_links import link_existing_statement
+        try:
+            from .statement_history import historical_context
+            with historical_context(request.user, request.data.get("historical_approval"), [(account, request.data.get("data") or "")], kind="legacy", commit=request.data.get("commit") is True, selected_keys=[request.data.get("source_key")], existing_id=request.data.get("transaction_id")) as scope:
+                result = link_existing_statement(account, request.data.get("data") or "", request.data.get("source_key"),
+                    request.data.get("transaction_id"), commit=request.data.get("commit") is True,
+                    confirm_existing=request.data.get("confirm_existing") is True, reason=str(request.data.get("reason") or ""),
+                    closed_until=_closed_until() if scope is not None else _statement_closed_until(), actor_id=request.user.pk)
+                if scope is not None: scope["result"] = result
+        except (ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result)
 
-        def _num(x):
-            try:
-                return float(str(x).replace(" ", "").replace("\u00a0", "").replace(",", "."))
-            except (TypeError, ValueError):
-                return None
-        from django.utils import timezone as _tzst
-        st_batch = "ST-" + _tzst.now().strftime("%Y%m%d-%H%M%S")
-        p_from, p_to = request.data.get("from"), request.data.get("to")
-        # ГАРД: якщо рахунок вже синхронізується з банком (є PB#-рядки) — файл НЕ може
-        # створювати операції за банківський період (інакше дублі, інцидент 04-07.07)
-        bank_since = None
-        if acc:
-            first_pb = (Transaction.objects.filter(account=acc, comment__icontains="PB#")
-                        .order_by("date").values_list("date", flat=True).first())
-            bank_since = first_pb
-        created = dup = errs = skipped_bank = 0
-        skipped_closed = 0
-        _cu_imp = None if (request.user.is_superuser or request.user.has_perm_code("finance.period.close")) else _closed_until()
-        preview = []
-        for r in rows[1:]:
-            if not any((str(c) or "").strip() for c in r):
-                continue
-            ds = (r[i_date] if i_date < len(r) else "").strip()[:10]
-            dte = None
-            for f in ("%d.%m.%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
-                try:
-                    dte = _dtm.strptime(ds, f).date(); break
-                except ValueError:
-                    continue
-            amt = _num(r[i_sum]) if i_sum < len(r) else None
-            if dte is None or amt is None or amt == 0:
-                errs += 1
-                continue
-            osnd = (r[i_osnd].strip() if i_osnd is not None and i_osnd < len(r) else "")[:180]
-            cp = (r[i_cp].strip() if i_cp is not None and i_cp < len(r) else "")[:160]
-            if i_type is not None and i_type < len(r):
-                tval = str(r[i_type]).lower()
-                direction = "out" if ("д" in tval[:2] or "d" in tval[:2]) else "in"
-            else:
-                direction = "in" if amt > 0 else "out"
-            amt = abs(amt)
-            if Transaction.objects.filter(date=dte, amount=amt,
-                                          comment__icontains=osnd[:40] or "\u0000").exists() and osnd:
-                dup += 1
-                continue
-            if p_from and dte.isoformat() < p_from:
-                continue  # поза обраним періодом
-            if p_to and dte.isoformat() > p_to:
-                continue
-            if bank_since and dte >= bank_since:
-                skipped_bank += 1
-                continue
-            if _cu_imp and dte <= _cu_imp:
-                skipped_closed += 1
-                continue
-            if commit:
-                _rr = apply_bank_rules(direction, osnd, cp, acc.name if acc else "")
-                cat, fdir, fart, cp2 = _rr["category"], _rr["fin_direction"], _rr["fin_article"], _rr["counterparty"]
-                Transaction.objects.create(direction=direction, amount=amt, amount_uah=amt,
-                                           account=acc, date=dte, counterparty=cp2, channel=_rr["channel"],
-                                           category=cat, fin_direction=fdir, fin_article=fart,
-                                           import_batch=st_batch,
-                                           comment=("Виписка · " + osnd)[:255])
-            created += 1
-            if len(preview) < 8:
-                preview.append({"date": dte.isoformat(), "dir": direction, "amount": amt, "osnd": osnd[:60]})
-        return Response({"created": created, "duplicates": dup, "errors": errs,
-                         "skipped_bank": skipped_bank, "skipped_closed": skipped_closed,
-                         "bank_since": bank_since.isoformat() if bank_since else None,
-                         "committed": commit, "preview": preview, "account": acc.name if acc else None,
-                         "batch": st_batch if commit else None})
+    @action(detail=False, methods=["post"], url_path="link-statement-transfer")
+    def link_statement_transfer(self, request):
+        if not (request.user.is_superuser or request.user.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право керування фінмоделлю"}, status=403)
+        accounts = [Account.objects.filter(pk=request.data.get(k), is_active=True).first() for k in ("source_account", "destination_account")]
+        if not all(accounts):
+            return Response({"detail": "Підтвердіть обидва власні рахунки"}, status=400)
+        allowed = request.user.allowed_fin("fin_accounts")
+        if allowed is not None and any(a.pk not in allowed for a in accounts):
+            return Response({"detail": "Немає доступу до одного з рахунків"}, status=403)
+        from .statement_transfers import link_statement_transfer
+        try:
+            from .statement_history import historical_context
+            with historical_context(request.user, request.data.get("historical_approval"), [(accounts[0], request.data.get("source_csv") or ""), (accounts[1], request.data.get("destination_csv") or "")], kind="transfer", commit=request.data.get("commit") is True, selected_keys=[request.data.get("source_key"), request.data.get("destination_key")], existing_id=request.data.get("existing_transfer_id")) as scope:
+                result = link_statement_transfer(accounts[0], request.data.get("source_csv") or "", request.data.get("source_key"),
+                    accounts[1], request.data.get("destination_csv") or "", request.data.get("destination_key"),
+                    commit=request.data.get("commit") is True, existing_transfer_id=request.data.get("existing_transfer_id"),
+                    rate=scope["rates"].get(request.data.get("source_key")) if scope is not None else request.data.get("rate"), closed_until=_closed_until() if scope is not None else _statement_closed_until())
+                if scope is not None: scope["result"] = result
+        except (ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result)
 
     @action(detail=False, methods=["post"], url_path="privat-xlsx-csv")
     def privat_xlsx_csv(self, request):
@@ -1051,6 +1023,26 @@ class TransactionViewSet(viewsets.ModelViewSet):
             joined = " ".join(low)
             if "дата" in joined and "сума" in joined and ("опис" in joined or "картк" in joined):
                 for ci, x in enumerate(low):
+                    if x.startswith("валют") and "карт" in x:
+                        col["currency_card"] = ci
+                    elif x.startswith("валют") and "транзакц" in x:
+                        col["original_currency"] = ci
+                    elif x.startswith("валют") and "залиш" in x:
+                        col["balance_currency"] = ci
+                    elif "залиш" in x:
+                        col["balance"] = ci
+                    elif "сума" in x and "транзакц" in x:
+                        col["original_amount"] = ci
+                    elif x in ("валюта", "валюта операції", "currency"):
+                        col["currency_any"] = ci
+                    if x == "картка":
+                        col["card"] = ci
+                    if x in ("курс", "rate"):
+                        col["rate"] = ci
+                    if x in ("id операції", "id операции", "bank_id", "ref"):
+                        col["bank_id"] = ci
+                    if x in ("refn", "bank_leg"):
+                        col["leg"] = ci
                     if x.startswith("дата") and "date" not in col:
                         col["date"] = ci
                     elif "опис" in x and "osnd" not in col:
@@ -1068,9 +1060,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
         sum_ci = col.get("sum", col.get("sum_any"))
         if sum_ci is None:
             return Response({"detail": "Не знайдено колонку Сума"}, status=400)
+        if "sum" in col:
+            if "currency_card" in col: col["currency"] = col["currency_card"]
+        elif "currency_any" in col:
+            col["currency"] = col["currency_any"]
         out = _io.StringIO()
         w = _csv.writer(out, delimiter=";")
-        w.writerow(["Дата", "Опис", "Сума"])
+        w.writerow(["Дата", "Опис", "Сума", "Валюта", "Курс", "bank_id", "refn", "original_amount", "original_currency", "balance", "balance_currency", "card"])
         n = 0
         for r in rows[hdr_i + 1:]:
             if col["date"] >= len(r):
@@ -1078,15 +1074,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
             dv = r[col["date"]]
             if dv is None or str(dv).strip() == "":
                 continue
-            ds10 = str(dv).strip()[:10]   # «28.08.2026 04:00» або datetime «2026-08-28 ...» → дата
+            ds10 = str(dv).strip()[:19]  # retain statement time, never substitute import time
             osnd = str(r[col["osnd"]] if (col.get("osnd") is not None and col["osnd"] < len(r)) else "").strip()
             cat = str(r[col["cat"]] if (col.get("cat") is not None and col["cat"] < len(r)) else "").strip()
-            if cat and cat not in ("None", ""):
-                osnd = (osnd + " · " + cat) if osnd else cat
             sv = r[sum_ci] if sum_ci < len(r) else None
             if sv is None or str(sv).strip() == "":
                 continue
-            w.writerow([ds10, osnd[:180], str(sv)])
+            extra = [str(r[col[k]] if r[col[k]] is not None else "") if k in col and col[k] < len(r) else "" for k in ("currency", "rate", "bank_id", "leg", "original_amount", "original_currency", "balance", "balance_currency", "card")]
+            w.writerow([ds10, osnd, str(sv), *extra])
             n += 1
         return Response({"csv": out.getvalue(), "count": n})
 

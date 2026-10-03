@@ -550,3 +550,14 @@ class DaySnapshot(models.Model):
 
     def __str__(self):
         return "знімок %s v%s" % (self.date, self.version)
+
+
+class StatementRow(models.Model):
+    """Stable source identity, independent of editable journal descriptions."""
+    key = models.CharField(max_length=64, unique=True)
+    file_hash = models.CharField(max_length=64, db_index=True)
+    bank_id = models.CharField(max_length=160, blank=True)
+    bank_leg = models.CharField(max_length=160, blank=True)
+    source_data = models.JSONField(default=dict, blank=True)
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="statement_row")
+    created_at = models.DateTimeField(auto_now_add=True)

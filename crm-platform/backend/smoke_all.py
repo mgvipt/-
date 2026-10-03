@@ -25,6 +25,10 @@ HOST = "crm.wallcovdec.com.ua"
 
 # (назва, роль, url, допустимі статуси, обов'язкові ключі верхнього рівня)
 CHECKS = [
+    # 03.10.2026: statement actions are POST-only; GET smoke never imports money.
+    ("Виписки: імпорт підключений", "owner", "/api/transactions/import-statement/", {405}, []),
+    ("Виписки: прив’язка рядка підключена", "owner", "/api/transactions/link-statement-row/", {405}, []),
+    ("Виписки: звірка переказу підключена", "owner", "/api/transactions/link-statement-transfer/", {405}, []),
     # 26.09.2026 (Олег): тара входить у розрахунок обʼєму; агент надсилає накладну посиланням
     ("Кольори: підбір RAL/NCS", "owner", "/api/knowledge/colors/?q=RAL%201013", {200}, ["found"]),
     ("Інструкції: бібліотека менеджера", "manager", "/api/content-library/instructions/", {200}, ["items"]),
