@@ -2,6 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 from django.db import transaction
+from django.db.models import Q
 from .models import Account, StatementRow, Transaction
 from .statement_import import parse_statement, digest
 
@@ -51,7 +52,10 @@ def link_statement_transfer(source_account, source_csv, source_key, destination_
                 raise ValueError('Конфлікт існуючих зв’язків')
         else:
             for acc, attrs in ((source_account,a),(destination_account,b)):
-                if Transaction.objects.filter(account=acc,date=attrs['date'],amount=attrs['amount'],currency=attrs['currency']).exists() or Transaction.objects.filter(direction='transfer',transfer_account=acc,date=attrs['date'],transfer_amount=attrs['amount']).exists():
+                directions=('out','transfer') if attrs['direction']=='out' else ('in',)
+                direct=Transaction.objects.filter(account=acc,date=attrs['date'],amount=attrs['amount'],currency=attrs['currency'],direction__in=directions)
+                incoming=Transaction.objects.filter(direction='transfer',transfer_account=acc,date=attrs['date']).filter(Q(transfer_amount=attrs['amount']) | Q(transfer_amount__isnull=True,amount=attrs['amount'],currency=attrs['currency']))
+                if direct.exists() or (attrs['direction']=='in' and incoming.exists()):
                     raise ValueError('Є кандидати старого журналу: спершу підтвердіть існуючий переказ, не створюємо новий')
             if a['rate'] is None:
                 raise ValueError('Для списання потрібен підтверджений курс на дату операції')

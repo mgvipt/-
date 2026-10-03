@@ -50,6 +50,19 @@ class LedgerIdentityTests(TestCase):
   with self.assertRaises(ValueError):link_statement_transfer(self.a,s,sk,self.b,d,dk,commit=True,closed_until=date(2026,10,3))
   self.assertEqual(Transaction.objects.count(),1)
 
+ def test_opposite_direction_same_day_is_not_a_duplicate_pair(self):
+  s,d,sk,dk=self.pair();other=Account.objects.create(name='TEST other')
+  topup=Transaction.objects.create(account=other,transfer_account=self.a,direction='transfer',date=date(2026,10,3),op_time='10:00:00',amount=400,transfer_amount=400,currency='UAH',rate=1,comment='EXISTING TOPUP')
+  expense=Transaction.objects.create(account=self.b,direction='out',date=date(2026,10,3),op_time='11:00:00',amount=10,currency='USD',rate=40,comment='EXISTING EXPENSE')
+  r=link_statement_transfer(self.a,s,sk,self.b,d,dk,commit=True);self.assertEqual(r['new_transactions'],1)
+  self.assertEqual(Transaction.objects.count(),3);self.assertEqual(StatementRow.objects.count(),2)
+  topup.refresh_from_db();expense.refresh_from_db();self.assertEqual(topup.comment,'EXISTING TOPUP');self.assertEqual(expense.comment,'EXISTING EXPENSE')
+ def test_existing_recipient_same_currency_null_transfer_amount_blocks_new_pair(self):
+  s,d,sk,dk=self.pair();other=Account.objects.create(name='TEST other USD')
+  Transaction.objects.create(account=other,transfer_account=self.b,direction='transfer',date=date(2026,10,3),amount=10,transfer_amount=None,currency='USD',rate=40)
+  with self.assertRaises(ValueError):link_statement_transfer(self.a,s,sk,self.b,d,dk,commit=True)
+  self.assertEqual(Transaction.objects.count(),1);self.assertEqual(StatementRow.objects.count(),0)
+
  def test_source_card_provenance_survives_different_crm_label(self):
   self.a.name='TEST *3580';self.a.save();src,dst,_,_=self.pair()
   src=src.replace(H,H.rstrip('\n')+';card\n').replace('12:00:00;','12:00:00;').rstrip('\n')+';3095\n'
