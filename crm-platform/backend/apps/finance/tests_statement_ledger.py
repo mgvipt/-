@@ -187,3 +187,26 @@ class AccountScopedHistoryTests(TestCase):
   r=self.c.post('/api/transactions/link-statement-transfer/',data,format='json',HTTP_HOST='crm.wallcovdec.com.ua');self.assertEqual(r.status_code,200,r.data);self.assertEqual(r.data['new_transactions'],1)
   r=self.c.post('/api/transactions/link-statement-transfer/',data,format='json',HTTP_HOST='crm.wallcovdec.com.ua');self.assertEqual(r.status_code,200,r.data);self.assertTrue(r.data['duplicate'])
   self.old.refresh_from_db();self.snap.refresh_from_db();self.assertEqual(self.old.amount,50);self.assertIsNone(self.snap.reopened_at);self.assertEqual(StatementRow.objects.count(),2)
+
+class HistoricalRuleSafetyTests(AccountScopedHistoryTests):
+ def setUp(self):
+  super().setUp()
+  from .models import BankRule
+  self.category=Category.objects.create(name='TEST AUTO',direction='out')
+  self.rule=BankRule.objects.create(name='TEST BUY',conditions=[{'field':'osnd','op':'contains','text':'buy'}],actions={'category':self.category.pk})
+ def test_new_history_applies_rule_dry_run_has_no_hits_and_repeat_preserves_manual(self):
+  r=self.post(commit=False);self.assertEqual(r.status_code,200,r.data)
+  self.rule.refresh_from_db();self.assertEqual(self.rule.hits,0);self.assertFalse(Transaction.objects.filter(account=self.a).exists())
+  r=self.post();self.assertEqual(r.data['created'],1)
+  t=Transaction.objects.get(account=self.a);self.assertEqual(t.category_id,self.category.pk)
+  self.rule.refresh_from_db();self.assertEqual(self.rule.hits,1)
+  manual=Category.objects.create(name='TEST MANUAL',direction='out');t.category=manual;t.comment='MANUAL AFTER IMPORT';t.save()
+  from .statement_history import ledger_digest
+  self.approval.refresh_from_db();self.approval.config['ledger_digest']=ledger_digest([self.a.pk]);self.approval.save()
+  r=self.post();self.assertEqual(r.data['duplicates'],1);t.refresh_from_db();self.assertEqual(t.category_id,manual.pk);self.assertEqual(t.comment,'MANUAL AFTER IMPORT')
+  self.rule.refresh_from_db();self.assertEqual(self.rule.hits,1)
+  self.old.refresh_from_db();self.assertEqual(self.old.comment,'OFFLINE');self.assertIsNone(self.old.category_id)
+ def test_transfer_pair_never_applies_rules(self):
+  self.test_historical_transfer_pair_keeps_closed_offline()
+  self.rule.refresh_from_db();self.assertEqual(self.rule.hits,0)
+  self.assertFalse(Transaction.objects.filter(direction='transfer',category__isnull=False).exists())

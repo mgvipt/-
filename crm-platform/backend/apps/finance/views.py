@@ -946,7 +946,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                     currency=request.data.get("currency") or "UAH", rate=None if scope is not None else request.data.get("rate"),
                     date_from=request.data.get("from"), date_to=request.data.get("to"),
                     closed_until=_closed_until() if scope is not None else _statement_closed_until(),
-                    apply_rules=None if scope is not None else apply_bank_rules,
+                    apply_rules=apply_bank_rules,
                     approved_keys=scope["new_keys"] if scope is not None else None, rates=scope["rates"] if scope is not None else None)
                 if scope is not None: scope["result"] = {k:result[k] for k in ("created","duplicates","review","errors","skipped_closed","batch")}
         except (ValueError, TypeError) as exc:
