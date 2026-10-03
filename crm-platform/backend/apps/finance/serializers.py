@@ -1,5 +1,21 @@
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 from rest_framework import serializers
 from .models import FinModelArticle, FinDirection, Account, Category, Transaction, FundAllocation, AdvisoryReport, Loan, LoanEntry
+
+
+class MoneyField(serializers.DecimalField):
+    """Сума грошей: приймає «хвіст» float з фронта (6389.280000000001) і округлює до копійок.
+    Без цього DRF повертав 400 і кредиторка з приходу не створювалась (03.10.2026)."""
+
+    def to_internal_value(self, data):
+        if isinstance(data, (int, float, str)):
+            raw = str(data).strip().replace(" ", "").replace("\u00a0", "").replace(",", ".")
+            try:
+                data = Decimal(raw).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except (InvalidOperation, ValueError):
+                pass
+        return super().to_internal_value(data)
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -24,6 +40,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class PlannedPaymentSerializer(serializers.ModelSerializer):
+    amount = MoneyField(max_digits=14, decimal_places=2)
+    paid_amount = MoneyField(max_digits=12, decimal_places=2, required=False)
     category_name = serializers.CharField(source="category.name", read_only=True, default=None)
     contact_name = serializers.SerializerMethodField()
 

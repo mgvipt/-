@@ -132,7 +132,15 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
       setRow(i, { product: p.id, product_name: p.name, unit: p.unit || "шт", open: false, res: [], q: p.name });
     } catch { setErr(t("Не удалось создать товар (нужно право «Редактировать склад»)", "Не вдалося створити товар (потрібне право «Редагувати склад»)")); }
   }
-  const total = rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(String(r.price).replace(",", ".")) || 0), 0);
+  function payErr(e: any): string {
+    const d: any = e?.response?.data;
+    if (!d) return "";
+    if (typeof d === "string") return d;
+    if (d.detail) return String(d.detail);
+    return Object.entries(d).map(([k, v]) => k + ": " + (Array.isArray(v) ? v.join(" ") : String(v))).join("; ");
+  }
+  // Округлюємо до копійок: 48 × 133,11 у JS = 6389.280000000001 — сервер таку суму не приймав, кредиторка не створювалась
+  const total = Math.round(rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(String(r.price).replace(",", ".")) || 0), 0) * 100) / 100;
 
   async function createSupplier() {
     const nm = nc.name.trim(); if (!nm) { setErr(t("Впиши название поставщика", "Впиши назву постачальника")); return; }
@@ -165,7 +173,7 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
             });
           } catch (e: any) {
             setErr(t("Приход сохранён, но кредиторку создать не удалось: ", "Прихід збережено, але кредиторку створити не вдалося: ")
-              + (e?.response?.data?.detail || "")); setBusy(false); return;
+              + (payErr(e) || "")); setBusy(false); return;
           }
         }
         onSaved && onSaved(); onClose(); return;
@@ -183,7 +191,7 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
           comment: (t("Прихід товару", "Прихід товару") + (invoice ? " №" + invoice : "")).slice(0, 255),
         }).catch((e: any) => {
           alert("⚠️ " + t("Приход проведён, но кредиторка НЕ создалась: ", "Прихід проведено, але кредиторка НЕ створилась: ")
-            + (e?.response?.data?.detail || t("проверь права на Дт/Кт", "перевір права на Дт/Кт")));
+            + (payErr(e) || t("проверь права на Дт/Кт", "перевір права на Дт/Кт")));
         });
       }
       // обновить РОЗНИЧНУЮ цену товара, где задана (закупка обновляется сама при проведении прихода)
